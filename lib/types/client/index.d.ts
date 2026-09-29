@@ -4,14 +4,16 @@ type ClientContext = Context & {
         inject(slotName: string, callback: () => unknown): void;
         register(spec: {
             name: string;
-            /** list 槽位的单元键：用自己的 id 会追加在出厂控件旁，复用它则替换该单元 */
-            id: string;
+            /** list 槽位的单元键 */
+            id?: string;
+            /** keyed 槽位的键（main 用） */
+            key?: string;
             order?: number;
             label?: string | (() => string);
-        }, componentFactory: () => unknown): unknown;
+        }, componentFactory: (props?: unknown) => unknown): unknown;
     };
 };
-/** 需要 slots 注入 UI，需要 connection 提供宿主 RPC 通道。 */
+/** 需要 slots 注入 UI，connection 提供宿主 RPC，sessions 提供会话身份。 */
 export declare const inject: string[];
 export declare function apply(ctx: ClientContext): void;
 export {};

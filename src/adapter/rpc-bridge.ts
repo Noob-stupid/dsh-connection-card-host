@@ -114,6 +114,8 @@ function buildEndpoints(service: ConnectionCardHostService): Record<string, Hand
 
     [RPC_ENDPOINTS.listWhitelist]: (p) =>
       service.listWhitelistedMethods(str(p, 'connectionId')),
+
+    [RPC_ENDPOINTS.listSessions]: () => service.listSessions(),
   }
 }
 

@@ -24,6 +24,12 @@ export interface RepairResult {
     success: boolean;
     message: string;
 }
+/** 列表用的会话摘要（面板里的会话选择器）。 */
+export interface KnownSession {
+    id: string;
+    title: string;
+    updatedAt: number;
+}
 type SessionEventHandler = (sessionId: string, event: string, data: unknown) => void;
 export declare class DSHAdapter {
     private ctx;
@@ -45,6 +51,14 @@ export declare class DSHAdapter {
     /** 尽力探测 DSH 版本；拿不到就返回 undefined（守卫会 fail-open）。 */
     private detectVersion;
     getVersionCheck(): VersionCheckResult;
+    /**
+     * 列出宿主当前已知的会话（面板的会话选择器用）。
+     *
+     * 走宿主 `ctx.sessions.list()`（其目录里确有该方法）。
+     * Session 的字段形状未在我们的依赖里声明，因此**逐字段防御式提取**，
+     * 拿不到标题就退回 id —— 绝不因为字段名猜错而整体失败。
+     */
+    listSessions(): KnownSession[];
     getSessionStatus(sessionId: string): Promise<SessionStatus>;
     getSessionLog(_sessionId: string): Promise<SessionLogEntry[]>;
     getPresetStatus(_sessionId: string): Promise<PresetStatus>;

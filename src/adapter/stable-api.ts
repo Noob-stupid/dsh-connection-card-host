@@ -6,6 +6,9 @@ import type { Connection, PermissionLevel, CardInstance } from '../types/index.j
 import type { ConnectionManager } from '../core/connection-manager.js'
 import type { ConnectionEventBus } from '../core/event-bus.js'
 import type { CardHost } from '../card-host/loader.js'
+import type { DSHAdapter, KnownSession } from './dsh-adapter.js'
+
+export type { KnownSession }
 
 export interface ConnectionCardHostService {
   // 连接管理
@@ -33,12 +36,16 @@ export interface ConnectionCardHostService {
   negotiateWhitelist(connectionId: string, methods: { method: string; description: string }[]): void
   isWhitelisted(connectionId: string, method: string): boolean
   listWhitelistedMethods(connectionId: string): { method: string; description: string; approvedBy: string[] }[]
+
+  // 会话列表（面板的会话选择器用）
+  listSessions(): KnownSession[]
 }
 
 export function createStableApi(
   manager: ConnectionManager,
   eventBus: ConnectionEventBus,
   cardHost?: CardHost,
+  adapter?: DSHAdapter,
 ): ConnectionCardHostService {
   return {
     createConnection: (a, b) => manager.create(a, b),
@@ -59,5 +66,6 @@ export function createStableApi(
     negotiateWhitelist: (cid, methods) => manager.whitelist.negotiate(cid, methods),
     isWhitelisted: (cid, method) => manager.whitelist.isAllowed(cid, method),
     listWhitelistedMethods: (cid) => manager.whitelist.listMethods(cid).map(e => ({ method: e.method, description: e.description, approvedBy: e.approvedBy })),
+    listSessions: () => adapter?.listSessions() ?? [],
   }
 }

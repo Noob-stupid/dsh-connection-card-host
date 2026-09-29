@@ -30,6 +30,13 @@ export interface RepairResult {
   message: string
 }
 
+/** 列表用的会话摘要（面板里的会话选择器）。 */
+export interface KnownSession {
+  id: string
+  title: string
+  updatedAt: number
+}
+
 type SessionEventHandler = (sessionId: string, event: string, data: unknown) => void
 
 export class DSHAdapter {
@@ -77,6 +84,58 @@ export class DSHAdapter {
 
   getVersionCheck(): VersionCheckResult {
     return this.versionResult ?? this.init()
+  }
+
+  /**
+   * 列出宿主当前已知的会话（面板的会话选择器用）。
+   *
+   * 走宿主 `ctx.sessions.list()`（其目录里确有该方法）。
+   * Session 的字段形状未在我们的依赖里声明，因此**逐字段防御式提取**，
+   * 拿不到标题就退回 id —— 绝不因为字段名猜错而整体失败。
+   */
+  listSessions(): KnownSession[] {
+    const sessions = safeCtxGet<{ list?(): unknown[] }>(this.ctx, 'sessions')
+    if (!sessions?.list) return []
+
+    let raw: unknown[]
+    try {
+      const result = sessions.list()
+      if (!Array.isArray(result)) return []
+      raw = result
+    } catch (e) {
+      console.error('[DSHAdapter] listSessions failed:', e)
+      return []
+    }
+
+    const pickString = (value: unknown): string | undefined =>
+      typeof value === 'string' && value.length > 0 ? value : undefined
+
+    return raw
+      .map((entry): KnownSession | null => {
+        const s = entry as Record<string, unknown> | null
+        if (!s || typeof s !== 'object') return null
+
+        const id =
+          pickString(s.id) ??
+          pickString(s.sessionId) ??
+          pickString((s.header as Record<string, unknown> | undefined)?.id)
+        if (!id) return null
+
+        const header = s.header as Record<string, unknown> | undefined
+        const meta = s.meta as Record<string, unknown> | undefined
+        const title =
+          pickString(s.title) ??
+          pickString(header?.title) ??
+          pickString(meta?.title) ??
+          ''
+
+        const updatedAtRaw =
+          s.updatedAt ?? s.lastActiveAt ?? header?.updatedAt ?? s.createdAt
+        const updatedAt = typeof updatedAtRaw === 'number' ? updatedAtRaw : 0
+
+        return { id, title, updatedAt }
+      })
+      .filter((s): s is KnownSession => s !== null)
   }
 
   async getSessionStatus(sessionId: string): Promise<SessionStatus> {

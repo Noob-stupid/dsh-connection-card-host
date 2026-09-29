@@ -23,6 +23,11 @@ export const CONNECTION_CARD_CSS = `
   --ccr-health-yellow: #F59E0B;
   --ccr-health-red: #EF4444;
   --ccr-line-color: #60A5FA;
+  /* 拉线「水流」主色。
+     用户要求白色半透明；但纯白在浅色主题下不可见，
+     因此取 DSH 的主题 token（深色主题=白，浅色主题=深），保证两个主题都看得见。
+     想强制纯白就把这里改成 #ffffff。 */
+  --ccr-flow-color: var(--dsw-alias-label-primary, #ffffff);
   --ccr-fast: 150ms cubic-bezier(0.2, 0, 0, 1);
   --ccr-panel-highlight: rgba(96, 165, 250, 0.12);
 }
@@ -34,23 +39,29 @@ export const CONNECTION_CARD_CSS = `
 
 .ccr-anchor__pulse {
   position: absolute;
-  inset: -4px;
+  inset: -3px;
   border-radius: 50%;
-  border: 2px solid var(--ccr-line-color);
+  border: 1.5px solid var(--ccr-flow-color);
   opacity: 0;
   pointer-events: none;
 }
 
 .ccr-anchor--dragging .ccr-anchor__pulse {
-  animation: ccr-anchor-pulse 900ms ease-out infinite;
+  animation: ccr-anchor-pulse 1200ms ease-out infinite;
 }
 
+/* 幅度收小：1 → 1.45（原来 2 太大，观感"一直闪"） */
 @keyframes ccr-anchor-pulse {
-  0% { transform: scale(1); opacity: 0.8; }
-  100% { transform: scale(2); opacity: 0; }
+  0% { transform: scale(1); opacity: 0.5; }
+  100% { transform: scale(1.45); opacity: 0; }
 }
 
-/* ═══ DragLine ═══ */
+/* ═══ DragLine：水流效果 ═══
+   三层叠加：
+     1. ccr-flow__glow   宽 + 高斯模糊 + 极低透明 → 水汽光晕
+     2. ccr-flow__core   渐变白主线（两端淡出，不是硬邦邦的线）
+     3. ccr-flow__band   短划线沿路径滑动 → 水在流
+   粒子（水珠）由组件内联渲染。 */
 .ccr-drag-line {
   position: fixed;
   inset: 0;
@@ -59,22 +70,35 @@ export const CONNECTION_CARD_CSS = `
   overflow: visible;
 }
 
-.ccr-drag-line__path {
+.ccr-flow__glow {
   fill: none;
-  stroke: var(--ccr-line-color);
-  stroke-width: 2px;
-  stroke-opacity: 0.75;
-  stroke-dasharray: 6 4;
+  stroke: var(--ccr-flow-color);
+  stroke-width: 7px;
+  stroke-opacity: 0.16;
   stroke-linecap: round;
-  animation: ccr-dash-flow 600ms linear infinite;
 }
 
-@keyframes ccr-dash-flow {
-  to { stroke-dashoffset: -20; }
+.ccr-flow__core {
+  fill: none;
+  stroke-linecap: round;
 }
 
-.ccr-drag-line__particle {
-  fill: var(--ccr-line-color);
+.ccr-flow__band {
+  fill: none;
+  stroke: var(--ccr-flow-color);
+  stroke-width: 1.2px;
+  stroke-opacity: 0.5;
+  stroke-linecap: round;
+  stroke-dasharray: 34 58;
+  animation: ccr-water-flow 1100ms linear infinite;
+}
+
+@keyframes ccr-water-flow {
+  to { stroke-dashoffset: -92; }
+}
+
+.ccr-flow__particle {
+  fill: var(--ccr-flow-color);
 }
 
 /* ═══ SessionRail ═══ */
@@ -110,11 +134,247 @@ export const CONNECTION_CARD_CSS = `
 
 .ccr-lane__line--dimmed { opacity: 0.2; }
 
-/* ═══ 拖拽目标高亮 ═══ */
-.ccr-target-highlight {
+/* ═══ 拖拽落点提示（命中左侧会话行） ═══ */
+.ccr-target {
   background: var(--ccr-panel-highlight) !important;
-  box-shadow: inset 2px 0 0 var(--ccr-line-color) !important;
+  box-shadow: inset 2px 0 0 var(--ccr-flow-color) !important;
 }
+
+/* ═══ 面板（main 槽位，整页宽度） ═══ */
+.ccr-page {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+  color: var(--dsw-alias-label-primary, inherit);
+  font-size: 13px;
+}
+
+.ccr-page__head { margin-bottom: 20px; }
+
+.ccr-page__title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.ccr-page__sub {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary, #888);
+}
+
+.ccr-block {
+  margin-bottom: 22px;
+  padding: 14px 16px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.25));
+  border-radius: 10px;
+}
+
+.ccr-block__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ccr-count {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--ccr-panel-highlight);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ─── 表单 ─── */
+.ccr-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ccr-select,
+.ccr-input {
+  flex: 1 1 160px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: var(--dsw-alias-bg-layer-2, rgba(128,128,128,0.08));
+  border: 1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.3));
+  border-radius: 6px;
+}
+
+.ccr-form__sep { opacity: 0.5; }
+
+.ccr-btn {
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.4));
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ccr-btn:hover:not(:disabled) { background: var(--ccr-panel-highlight); }
+.ccr-btn:disabled { opacity: 0.45; cursor: default; }
+
+.ccr-btn--primary {
+  border-color: var(--ccr-flow-color);
+  background: var(--ccr-panel-highlight);
+}
+
+.ccr-btn--danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: #EF4444;
+}
+
+.ccr-link {
+  margin-top: 8px;
+  padding: 0;
+  font: inherit;
+  font-size: 11px;
+  color: inherit;
+  opacity: 0.6;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.ccr-hint,
+.ccr-field__hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary, #888);
+  opacity: 0.85;
+}
+
+/* ─── 提示条 ─── */
+.ccr-notice,
+.ccr-empty,
+.ccr-error {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.ccr-notice { background: var(--ccr-panel-highlight); }
+.ccr-empty { color: var(--dsw-alias-label-secondary, #888); padding-left: 0; }
+.ccr-error { color: #EF4444; padding-left: 0; }
+
+/* ─── 连接卡片 ─── */
+.ccr-list { display: flex; flex-direction: column; gap: 6px; }
+
+.ccr-conn {
+  border: 1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.25));
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.ccr-conn--open { background: var(--dsw-alias-bg-layer-1, rgba(128,128,128,0.05)); }
+
+.ccr-conn__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.ccr-conn__head:hover { background: var(--ccr-panel-highlight); }
+
+.ccr-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.ccr-conn__pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ccr-conn__session {
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ccr-conn__arrow { opacity: 0.45; }
+
+.ccr-conn__meta {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, #888);
+}
+
+.ccr-chevron { flex: none; opacity: 0.45; font-size: 10px; }
+
+.ccr-conn__body {
+  padding: 4px 12px 12px;
+  border-top: 1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.2));
+}
+
+.ccr-field { margin: 12px 0; }
+
+.ccr-field__label {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ccr-seg {
+  display: inline-flex;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.3));
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ccr-seg__item {
+  padding: 5px 14px;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-right: 1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.25));
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.ccr-seg__item:last-child { border-right: 0; }
+.ccr-seg__item:hover:not(:disabled) { background: var(--ccr-panel-highlight); }
+.ccr-seg__item--active { background: var(--ccr-panel-highlight); opacity: 1; font-weight: 500; }
+.ccr-seg__item:disabled { cursor: default; opacity: 0.4; }
+
+.ccr-conn__actions { display: flex; gap: 8px; margin-top: 12px; }
+
+.ccr-card-stack { margin: 12px 0; }
 
 /* ═══ ConnectionPanel ═══ */
 .ccr-panel {
@@ -201,9 +461,9 @@ export const CONNECTION_CARD_CSS = `
 
 /* ═══ 无障碍 / 降低动效 ═══ */
 @media (prefers-reduced-motion: reduce) {
-  .ccr-drag-line__path,
+  .ccr-flow__band,
   .ccr-anchor--dragging .ccr-anchor__pulse { animation: none !important; }
-  .ccr-drag-line__particle { display: none !important; }
+  .ccr-flow__particle { display: none !important; }
 }
 `
 

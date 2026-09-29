@@ -1,0 +1,49 @@
+fix: 面板重构 + 会话身份修复 + 水流拉线
+
+用户反馈四个问题，逐个修复：
+
+1) 蓝色按钮一直闪
+   根因：AnchorCircle 内部 setState('dragging') 后没有任何地方复位
+   （mouseleave 有守卫、也没监听 mouseup），点过一次就永远停在拖拽态，
+   脉冲动画无限循环。改为 dragging 由父组件传入（单一数据源）。
+
+2) 动画幅度大 / 颜色太抢
+   - 脉冲 scale 2 -> 1.45，时长 900ms -> 1200ms，起始透明度 0.8 -> 0.5
+   - 圆点默认透明度 0.45 -> 0.32，改用主题 secondary 色（贴着背景），
+     悬停才提到 0.85；悬停光晕从 3px 收到 2px
+
+3) 拉线改为「白色半透明水流」
+   - 4 层叠加：模糊光晕 + 沿线渐变主线（两端淡出）+ 滑动流带 + 9 颗水珠
+   - 水珠大小 0.7-2.3、速度 0.72-1.42x、透明度 0.3-0.9（确定性参数）
+   - 颜色 --ccr-flow-color 默认映射 --dsw-alias-label-primary：
+     深色主题下就是白色，浅色主题自动转深，避免纯白消失
+   - 对称弧线（控制点沿法线偏移），不再固定 -20
+
+4) 拖到左侧会话没有对接提示 / 连上后左侧应有竖线
+   重大发现：DSH 源码里根本没有 data-session-id 这个属性。
+   会话行只有 role="treeitem" 和标题文本，没有任何 id。
+   所以拖拽建连接从未成功过（选择器永远匹配不到），也没有落点提示。
+   修复：
+   - 新增 client/sessions-bridge.ts：读 ctx.sessions.list
+     （ObservableSnapshot<{ids, byId, current}>）拿真实会话列表与当前会话
+   - 新增 ui/SessionRowMarker.tsx：挂 sidebar.session.row.leading 槽位
+     （其 ownerProps 就是 { sessionId }），把 id 写到行元素 data-ccr-session 上
+   - 新增 client/row-map.ts：DOM 行 -> id 映射。以标记行为锚点做序号对齐，
+     对齐条件不满足时只保留有标记的行（宁可少画，绝不连错）
+   - 拖拽时高亮命中的会话行（.ccr-target）
+   - 新增 ui/SessionRailOverlay.tsx：挂 shell.overlay，测量行坐标后
+     在左侧画出竖直连线，lane 分配复用 core/lane-allocator
+
+5) 面板重构（用户：不该有 A->B，应该能自己连然后配置）
+   - 修正槽位语义：sidebar.panellist 只放图标
+     （文档原话 "Each list id addresses the matching main panel"），
+     之前把整个面板塞进图标位导致侧栏溢出文案
+   - 新增 ui/ConnectionPanelIcon.tsx：侧栏图标
+   - 面板改挂 main 槽位（key 与图标 id 同名），点图标即切主面板
+   - 去掉 A->B / B->A 内部概念，改为「权限：只读 / 可建议 / 可写入」，
+     双向一起设置；升级提示需双方确认
+   - 新增「新建连接」：从真实会话列表选两个会话建立连接
+     （会话列表不可用时退化为手填 ID）
+
+另：宿主新增 sessions/list RPC 端点（ctx.sessions.list，内存存储）。
+实测该存储当前为空，故面板以客户端 ctx.sessions.list 为主源。

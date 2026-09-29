@@ -14,6 +14,12 @@ export interface WhitelistEntryView {
     description: string;
     approvedBy: string[];
 }
+/** 会话摘要（面板的会话选择器）。 */
+export interface KnownSessionView {
+    id: string;
+    title: string;
+    updatedAt: number;
+}
 export interface ConnectionCardHostClient {
     health(): Promise<{
         ready: boolean;
@@ -31,6 +37,7 @@ export interface ConnectionCardHostClient {
     unloadCard(instanceId: string): Promise<void>;
     reloadCard(instanceId: string): Promise<void>;
     listWhitelistedMethods(connectionId: string): Promise<WhitelistEntryView[]>;
+    listSessions(): Promise<KnownSessionView[]>;
 }
 /** RPC 调用器的形状（取自 ctx.connection.rpc）。 */
 export interface RpcCaller {

@@ -6,6 +6,8 @@ import type { Connection, PermissionLevel, CardInstance } from '../types/index.j
 import type { ConnectionManager } from '../core/connection-manager.js';
 import type { ConnectionEventBus } from '../core/event-bus.js';
 import type { CardHost } from '../card-host/loader.js';
+import type { DSHAdapter, KnownSession } from './dsh-adapter.js';
+export type { KnownSession };
 export interface ConnectionCardHostService {
     createConnection(sessionA: string, sessionB: string): Connection;
     disconnect(id: string): void;
@@ -32,5 +34,6 @@ export interface ConnectionCardHostService {
         description: string;
         approvedBy: string[];
     }[];
+    listSessions(): KnownSession[];
 }
-export declare function createStableApi(manager: ConnectionManager, eventBus: ConnectionEventBus, cardHost?: CardHost): ConnectionCardHostService;
+export declare function createStableApi(manager: ConnectionManager, eventBus: ConnectionEventBus, cardHost?: CardHost, adapter?: DSHAdapter): ConnectionCardHostService;

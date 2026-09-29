@@ -46,6 +46,7 @@ export const RPC_ENDPOINTS = {
   unloadCard: 'cards/unload',
   reloadCard: 'cards/reload',
   listWhitelist: 'whitelist/list',
+  listSessions: 'sessions/list',
 } as const
 
 export type RpcEndpoint = (typeof RPC_ENDPOINTS)[keyof typeof RPC_ENDPOINTS]

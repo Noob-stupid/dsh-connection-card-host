@@ -41,5 +41,6 @@ export declare const RPC_ENDPOINTS: {
     readonly unloadCard: "cards/unload";
     readonly reloadCard: "cards/reload";
     readonly listWhitelist: "whitelist/list";
+    readonly listSessions: "sessions/list";
 };
 export type RpcEndpoint = (typeof RPC_ENDPOINTS)[keyof typeof RPC_ENDPOINTS];
