@@ -1,0 +1,18 @@
+{
+  "name": "goal-relay-card",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "dshCard": {
+    "id": "goal-relay-card",
+    "name": "目标中继卡片",
+    "requires": {
+      "read": ["goal_status"],
+      "write": ["relay_goal"]
+    },
+    "events": ["goal_updated", "goal_completed"],
+    "ui": {
+      "icon": "assets/icon.svg",
+      "panel": "dist/panel.js"
+    }
+  }
+}

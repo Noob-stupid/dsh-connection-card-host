@@ -1,0 +1,18 @@
+{
+  "name": "self-heal-card",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "dshCard": {
+    "id": "self-heal-card",
+    "name": "自愈卡片",
+    "requires": {
+      "read": ["preset_status"],
+      "write": ["repair_preset"]
+    },
+    "events": ["preset_error", "preset_repaired"],
+    "ui": {
+      "icon": "assets/icon.svg",
+      "panel": "dist/panel.js"
+    }
+  }
+}
