@@ -53,7 +53,7 @@ dsh-connection-card-host/
 │   │   ├── card.ts           # CardInstance/CardManifest/CardAPI
 │   │   └── permission.ts     # PermissionLevel
 │   └── styles/
-│       └── tokens.css        # 设计 tokens（权限色、rail 尺寸、动效参数）
+│       └── tokens.ts         # 设计 tokens + 运行时 <style> 注入
 ├── cards/
 │   ├── monitor-card/         # 监控卡片（preset_error, session_idle）
 │   ├── self-heal-card/       # 自愈卡片（preset_error→repair→repaired）

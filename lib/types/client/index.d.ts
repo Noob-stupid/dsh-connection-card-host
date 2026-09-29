@@ -4,8 +4,10 @@ type ClientContext = Context & {
         inject(slotName: string, callback: () => unknown): void;
         register(spec: {
             name: string;
+            /** list 槽位的单元键：用自己的 id 会追加在出厂控件旁，复用它则替换该单元 */
             id: string;
             order?: number;
+            label?: string | (() => string);
         }, componentFactory: () => unknown): unknown;
     };
 };

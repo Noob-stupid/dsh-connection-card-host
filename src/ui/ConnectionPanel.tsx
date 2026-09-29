@@ -77,12 +77,12 @@ export function ConnectionPanel({ client }: ConnectionPanelProps) {
   })
 
   return (
-    <div className="connection-panel">
-      <div className="connection-panel__tabs">
+    <div className="ccr-panel">
+      <div className="ccr-panel__tabs">
         {(['all', 'normal', 'alert'] as Tab[]).map((t) => (
           <div
             key={t}
-            className={`connection-panel__tab${tab === t ? ' connection-panel__tab--active' : ''}`}
+            className={`ccr-panel__tab${tab === t ? ' ccr-panel__tab--active' : ''}`}
             onClick={() => setTab(t)}
           >
             {t === 'all' ? '全部' : t === 'normal' ? '正常' : '告警'}
@@ -90,46 +90,37 @@ export function ConnectionPanel({ client }: ConnectionPanelProps) {
         ))}
       </div>
 
-      {!client && (
-        <div style={{ padding: 16, opacity: 0.6 }}>
-          连接宿主通道未就绪
-        </div>
-      )}
+      {!client && <div className="ccr-panel__empty">连接宿主通道未就绪</div>}
 
-      {client && error && (
-        <div style={{ padding: '8px 12px', color: '#EF4444', fontSize: 12 }}>
-          宿主通信失败：{error}
-        </div>
-      )}
+      {client && error && <div className="ccr-panel__error">宿主通信失败：{error}</div>}
 
       {client && !error && loaded && filtered.length === 0 && (
-        <div style={{ padding: 16, opacity: 0.5 }}>暂无连接</div>
+        <div className="ccr-panel__empty">暂无连接（按住输入框左侧小圆点拖到会话上）</div>
       )}
 
-      <div className="connection-panel__list">
+      <div className="ccr-panel__list">
         {filtered.map((conn) => {
           const aToB = conn.permission.aToB
           const bToA = conn.permission.bToA
           const permLabel =
-            aToB === bToA
-              ? PERM_LABELS[aToB]
-              : `${PERM_LABELS[aToB]}↔${PERM_LABELS[bToA]}`
+            aToB === bToA ? PERM_LABELS[aToB] : `${PERM_LABELS[aToB]}↔${PERM_LABELS[bToA]}`
           const healthColor =
             conn.health === 'green' ? '#10B981' : conn.health === 'yellow' ? '#F59E0B' : '#EF4444'
           return (
             <div key={conn.id}>
               <div
-                className={`connection-row${expandedId === conn.id ? ' connection-row--highlighted' : ''}`}
+                className={`ccr-row${expandedId === conn.id ? ' ccr-row--open' : ''}`}
                 onClick={() => toggleExpand(conn.id)}
+                title={conn.id}
               >
                 <span style={{ color: healthColor }}>●</span>{' '}
-                {conn.sessionA.slice(0, 6)} ↔ {conn.sessionB.slice(0, 6)}{' '}
-                {permLabel} [{conn.cards.length} 张卡片]
+                {conn.sessionA.slice(0, 6)} ↔ {conn.sessionB.slice(0, 6)} {permLabel} [
+                {conn.cards.length} 卡片]
               </div>
               {expandedId === conn.id && (
                 <>
                   <CardStack connection={conn} />
-                  <div style={{ display: 'flex', gap: 8, padding: '6px 12px', fontSize: 12 }}>
+                  <div className="ccr-actions">
                     <button
                       type="button"
                       disabled={busy === conn.id}
@@ -138,7 +129,7 @@ export function ConnectionPanel({ client }: ConnectionPanelProps) {
                         void cyclePermission(conn, 'aToB')
                       }}
                     >
-                      权限 A→B: {PERM_LABELS[aToB]}
+                      A→B {PERM_LABELS[aToB]}
                     </button>
                     <button
                       type="button"
@@ -148,7 +139,7 @@ export function ConnectionPanel({ client }: ConnectionPanelProps) {
                         void cyclePermission(conn, 'bToA')
                       }}
                     >
-                      权限 B→A: {PERM_LABELS[bToA]}
+                      B→A {PERM_LABELS[bToA]}
                     </button>
                     <button
                       type="button"

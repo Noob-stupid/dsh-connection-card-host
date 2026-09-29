@@ -8,18 +8,29 @@
  * 宿主数据通过 DSH 官方 Connection RPC 通道读取（ctx.connection.rpc）。
  * 作用域遵循 Cordis fiber 生命周期。
  */
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import { AnchorCircle } from '../ui/AnchorCircle.js'
 import { DragLine } from '../ui/DragLine.js'
 import { ConnectionPanel } from '../ui/ConnectionPanel.js'
 import { useDragLine } from '../ui/hooks/useDragLine.js'
 import { createHostClient, resolveRpcCaller } from './host-client.js'
+import { injectStyles } from '../styles/tokens.js'
+import { safeCtxGet } from '../safe-ctx.js'
 
 type ClientContext = Context & {
   slots: {
     inject(slotName: string, callback: () => unknown): void
-    register(spec: { name: string; id: string; order?: number }, componentFactory: () => unknown): unknown
+    register(
+      spec: {
+        name: string
+        /** list 槽位的单元键：用自己的 id 会追加在出厂控件旁，复用它则替换该单元 */
+        id: string
+        order?: number
+        label?: string | (() => string)
+      },
+      componentFactory: () => unknown,
+    ): unknown
   }
 }
 
@@ -55,11 +66,34 @@ export function apply(ctx: ClientContext): void {
     )
   }
 
+  // 样式注入：CSS 作为字符串打进 bundle，运行时挂 <style>（生态通用做法）。
+  // 关键几何另有内联兜底，注入失败也不会出现"看不见的控件"。
+  try {
+    const removeStyles = injectStyles()
+    // ctx.effect(execute, label)：execute 返回 disposer
+    const effect = safeCtxGet<(fn: () => () => void, label?: string) => unknown>(ctx, 'effect')
+    if (typeof effect === 'function') effect(() => removeStyles, 'connection-card-host: styles')
+  } catch (e) {
+    ctx.logger?.warn?.(`[connection-card-host] 样式注入失败: ${String(e)}`)
+  }
+
   // ═══ 小圆圈（含拖拽拉线）═══
   const AnchorWidget = () => {
     const drag = useDragLine()
+    // 拉线退出动效播完后置 true 才卸载（shrinking→pulsing 需要保持挂载）
+    const [lineDone, setLineDone] = useState(false)
 
-    // 鼠标拖拽：全局 move/up
+    const beginDrag = useCallback(
+      (x: number, y: number) => {
+        setLineDone(false)
+        drag.onMouseDown(x, y)
+      },
+      [drag],
+    )
+
+    // 鼠标拖拽：全局 move/up。
+    // 注意：onMouseUp 后 drag.state.start/current 仍保留（hook 有意保留终点），
+    // 因此拉线不会瞬间消失，而是交给 DragLine 播退出动效。
     useEffect(() => {
       if (!drag.state.dragging) return
 
@@ -113,16 +147,23 @@ export function apply(ctx: ClientContext): void {
       }
     }, [drag.state.dragging])
 
+    const showLine = Boolean(drag.state.start && drag.state.current && !lineDone)
+
     return (
       <>
         <AnchorCircle
-          onDragStart={drag.onMouseDown}
+          onDragStart={beginDrag}
           onTouchStart={drag.onTouchStart}
           onTouchMove={drag.onTouchMove}
           onTouchEnd={drag.onTouchEnd}
         />
-        {drag.state.dragging && drag.state.start && drag.state.current && (
-          <DragLine start={drag.state.start} end={drag.state.current} />
+        {showLine && drag.state.start && drag.state.current && (
+          <DragLine
+            start={drag.state.start}
+            end={drag.state.current}
+            releasing={!drag.state.dragging}
+            onComplete={() => setLineDone(true)}
+          />
         )}
       </>
     )
@@ -135,18 +176,24 @@ export function apply(ctx: ClientContext): void {
   }
 
   // ═══ 槽位注册（inject 自动绑定 fiber 生命周期）═══
-  // conversation.input.activity: 输入框工具行（模型选择器之后的紧凑动作位）
-  ctx.slots.inject('conversation.input.activity', () =>
+  //
+  // conversation.input.left：composer 工具行左侧的紧凑控件区。
+  //   kind=list / replaceRisk=none —— 用自己的 id 会被「追加」在出厂控件旁边，
+  //   不会顶掉任何已有 UI。
+  //   ⚠️ 不要用 conversation.input.activity：那是 single + shadows-shipped-ui，
+  //   占位即替换出厂的活动指示器，且出厂 UI 先注册时会直接抛
+  //   `single slot ... already has a registration`。
+  ctx.slots.inject('conversation.input.left', () =>
     ctx.slots.register(
-      { name: 'conversation.input.activity', id: 'connection-anchor', order: 100 },
+      { name: 'conversation.input.left', id: 'connection-anchor', order: 100, label: '连接' },
       () => AnchorWidget(),
     ),
   )
 
-  // sidebar.panellist: 侧栏全局面板图标列表
+  // sidebar.panellist：侧栏全局面板图标列表（kind=list / replaceRisk=none）
   ctx.slots.inject('sidebar.panellist', () =>
     ctx.slots.register(
-      { name: 'sidebar.panellist', id: 'connection-panel', order: 200 },
+      { name: 'sidebar.panellist', id: 'connection-panel', order: 200, label: '连接' },
       () => PanelWidget(),
     ),
   )

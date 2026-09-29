@@ -20,18 +20,11 @@ export function CardStack({ connection }: CardStackProps) {
     return null
   }
   return (
-    <div className="card-stack">
+    <div className="ccr-card-stack">
       {connection.cards.map((card) => (
-        <div key={card.instanceId} className="card-row">
+        <div key={card.instanceId} className="ccr-card-row">
           ├ {card.templateId}{' '}
-          <span
-            style={{
-              color: HEALTH_COLORS[connection.health],
-              marginLeft: 6,
-            }}
-          >
-            ● 正常
-          </span>
+          <span style={{ color: HEALTH_COLORS[connection.health], marginLeft: 6 }}>● 正常</span>
         </div>
       ))}
     </div>
