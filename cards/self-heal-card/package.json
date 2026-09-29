@@ -12,7 +12,7 @@
     "events": ["preset_error", "preset_repaired"],
     "ui": {
       "icon": "assets/icon.svg",
-      "panel": "dist/panel.js"
+      "panel": "dist/index.js"
     }
   }
 }

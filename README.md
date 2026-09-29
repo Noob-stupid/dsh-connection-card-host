@@ -60,7 +60,8 @@ dsh-connection-card-host/
 │   └── goal-relay-card/      # 目标中继卡片
 └── docs/
     ├── card-protocol.md      # 卡片协议文档
-    └── adapter-api.md        # 适配层 API 文档
+    ├── adapter-api.md        # 适配层 API 文档
+    └── compatibility.md      # DSH 兼容性、失败降级与性能边界
 ```
 
 ## 构建与注入
@@ -107,7 +108,12 @@ dev_inject_plugin <本目录>
 
 ## DSH 兼容范围
 
-`>=0.1.1-rc.2 <0.2.0`
+| 组件 | 版本范围 |
+|:---|:---|
+| `dshEngines.framework` | `>=0.1.1-rc.2 <0.2.0` |
+| `@deepseek-ai/cordis` | `>=4.0.1 <4.1.0` |
+
+详细兼容性、失败降级与性能边界见 [docs/compatibility.md](docs/compatibility.md)。
 
 ## 关键约束
 

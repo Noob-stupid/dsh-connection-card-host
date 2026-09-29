@@ -12,7 +12,7 @@
     "events": ["goal_updated", "goal_completed"],
     "ui": {
       "icon": "assets/icon.svg",
-      "panel": "dist/panel.js"
+      "panel": "dist/index.js"
     }
   }
 }
