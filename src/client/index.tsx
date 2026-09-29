@@ -20,6 +20,7 @@ import { SessionRowMarker } from '../ui/SessionRowMarker.js'
 import { useDragLine } from '../ui/hooks/useDragLine.js'
 import { createHostClient, resolveRpcCaller } from './host-client.js'
 import { resolveSessions } from './sessions-bridge.js'
+import { createViewPrefs } from './view-prefs.js'
 import { sessionRowAtPoint } from './row-map.js'
 import { injectStyles } from '../styles/tokens.js'
 import { safeCtxGet } from '../safe-ctx.js'
@@ -310,6 +311,8 @@ export function apply(ctx: ClientContext): void {
 
   const stableClient = client
   const stableSessions = sessions
+  // 视图偏好：面板与轨道共享（lane 上限等），持久化到 localStorage
+  const prefs = createViewPrefs()
 
   // ═══ 槽位注册 ═══
   //
@@ -339,7 +342,7 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('main', () =>
     ctx.slots.register(
       { name: 'main', key: PANEL_ID },
-      () => ConnectionPanel({ client: stableClient, sessions: stableSessions }),
+      () => ConnectionPanel({ client: stableClient, sessions: stableSessions, prefs }),
     ),
   )
 
@@ -347,7 +350,7 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('shell.overlay', () =>
     ctx.slots.register(
       { name: 'shell.overlay', id: 'connection-rail', order: 50, label: '连接轨道' },
-      () => SessionRailOverlay({ client: stableClient, sessions: stableSessions }),
+      () => SessionRailOverlay({ client: stableClient, sessions: stableSessions, prefs }),
     ),
   )
 

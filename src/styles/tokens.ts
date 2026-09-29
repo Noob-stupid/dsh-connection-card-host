@@ -223,6 +223,35 @@ export const CONNECTION_CARD_CSS = `
 
 .ccr-form__sep { opacity: 0.5; }
 
+/* 新建连接中间的可点连接符：加/减一个会话槽位 */
+.ccr-form__join {
+  flex: none;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: inherit;
+  background: transparent;
+  border: 1px dashed var(--dsw-alias-border-l2, rgba(128,128,128,0.45));
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.ccr-form__join:hover {
+  opacity: 1;
+  background: var(--ccr-panel-highlight);
+  border-style: solid;
+}
+
+/* 小号分段控件（轨道线路开关） */
+.ccr-seg--small .ccr-seg__item {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.ccr-rail-toggle { margin-left: auto; }
+
 .ccr-btn {
   padding: 6px 14px;
   font: inherit;

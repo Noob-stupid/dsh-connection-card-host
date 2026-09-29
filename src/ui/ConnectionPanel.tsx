@@ -10,11 +10,12 @@
  *   - 让用户自己连：选出两个会话 → 建立连接（拖拽仍是主路径，这里是等价入口）。
  *   - 每个连接可以单独配置权限、断开。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import type { Connection, PermissionLevel } from '../types/index.js'
 import { permValue } from '../types/index.js'
 import type { ConnectionCardHostClient, PendingUpgradeView } from '../client/host-client.js'
 import type { SessionsBridge } from '../client/sessions-bridge.js'
+import type { ViewPrefsStore } from '../client/view-prefs.js'
 import { useConnections } from './hooks/useConnections.js'
 import { useSessionList } from './hooks/useSessionList.js'
 import { CardStack } from './CardStack.js'
@@ -22,6 +23,8 @@ import { CardStack } from './CardStack.js'
 interface ConnectionPanelProps {
   client: ConnectionCardHostClient | null
   sessions: SessionsBridge | null
+  /** 视图偏好（lane 上限等），与轨道共享同一实例。 */
+  prefs: ViewPrefsStore
 }
 
 /** 用户视角的权限名称（不是 read/write 这种内部词）。 */
@@ -43,17 +46,28 @@ const HEALTH_TEXT: Record<string, string> = {
   red: '异常',
 }
 
-export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
+export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProps) {
   const { connections, error, loaded, refresh } = useConnections(client)
 
   const { options: sessionOptions, labelOf, ready: sessionsReady } = useSessionList(sessions)
-  const [sessionA, setSessionA] = useState('')
-  const [sessionB, setSessionB] = useState('')
+  /**
+   * 新建连接用的会话槽位。
+   * 默认两个；点中间的箭头可以加第三个 —— 三个会**两两相连**（3 条连接）。
+   */
+  const [picks, setPicks] = useState<string[]>(['', ''])
   const [manual, setManual] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState<PendingUpgradeView[]>([])
+
+  /** 视图偏好（lane 上限），改完立刻广播给轨道 */
+  const [prefsState, setPrefsState] = useState(() => prefs.get())
+  useEffect(() => prefs.subscribe(() => setPrefsState(prefs.get())), [prefs])
+
+  const setPick = useCallback((index: number, value: string) => {
+    setPicks((prev) => prev.map((v, i) => (i === index ? value : v)))
+  }, [])
 
   const flash = useCallback((message: string) => {
     setNotice(message)
@@ -123,29 +137,43 @@ export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
     [client, flash],
   )
 
+  /**
+   * 建立连接。选了 N 个会话就**两两相连**（C(N,2) 条）。
+   * 三个会话 = 3 条连接，四张卡片式地互相都通。
+   */
   const connect = useCallback(async () => {
     if (!client) return
-    if (!sessionA || !sessionB) {
-      flash('请选择两个会话')
+    const chosen = picks.map((p) => p.trim()).filter((p) => p.length > 0)
+    if (chosen.length < 2) {
+      flash('请至少选择两个会话')
       return
     }
-    if (sessionA === sessionB) {
-      flash('不能把会话连到它自己')
+    const unique = Array.from(new Set(chosen))
+    if (unique.length !== chosen.length) {
+      flash('同一个会话只能选一次')
       return
     }
+
     setBusy('create')
     try {
-      await client.createConnection(sessionA, sessionB)
-      setSessionA('')
-      setSessionB('')
-      flash('已建立连接')
+      const pairs: [string, string][] = []
+      for (let i = 0; i < unique.length; i++) {
+        for (let j = i + 1; j < unique.length; j++) pairs.push([unique[i], unique[j]])
+      }
+      for (const [a, b] of pairs) {
+        await client.createConnection(a, b)
+      }
+      setPicks(['', ''])
+      flash(
+        pairs.length === 1 ? '已建立连接' : `已建立 ${pairs.length} 条两两连接`,
+      )
       await refresh()
     } catch (e) {
       flash(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(null)
     }
-  }, [client, sessionA, sessionB, refresh, flash])
+  }, [client, picks, refresh, flash])
 
   /**
    * 设置**某一个方向**的权限。
@@ -226,51 +254,52 @@ export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
         <section className="ccr-block">
           <h3 className="ccr-block__title">新建连接</h3>
           <div className="ccr-form">
-            {useManualInput ? (
-              <>
-                <input
-                  className="ccr-input"
-                  placeholder="会话 ID A"
-                  value={sessionA}
-                  onChange={(e) => setSessionA(e.target.value.trim())}
-                />
-                <span className="ccr-form__sep">↔</span>
-                <input
-                  className="ccr-input"
-                  placeholder="会话 ID B"
-                  value={sessionB}
-                  onChange={(e) => setSessionB(e.target.value.trim())}
-                />
-              </>
-            ) : (
-              <>
-                <select
-                  className="ccr-select"
-                  value={sessionA}
-                  onChange={(e) => setSessionA(e.target.value)}
-                >
-                  <option value="">选择会话…</option>
-                  {orderedOptions.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.isCurrent ? `● ${s.label}（当前）` : s.label}
-                    </option>
-                  ))}
-                </select>
-                <span className="ccr-form__sep">↔</span>
-                <select
-                  className="ccr-select"
-                  value={sessionB}
-                  onChange={(e) => setSessionB(e.target.value)}
-                >
-                  <option value="">选择会话…</option>
-                  {orderedOptions.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.isCurrent ? `● ${s.label}（当前）` : s.label}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
+            {picks.map((value, index) => (
+              <Fragment key={index}>
+                {index > 0 && (
+                  /*
+                   * 中间的连接符。点它可以加/减一个会话槽位 ——
+                   * 三个会话会**两两相连**（A-B、B-C、A-C 三条），
+                   * 相当于把「三个对话互相都通」一次配好。
+                   */
+                  <button
+                    type="button"
+                    className="ccr-form__join"
+                    title={
+                      picks.length >= 3
+                        ? '去掉第三个会话（回到两两相连）'
+                        : '再加一个会话：三个会两两相连（共 3 条连接）'
+                    }
+                    onClick={() =>
+                      setPicks((prev) => (prev.length >= 3 ? ['', ''] : [...prev, '']))
+                    }
+                  >
+                    {picks.length >= 3 ? '↔ ⊖' : '↔ ⊕'}
+                  </button>
+                )}
+                {useManualInput ? (
+                  <input
+                    className="ccr-input"
+                    placeholder={index === 0 ? '会话 ID 1' : `会话 ID ${index + 1}`}
+                    value={value}
+                    onChange={(e) => setPick(index, e.target.value.trim())}
+                  />
+                ) : (
+                  <select
+                    className="ccr-select"
+                    value={value}
+                    onChange={(e) => setPick(index, e.target.value)}
+                  >
+                    <option value="">选择会话…</option>
+                    {orderedOptions.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.isCurrent ? `● ${s.label}（当前）` : s.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </Fragment>
+            ))}
             <button
               type="button"
               className="ccr-btn ccr-btn--primary"
@@ -280,6 +309,11 @@ export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
               建立连接
             </button>
           </div>
+          {picks.length >= 3 && (
+            <p className="ccr-hint">
+              三个会话会两两相连（共 {((picks.length * (picks.length - 1)) / 2)} 条连接）。
+            </p>
+          )}
           {noSessions && (
             <p className="ccr-hint">
               {sessionsReady
@@ -300,6 +334,19 @@ export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
         <h3 className="ccr-block__title">
           已有连接
           <span className="ccr-count">{connections.length}</span>
+          {/* 左侧连线的显示/隐藏开关（只影响观感，连接本身不动） */}
+          <button
+            type="button"
+            className="ccr-link ccr-rail-toggle"
+            title={
+              prefsState.railVisible
+                ? '隐藏会话列表上的连接线路'
+                : '在会话列表上显示连接线路'
+            }
+            onClick={() => prefs.set({ railVisible: !prefsState.railVisible })}
+          >
+            {prefsState.railVisible ? '隐藏线路' : '显示线路'}
+          </button>
         </h3>
 
         {ready && loaded && connections.length === 0 && (

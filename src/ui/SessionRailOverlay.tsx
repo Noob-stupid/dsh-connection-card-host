@@ -16,12 +16,15 @@ import type { PermissionLevel } from '../types/index.js'
 import type { ConnectionCardHostClient } from '../client/host-client.js'
 import type { SessionsBridge } from '../client/sessions-bridge.js'
 import { collectSessionRows, type SessionRowInfo } from '../client/row-map.js'
+import type { ViewPrefsStore } from '../client/view-prefs.js'
 import { useConnections } from './hooks/useConnections.js'
 import { useSessionList } from './hooks/useSessionList.js'
 
 interface SessionRailOverlayProps {
   client: ConnectionCardHostClient | null
   sessions: SessionsBridge | null
+  /** 视图偏好（lane 上限等），与面板共享同一实例。 */
+  prefs: ViewPrefsStore
 }
 
 /** 每条 lane 的水平间距（px）。多条连接并行时靠它拉开。 */
@@ -37,7 +40,7 @@ const PERMISSION_COLOR: Record<PermissionLevel, string> = {
   write: '#F97316',
 }
 
-export function SessionRailOverlay({ client, sessions }: SessionRailOverlayProps) {
+export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverlayProps) {
   const { connections } = useConnections(client)
   const { snapshot } = useSessionList(sessions)
   const [rows, setRows] = useState<SessionRowInfo[]>([])
@@ -131,6 +134,7 @@ export function SessionRailOverlay({ client, sessions }: SessionRailOverlayProps
 
       segments.push({
         id: conn.id,
+        laneIndex: assignment.laneIndex,
         x,
         y1,
         y2,
@@ -173,6 +177,14 @@ export function SessionRailOverlay({ client, sessions }: SessionRailOverlayProps
     )
   }, [rail, rows, connections, client])
 
+  /** 视图偏好：整条轨道可以一键隐藏（只影响观感，连接本身不动）。 */
+  const [railVisible, setRailVisible] = useState(() => prefs.get().railVisible)
+  useEffect(
+    () => prefs.subscribe(() => setRailVisible(prefs.get().railVisible)),
+    [prefs],
+  )
+
+  if (!railVisible) return null
   if (!rail) return null
 
   const { segments, bounds } = rail
