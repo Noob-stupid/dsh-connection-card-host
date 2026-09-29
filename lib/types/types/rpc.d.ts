@@ -55,5 +55,9 @@ export declare const RPC_ENDPOINTS: {
     readonly listUpgradeRequests: "permission/pending";
     /** 协商连接的可远程调用方法白名单。 */
     readonly negotiateWhitelist: "whitelist/negotiate";
+    /** 读取连接的交流记录。 */
+    readonly listMessages: "messages/list";
+    /** 以某一端的身份发一条连接消息。 */
+    readonly sendMessage: "messages/send";
 };
 export type RpcEndpoint = (typeof RPC_ENDPOINTS)[keyof typeof RPC_ENDPOINTS];

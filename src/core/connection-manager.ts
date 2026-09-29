@@ -9,6 +9,7 @@ import { permValue } from '../types/permission.js'
 import { Persistence } from './persistence.js'
 import { ConnectionEventBus } from './event-bus.js'
 import { PermissionUpgradeManager, RemoteMethodWhitelist } from './permission.js'
+import { ConnectionMessageLog } from './message-log.js'
 
 type EventHandler = (conn: Connection) => void
 
@@ -19,16 +20,27 @@ export class ConnectionManager {
   private listeners = new Map<string, Set<EventHandler>>()
   readonly upgradeManager: PermissionUpgradeManager
   readonly whitelist: RemoteMethodWhitelist
+  /** 连接两端的规范交流记录（「交流配合」的底座）。 */
+  readonly messages: ConnectionMessageLog
 
   constructor(persistence: Persistence, eventBus: ConnectionEventBus) {
     this.persistence = persistence
     this.eventBus = eventBus
     this.upgradeManager = new PermissionUpgradeManager(eventBus)
     this.whitelist = new RemoteMethodWhitelist(eventBus)
+    this.messages = new ConnectionMessageLog(eventBus, (m) => console.log('[ConnectionMessage]', m))
     // 从持久化恢复
     for (const conn of persistence.getConnections()) {
       this.connections.set(conn.id, conn)
+      // 交流记录也要恢复，否则重启后对话历史消失
+      const history = persistence.getMessages(conn.id)
+      if (history.length > 0) this.messages.hydrate(conn.id, history)
     }
+  }
+
+  /** 把某连接的交流记录落盘。 */
+  persistMessages(connectionId: string): void {
+    this.persistence.setMessages(connectionId, this.messages.dump(connectionId))
   }
 
   /**
@@ -140,6 +152,7 @@ export class ConnectionManager {
     this.connections.delete(id)
     this.eventBus.clearConnection(id)
     this.whitelist.clearConnection(id)
+    this.messages.clear(id)
     this.emit('disconnected', conn)
   }
 

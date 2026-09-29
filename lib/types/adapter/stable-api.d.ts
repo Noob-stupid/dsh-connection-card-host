@@ -2,7 +2,7 @@
  * Stable API — 对外暴露的稳定接口层。
  * 浏览器端和卡片通过此接口与宿主交互，隔离内部实现变化。
  */
-import type { Connection, PermissionLevel, CardInstance } from '../types/index.js';
+import type { Connection, PermissionLevel, CardInstance, ConnectionMessage, MessageKind, SendGate } from '../types/index.js';
 import type { ConnectionManager } from '../core/connection-manager.js';
 import type { ConnectionEventBus } from '../core/event-bus.js';
 import type { CardHost, CardTemplateInfo } from '../card-host/loader.js';
@@ -49,5 +49,14 @@ export interface ConnectionCardHostService {
         approvedBy: string[];
     }[];
     listSessions(): KnownSession[];
+    listMessages(connectionId: string, options?: {
+        since?: number;
+        limit?: number;
+    }): ConnectionMessage[];
+    sendMessage(connectionId: string, from: 'a' | 'b', kind: MessageKind, text: string, options?: {
+        replyTo?: string;
+    }): SendGate & {
+        message?: ConnectionMessage;
+    };
 }
 export declare function createStableApi(manager: ConnectionManager, eventBus: ConnectionEventBus, cardHost?: CardHost, adapter?: DSHAdapter): ConnectionCardHostService;

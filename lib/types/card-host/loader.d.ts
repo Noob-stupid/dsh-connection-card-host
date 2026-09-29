@@ -1,4 +1,4 @@
-import type { CardInstance, CardAPI } from '../types/index.js';
+import type { CardInstance, CardAPI, CardScope } from '../types/index.js';
 import type { ConnectionManager } from '../core/connection-manager.js';
 import type { ConnectionEventBus } from '../core/event-bus.js';
 import type { DSHAdapter } from '../adapter/dsh-adapter.js';
@@ -29,6 +29,8 @@ export declare class CardHost {
     private manager;
     private eventBus;
     private adapter;
+    /** 连接两端的规范交流记录（CardAPI.send/read 走它）。 */
+    private messageLog;
     private options;
     /** instanceId → CardAPI。 */
     private apiByInstance;
@@ -52,7 +54,7 @@ export declare class CardHost {
      * @param templateId 卡片模板 id
      * @param connectionId 目标连接 id
      */
-    loadCard(templateId: string, connectionId: string): Promise<CardInstance>;
+    loadCard(templateId: string, connectionId: string, requestedScope?: CardScope): Promise<CardInstance>;
     unloadCard(instanceId: string): Promise<void>;
     reloadCard(instanceId: string): Promise<void>;
     getCardApi(instanceId: string): CardAPI | undefined;

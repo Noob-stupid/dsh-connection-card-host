@@ -4,12 +4,14 @@
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Connection, CardInstance } from '../types/index.js'
+import type { Connection, CardInstance, ConnectionMessage } from '../types/index.js'
 
 export interface PersistedData {
   version: number
   connections: Connection[]
   cardInstances: CardInstance[]
+  /** 每条连接的交流记录（connectionId → 消息数组）。 */
+  messages: Record<string, ConnectionMessage[]>
   settings: Record<string, unknown>
 }
 
@@ -29,7 +31,13 @@ function getBackupPath(): string {
 }
 
 function emptyData(): PersistedData {
-  return { version: CURRENT_VERSION, connections: [], cardInstances: [], settings: {} }
+  return {
+    version: CURRENT_VERSION,
+    connections: [],
+    cardInstances: [],
+    messages: {},
+    settings: {},
+  }
 }
 
 export class Persistence {
@@ -48,21 +56,47 @@ export class Persistence {
     return getBaseDir()
   }
 
+  /**
+   * 把读入的 JSON 归一化成当前结构。
+   *
+   * ⚠️ 必须做：老版本文件缺少新加的字段（例如 `messages`），
+   * 直接当成新结构用会在第一次访问时抛 undefined —— 而且是在
+   * ConnectionManager 构造期间炸，整个 apply 都会挂。
+   * 缺字段补默认值，坏值丢弃，绝不让磁盘上的旧数据决定内存结构。
+   */
+  private normalize(parsed: unknown): PersistedData {
+    const base = emptyData()
+    if (!parsed || typeof parsed !== 'object') return base
+    const p = parsed as Partial<PersistedData>
+
+    const messages: Record<string, ConnectionMessage[]> = {}
+    if (p.messages && typeof p.messages === 'object') {
+      for (const [key, value] of Object.entries(p.messages)) {
+        if (Array.isArray(value)) messages[key] = value as ConnectionMessage[]
+      }
+    }
+
+    return {
+      version: CURRENT_VERSION,
+      connections: Array.isArray(p.connections) ? p.connections : [],
+      cardInstances: Array.isArray(p.cardInstances) ? p.cardInstances : [],
+      messages,
+      settings: p.settings && typeof p.settings === 'object' ? p.settings : {},
+    }
+  }
+
   private load(): PersistedData {
     try {
       if (existsSync(this.dataPath)) {
         const raw = readFileSync(this.dataPath, 'utf8')
-        const parsed = JSON.parse(raw) as PersistedData
-        if (parsed.version === CURRENT_VERSION) return parsed
-        // TODO: 版本迁移逻辑（按版本号顺序执行）
-        return parsed
+        return this.normalize(JSON.parse(raw))
       }
     } catch (e) {
       console.error('[Persistence] load failed, trying backup:', e)
       try {
         if (existsSync(this.backupPath)) {
           const raw = readFileSync(this.backupPath, 'utf8')
-          return JSON.parse(raw) as PersistedData
+          return this.normalize(JSON.parse(raw))
         }
       } catch {
         console.error('[Persistence] backup also failed, starting fresh')
@@ -123,6 +157,24 @@ export class Persistence {
         ci.enabled = false
       }
     }
+    delete this.data.messages[id]
     this.save()
+  }
+
+  /** 某连接的交流记录。 */
+  getMessages(connectionId: string): ConnectionMessage[] {
+    return this.data.messages[connectionId] ?? []
+  }
+
+  /** 原子替换某连接的交流记录（调用方已做好条数上限）。 */
+  setMessages(connectionId: string, messages: ConnectionMessage[]): void {
+    if (messages.length === 0) delete this.data.messages[connectionId]
+    else this.data.messages[connectionId] = messages
+    this.save()
+  }
+
+  /** 所有连接的交流记录（启动时灌入 messageLog）。 */
+  getAllMessages(): Record<string, ConnectionMessage[]> {
+    return this.data.messages
   }
 }

@@ -8,6 +8,14 @@ export type {
   LaneAssignment,
   RailLayout,
 } from './connection.js'
-export type { CardInstance, CardManifest, CardAPI } from './card.js'
+export type {
+  CardInstance,
+  CardManifest,
+  CardAPI,
+  CardScope,
+  ConnectionMessage,
+  MessageKind,
+  SendGate,
+} from './card.js'
 export { RPC_CHANNEL, RPC_ENDPOINTS } from './rpc.js'
 export type { RpcResult, RpcOk, RpcFail, RpcEndpoint } from './rpc.js'

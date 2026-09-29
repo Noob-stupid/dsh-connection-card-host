@@ -15,9 +15,10 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import type { CardInstance, CardManifest, CardAPI } from '../types/index.js'
+import type { CardInstance, CardManifest, CardAPI, CardScope } from '../types/index.js'
 import type { ConnectionManager } from '../core/connection-manager.js'
 import type { ConnectionEventBus } from '../core/event-bus.js'
+import type { ConnectionMessageLog } from '../core/message-log.js'
 import type { DSHAdapter } from '../adapter/dsh-adapter.js'
 import { CardRegistry, type CardTemplate } from './registry.js'
 import { importCardModule, resolveCardEntry } from './sandbox.js'
@@ -50,6 +51,8 @@ export class CardHost {
   private manager: ConnectionManager
   private eventBus: ConnectionEventBus
   private adapter: DSHAdapter
+  /** 连接两端的规范交流记录（CardAPI.send/read 走它）。 */
+  private messageLog: ConnectionMessageLog
   private options: CardHostOptions
   /** instanceId → CardAPI。 */
   private apiByInstance = new Map<string, CardAPI>()
@@ -64,6 +67,7 @@ export class CardHost {
     this.manager = manager
     this.eventBus = eventBus
     this.adapter = adapter
+    this.messageLog = manager.messages
     this.options = options
   }
 
@@ -172,13 +176,20 @@ export class CardHost {
    * @param templateId 卡片模板 id
    * @param connectionId 目标连接 id
    */
-  async loadCard(templateId: string, connectionId: string): Promise<CardInstance> {
+  async loadCard(
+    templateId: string,
+    connectionId: string,
+    requestedScope?: CardScope,
+  ): Promise<CardInstance> {
     const conn = this.manager.getById(connectionId)
     if (!conn) throw new Error(`连接不存在: ${connectionId}`)
 
     this.scanTemplates()
     const template = this.registry.getTemplate(templateId)
     if (!template) throw new Error(`卡片模板未找到: ${templateId}`)
+
+    // 模板可以把自己固定到某一端（scope: 'a'|'b'）；否则用调用方选的，默认双向
+    const scope: CardScope = template.manifest.scope ?? requestedScope ?? 'both'
 
     // 导入卡片模块（含崩溃隔离）
     const mod = await importCardModule(template.entry)
@@ -188,6 +199,7 @@ export class CardHost {
       instanceId: randomUUID(),
       templateId,
       connectionId,
+      scope,
       config: {},
       state: {},
       permissions: 'read',
@@ -202,6 +214,8 @@ export class CardHost {
       instance,
       eventBus: this.eventBus,
       adapter: this.adapter,
+      messageLog: this.messageLog,
+      manager: this.manager,
     })
     this.apiByInstance.set(instance.instanceId, api)
 
@@ -313,6 +327,8 @@ export class CardHost {
             instance,
             eventBus: this.eventBus,
             adapter: this.adapter,
+            messageLog: this.messageLog,
+            manager: this.manager,
           })
           this.apiByInstance.set(instance.instanceId, api)
           mod.apply?.(api)

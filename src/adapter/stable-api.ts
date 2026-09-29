@@ -2,7 +2,7 @@
  * Stable API — 对外暴露的稳定接口层。
  * 浏览器端和卡片通过此接口与宿主交互，隔离内部实现变化。
  */
-import type { Connection, PermissionLevel, CardInstance } from '../types/index.js'
+import type { Connection, PermissionLevel, CardInstance, ConnectionMessage, MessageKind, SendGate } from '../types/index.js'
 import type { ConnectionManager } from '../core/connection-manager.js'
 import type { ConnectionEventBus } from '../core/event-bus.js'
 import type { CardHost, CardTemplateInfo } from '../card-host/loader.js'
@@ -54,6 +54,19 @@ export interface ConnectionCardHostService {
 
   // 会话列表（面板的会话选择器用）
   listSessions(): KnownSession[]
+
+  // 连接交流记录（「双方开启可读写后规范交流配合」的底座）
+  listMessages(
+    connectionId: string,
+    options?: { since?: number; limit?: number },
+  ): ConnectionMessage[]
+  sendMessage(
+    connectionId: string,
+    from: 'a' | 'b',
+    kind: MessageKind,
+    text: string,
+    options?: { replyTo?: string },
+  ): SendGate & { message?: ConnectionMessage }
 }
 
 export function createStableApi(
@@ -94,5 +107,14 @@ export function createStableApi(
     isWhitelisted: (cid, method) => manager.whitelist.isAllowed(cid, method),
     listWhitelistedMethods: (cid) => manager.whitelist.listMethods(cid).map(e => ({ method: e.method, description: e.description, approvedBy: e.approvedBy })),
     listSessions: () => adapter?.listSessions() ?? [],
+    listMessages: (cid, options) => manager.messages.list(cid, options ?? {}),
+    sendMessage: (cid, from, kind, text, options) => {
+      const conn = manager.getById(cid)
+      const result = manager.messages.append(conn, from, kind, text, options ?? {})
+      if (result.ok) manager.persistMessages(cid)
+      return result.ok
+        ? { ok: true, ...(result.message ? { message: result.message } : {}) }
+        : { ok: false, reason: result.reason }
+    },
   }
 }

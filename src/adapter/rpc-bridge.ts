@@ -168,6 +168,28 @@ function buildEndpoints(
       return methods.length
     },
 
+    [RPC_ENDPOINTS.listMessages]: (p) => {
+      const raw = p as { connectionId?: unknown; since?: unknown; limit?: unknown } | null
+      const since = typeof raw?.since === 'number' ? raw.since : undefined
+      const limit = typeof raw?.limit === 'number' ? raw.limit : undefined
+      return service.listMessages(str(p, 'connectionId'), {
+        ...(since !== undefined ? { since } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+      })
+    },
+
+    [RPC_ENDPOINTS.sendMessage]: (p) => {
+      const raw = p as { from?: unknown; kind?: unknown; text?: unknown; replyTo?: unknown } | null
+      const from = raw?.from === 'b' ? 'b' : 'a'
+      const kindRaw = raw?.kind
+      const kind =
+        kindRaw === 'ask' || kindRaw === 'reply' || kindRaw === 'system' ? kindRaw : 'say'
+      const replyTo = typeof raw?.replyTo === 'string' ? raw.replyTo : undefined
+      return service.sendMessage(str(p, 'connectionId'), from, kind, str(p, 'text'), {
+        ...(replyTo ? { replyTo } : {}),
+      })
+    },
+
     [RPC_ENDPOINTS.listWhitelist]: (p) =>
       service.listWhitelistedMethods(str(p, 'connectionId')),
 

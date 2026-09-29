@@ -2,6 +2,7 @@ import type { Connection, PermissionLevel } from '../types/index.js';
 import { Persistence } from './persistence.js';
 import { ConnectionEventBus } from './event-bus.js';
 import { PermissionUpgradeManager, RemoteMethodWhitelist } from './permission.js';
+import { ConnectionMessageLog } from './message-log.js';
 type EventHandler = (conn: Connection) => void;
 export declare class ConnectionManager {
     private connections;
@@ -10,7 +11,11 @@ export declare class ConnectionManager {
     private listeners;
     readonly upgradeManager: PermissionUpgradeManager;
     readonly whitelist: RemoteMethodWhitelist;
+    /** 连接两端的规范交流记录（「交流配合」的底座）。 */
+    readonly messages: ConnectionMessageLog;
     constructor(persistence: Persistence, eventBus: ConnectionEventBus);
+    /** 把某连接的交流记录落盘。 */
+    persistMessages(connectionId: string): void;
     /**
      * 创建连接。若同一对会话已存在连接，返回已有连接。
      * 默认权限 aToB = 'read', bToA = 'read'。

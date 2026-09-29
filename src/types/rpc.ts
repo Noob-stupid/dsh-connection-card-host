@@ -60,6 +60,10 @@ export const RPC_ENDPOINTS = {
   listUpgradeRequests: 'permission/pending',
   /** 协商连接的可远程调用方法白名单。 */
   negotiateWhitelist: 'whitelist/negotiate',
+  /** 读取连接的交流记录。 */
+  listMessages: 'messages/list',
+  /** 以某一端的身份发一条连接消息。 */
+  sendMessage: 'messages/send',
 } as const
 
 export type RpcEndpoint = (typeof RPC_ENDPOINTS)[keyof typeof RPC_ENDPOINTS]
