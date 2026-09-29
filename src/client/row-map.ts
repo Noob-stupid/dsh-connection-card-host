@@ -84,41 +84,69 @@ export function collectSessionRows(snapshot: SessionSnapshotLike | null): Sessio
     }
   }
 
-  // 3) 锚点多数表决求偏移量，补齐没有标记的行。
+  // 3) 锚点之间「排除法补缺」。
   //
-  // 为什么需要：发消息后当前会话变成「活跃」，官方会用状态点**顶掉**我们的标记槽位
-  // （文档明说 "mounted only by a row whose primary state is idle"），
-  // 于是那一行突然没了 id → 竖线断掉，但连接数据其实还在（面板里看着是连着的）。
+  // 为什么需要：会话一开始跑回复就变成「活跃」，官方会用状态点**顶掉**我们的
+  // 标记槽位（文档明说 "mounted only by a row whose primary state is idle"），
+  // 那一行突然没了 id → 竖线断掉；跑完恢复 idle，线又回来。
+  // 用户观察到的「运行回复时连线短暂消失」就是这个。
   //
-  // 侧栏渲染的通常是 ids 的一个**连续片段**，所以 DOM 序号与 ids 序号之间
-  // 存在一个固定偏移量。用已有的锚点投票求出它，就能把缺口补回来。
-  // 偏移量不一致（比如侧栏按工作区分组后重排）时，表决失败 → 退回只用锚点，
-  // 绝不猜——宁可少画一条线，也不把线连到错误的会话上。
-  if (anchorIndexById.size >= 2) {
-    const votes = new Map<number, number>()
-    for (const [domIndex, id] of anchorIndexById) {
-      const idIndex = ids.indexOf(id)
-      if (idIndex < 0) continue
-      const offset = idIndex - domIndex
-      votes.set(offset, (votes.get(offset) ?? 0) + 1)
+  // 做法：侧栏渲染的是 ids 的**保序视图**（过滤/分组但相对顺序不变）。
+  // 两个已知锚点之间的缺口，其候选 = ids 里落在两锚点之间、且没被别的行认领的条目。
+  // 只有候选数**恰好等于**缺口行数时才采用 —— 这是唯一能确定的情况，
+  // 其余一律放弃：宁可少画一条线，也不把线连到错误的会话上。
+  if (anchorIndexById.size > 0) {
+    const idIndexById = new Map<string, number>()
+    ids.forEach((id, i) => { if (!idIndexById.has(id)) idIndexById.set(id, i) })
+
+    const claimedIdIndexes = new Set<number>()
+    for (const id of idByRow.values()) {
+      const i = idIndexById.get(id)
+      if (i !== undefined) claimedIdIndexes.add(i)
     }
 
-    let bestOffset = 0
-    let bestCount = 0
-    for (const [offset, count] of votes) {
-      if (count > bestCount) {
-        bestCount = count
-        bestOffset = offset
+    // 锚点按 DOM 序号排序
+    const anchors = [...anchorIndexById.entries()]
+      .map(([domIndex, id]) => ({ domIndex, idIndex: idIndexById.get(id) ?? -1 }))
+      .filter((a) => a.idIndex >= 0)
+      .sort((a, b) => a.domIndex - b.domIndex)
+
+    /** 在 (loId, hiId) 区间内给 (loDom, hiDom) 的空档补 id。 */
+    const fillGap = (
+      loDom: number,
+      hiDom: number,
+      loIdIndex: number,
+      hiIdIndex: number,
+    ): void => {
+      const gapDoms: number[] = []
+      for (let i = loDom + 1; i < hiDom; i++) {
+        if (!idByRow.has(rows[i])) gapDoms.push(i)
       }
+      if (gapDoms.length === 0) return
+
+      const candidates: number[] = []
+      for (let k = loIdIndex + 1; k < hiIdIndex; k++) {
+        if (!claimedIdIndexes.has(k)) candidates.push(k)
+      }
+      // 唯一解才采用
+      if (candidates.length !== gapDoms.length) return
+
+      gapDoms.forEach((domIndex, n) => {
+        const id = ids[candidates[n]]
+        if (!id) return
+        idByRow.set(rows[domIndex], id)
+        claimedIdIndexes.add(candidates[n])
+      })
     }
 
-    // 要求多数锚点一致（≥2 且占比过半），才认为顺序对齐可信
-    if (bestCount >= 2 && bestCount * 2 > anchorIndexById.size) {
-      rows.forEach((row, i) => {
-        if (idByRow.has(row)) return
-        const candidate = ids[i + bestOffset]
-        if (candidate) idByRow.set(row, candidate)
-      })
+    // 相邻锚点之间
+    for (let i = 0; i + 1 < anchors.length; i++) {
+      fillGap(anchors[i].domIndex, anchors[i + 1].domIndex, anchors[i].idIndex, anchors[i + 1].idIndex)
+    }
+    // 头部（第一个锚点之前）与尾部（最后一个锚点之后）
+    if (anchors.length > 0) {
+      fillGap(-1, anchors[0].domIndex, -1, anchors[0].idIndex)
+      fillGap(anchors[anchors.length - 1].domIndex, rows.length, anchors[anchors.length - 1].idIndex, ids.length)
     }
   }
 

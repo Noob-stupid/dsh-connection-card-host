@@ -28,9 +28,19 @@ export function SessionRowMarker({ sessionId }: SessionRowMarkerProps) {
     const row = ref.current?.closest('[role="treeitem"]')
     if (!row) return
     row.setAttribute(ROW_ID_ATTR, sessionId)
-    return () => {
-      row.removeAttribute(ROW_ID_ATTR)
-    }
+
+    // ⚠️ 卸载时**故意不删**这个属性。
+    //
+    // 会话一开始跑回复就变「活跃」，官方立刻用状态点顶掉本槽位
+    //（文档原话 "mounted only by a row whose primary state is idle"），
+    // 组件随之卸载。若在这里 removeAttribute，那一行的 id 就没了 →
+    // 认不出它 → 连线在对方跑回复期间整段消失、跑完才回来。
+    // 这正是用户观察到的「运行回复时连线短暂消失」。
+    //
+    // 留着是安全的：侧栏以 session id 作 key，React 复用**同一行**的 DOM 节点，
+    // 属性不会串到别的会话；会话被删时节点整体丢弃。
+    // 行再次回到 idle 时组件重新挂载，写入同样的值。
+    return undefined
   }, [sessionId])
 
   return <span ref={ref} style={{ display: 'none' }} aria-hidden="true" />
