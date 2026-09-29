@@ -46,15 +46,39 @@ export function SessionRailOverlay({ client, sessions }: SessionRailOverlayProps
   useEffect(() => {
     if (typeof document === 'undefined') return
 
+    // 最近一次「见过」的行位置。某个会话行因状态变化被顶掉标记、或列表重排
+    // 造成瞬时缺失时，短时间内仍沿用旧坐标，避免竖线闪断。
+    const lastSeen = new Map<string, { info: SessionRowInfo; at: number }>()
+    const HOLD_MS = 1500
+
     const measure = () => {
-      const next = collectSessionRows(snapshot)
+      const fresh = collectSessionRows(snapshot)
+      const now = Date.now()
+
+      for (const info of fresh) lastSeen.set(info.id, { info, at: now })
+      for (const [id, entry] of lastSeen) {
+        if (now - entry.at > HOLD_MS) lastSeen.delete(id)
+      }
+
+      // 用「新鲜 + 仍在保鲜期」的并集作图
+      const merged: SessionRowInfo[] = []
+      const seen = new Set<string>()
+      for (const info of fresh) {
+        merged.push(info)
+        seen.add(info.id)
+      }
+      for (const [id, entry] of lastSeen) {
+        if (seen.has(id)) continue
+        merged.push(entry.info)
+      }
+      merged.sort((a, b) => a.top - b.top)
+
       setRows((prev) => {
-        // 只在真正变化时 setState，避免每 400ms 触发一次无意义渲染
-        if (prev.length === next.length) {
+        if (prev.length === merged.length) {
           let same = true
-          for (let i = 0; i < next.length; i++) {
+          for (let i = 0; i < merged.length; i++) {
             const a = prev[i]
-            const b = next[i]
+            const b = merged[i]
             if (
               a.id !== b.id ||
               Math.abs(a.top - b.top) > 0.5 ||
@@ -67,7 +91,7 @@ export function SessionRailOverlay({ client, sessions }: SessionRailOverlayProps
           }
           if (same) return prev
         }
-        return next
+        return merged
       })
     }
 

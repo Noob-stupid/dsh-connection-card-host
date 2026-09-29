@@ -133,6 +133,41 @@ function buildEndpoints(
     [RPC_ENDPOINTS.renderCardPanel]: (p) =>
       service.renderCardPanel(str(p, 'instanceId')),
 
+    // 调试：向连接发事件，手动触发卡片逻辑
+    [RPC_ENDPOINTS.debugEmit]: (p) => {
+      const event = str(p, 'event')
+      const data = (p as { data?: unknown } | null)?.data
+      service.emitConnectionEvent(str(p, 'connectionId'), event, data)
+      return null
+    },
+
+    [RPC_ENDPOINTS.listUpgradeRequests]: (p) => {
+      const connectionId = (p as { connectionId?: unknown } | null)?.connectionId
+      return service.listPendingUpgrades(
+        typeof connectionId === 'string' && connectionId ? connectionId : undefined,
+      )
+    },
+
+    [RPC_ENDPOINTS.negotiateWhitelist]: (p) => {
+      const raw = (p as { methods?: unknown } | null)?.methods
+      const methods = Array.isArray(raw)
+        ? raw
+            .map((m) => {
+              const entry = m as { method?: unknown; description?: unknown }
+              return typeof entry?.method === 'string'
+                ? {
+                    method: entry.method,
+                    description:
+                      typeof entry.description === 'string' ? entry.description : '',
+                  }
+                : null
+            })
+            .filter((m): m is { method: string; description: string } => m !== null)
+        : []
+      service.negotiateWhitelist(str(p, 'connectionId'), methods)
+      return methods.length
+    },
+
     [RPC_ENDPOINTS.listWhitelist]: (p) =>
       service.listWhitelistedMethods(str(p, 'connectionId')),
 

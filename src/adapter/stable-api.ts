@@ -36,6 +36,17 @@ export interface ConnectionCardHostService {
   /** 渲染卡片面板 HTML（宿主侧跑 renderPanel/mountPanel，取回 HTML）。 */
   renderCardPanel(instanceId: string): Promise<string | null>
 
+  /** 待确认的权限升级请求（面板据此显示「待确认 + 同意/拒绝」）。 */
+  listPendingUpgrades(connectionId?: string): {
+    id: string
+    connectionId: string
+    direction: 'aToB' | 'bToA'
+    from: PermissionLevel
+    to: PermissionLevel
+    acceptedCount: number
+    requiredAccepts: number
+  }[]
+
   // 白名单管理
   negotiateWhitelist(connectionId: string, methods: { method: string; description: string }[]): void
   isWhitelisted(connectionId: string, method: string): boolean
@@ -69,6 +80,16 @@ export function createStableApi(
     reloadCard: (iid) => cardHost!.reloadCard(iid),
     listCardTemplates: (cid) => cardHost!.listTemplates(cid),
     renderCardPanel: (iid) => cardHost!.renderCardPanel(iid),
+    listPendingUpgrades: (cid) =>
+      manager.upgradeManager.getPendingRequests(cid).map((r) => ({
+        id: r.id,
+        connectionId: r.connectionId,
+        direction: r.direction,
+        from: r.from,
+        to: r.to,
+        acceptedCount: r.acceptedBy.size,
+        requiredAccepts: r.requiredAccepts,
+      })),
     negotiateWhitelist: (cid, methods) => manager.whitelist.negotiate(cid, methods),
     isWhitelisted: (cid, method) => manager.whitelist.isAllowed(cid, method),
     listWhitelistedMethods: (cid) => manager.whitelist.listMethods(cid).map(e => ({ method: e.method, description: e.description, approvedBy: e.approvedBy })),

@@ -205,6 +205,10 @@ export class DSHAdapter {
       this.auditLog?.(`requestRemote 失败: ${sessionId}.${method} ${String(e)}`)
       console.error(`[DSHAdapter] requestRemote failed for ${sessionId}.${method}:`, e)
     }
+    // 走到这里 = 宿主没有 remote 通道。必须记日志，否则调用方只看到"没反应"
+    this.auditLog?.(
+      `requestRemote 无通道（宿主无 ctx.remote）: ${sessionId}.${method} → not_available`,
+    )
     return { error: 'not_available' }
   }
 

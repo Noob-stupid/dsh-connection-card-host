@@ -51,6 +51,15 @@ export const RPC_ENDPOINTS = {
   listSessions: 'sessions/list',
   /** 浏览器半的诊断上报通道（宿主落到 client-debug.log）。 */
   debugLog: 'debug/log',
+  /**
+   * 调试用：向连接的 eventBus 发一个事件，用来手动触发卡片逻辑。
+   * 卡片订阅的是连接级事件，没有这个入口就没法在不接入真实 DSH 事件源的情况下测试。
+   */
+  debugEmit: 'debug/emit',
+  /** 待确认的权限升级请求。 */
+  listUpgradeRequests: 'permission/pending',
+  /** 协商连接的可远程调用方法白名单。 */
+  negotiateWhitelist: 'whitelist/negotiate',
 } as const
 
 export type RpcEndpoint = (typeof RPC_ENDPOINTS)[keyof typeof RPC_ENDPOINTS]

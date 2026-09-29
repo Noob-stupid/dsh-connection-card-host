@@ -28,6 +28,16 @@ export interface ConnectionCardHostService {
     listCardTemplates(connectionId?: string): CardTemplateInfo[];
     /** 渲染卡片面板 HTML（宿主侧跑 renderPanel/mountPanel，取回 HTML）。 */
     renderCardPanel(instanceId: string): Promise<string | null>;
+    /** 待确认的权限升级请求（面板据此显示「待确认 + 同意/拒绝」）。 */
+    listPendingUpgrades(connectionId?: string): {
+        id: string;
+        connectionId: string;
+        direction: 'aToB' | 'bToA';
+        from: PermissionLevel;
+        to: PermissionLevel;
+        acceptedCount: number;
+        requiredAccepts: number;
+    }[];
     negotiateWhitelist(connectionId: string, methods: {
         method: string;
         description: string;
