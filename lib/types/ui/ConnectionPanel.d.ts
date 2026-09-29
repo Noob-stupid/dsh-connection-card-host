@@ -1,6 +1,6 @@
-import type { ConnectionCardHostService } from '../adapter/stable-api.js';
+import type { ConnectionCardHostClient } from '../client/host-client.js';
 interface ConnectionPanelProps {
-    host: ConnectionCardHostService;
+    client: ConnectionCardHostClient | null;
 }
-export declare function ConnectionPanel({ host }: ConnectionPanelProps): import("react").JSX.Element;
+export declare function ConnectionPanel({ client }: ConnectionPanelProps): import("react").JSX.Element;
 export {};

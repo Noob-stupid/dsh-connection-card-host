@@ -4,6 +4,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { checkVersion, type VersionCheckResult } from './version-guard.js'
+import { safeCtxGet, safeCtxMethod } from '../safe-ctx.js'
 
 export interface SessionStatus {
   id: string
@@ -46,11 +47,15 @@ export class DSHAdapter {
     this.auditLog = options?.auditLog
   }
 
-  /** 启动时调用，检查 DSH 版本兼容性 */
+  /**
+   * 启动时调用，检查 DSH 版本兼容性。
+   *
+   * ⚠️ 不要在 cordis 上下文上直接读未声明的服务：Context 是 Proxy，
+   * 读未 inject 的属性会抛 `cannot get property "x" without inject`。
+   * 一律经 safeCtxGet。
+   */
   init(): VersionCheckResult {
-    // 尝试从 ctx 获取版本号
-    const version = (this.ctx as any).dsh?.version ?? '0.1.1-rc.2'
-    this.versionResult = checkVersion(version)
+    this.versionResult = checkVersion(this.detectVersion())
     if (!this.versionResult.supported) {
       console.warn(
         `[DSHAdapter] DSH version ${this.versionResult.current} not in supported range ${this.versionResult.range}. Running in degraded mode.`,
@@ -59,13 +64,26 @@ export class DSHAdapter {
     return this.versionResult
   }
 
+  /** 尽力探测 DSH 版本；拿不到就返回 undefined（守卫会 fail-open）。 */
+  private detectVersion(): string | undefined {
+    const fromDsh = safeCtxGet<{ version?: unknown }>(this.ctx, 'dsh')?.version
+    if (typeof fromDsh === 'string' && fromDsh) return fromDsh
+
+    const fromLoader = safeCtxGet<{ version?: unknown }>(this.ctx, 'loader')?.version
+    if (typeof fromLoader === 'string' && fromLoader) return fromLoader
+
+    return undefined
+  }
+
   getVersionCheck(): VersionCheckResult {
     return this.versionResult ?? this.init()
   }
 
   async getSessionStatus(sessionId: string): Promise<SessionStatus> {
     try {
-      const sessions = (this.ctx as any).sessions
+      const sessions = safeCtxGet<{
+        get?(id: string): Promise<{ title?: string; status?: string; updatedAt?: number } | undefined>
+      }>(this.ctx, 'sessions')
       if (sessions?.get) {
         const s = await sessions.get(sessionId)
         if (s) return { id: sessionId, title: s.title ?? '', status: s.status ?? 'unknown', updatedAt: s.updatedAt ?? 0 }
@@ -107,7 +125,9 @@ export class DSHAdapter {
     const timeoutMs = 30_000
     this.auditLog?.(`requestRemote 调用: ${sessionId}.${method}`)
     try {
-      const remote = (this.ctx as any).remote
+      const remote = safeCtxGet<{
+        call?(sid: string, m: string, p: unknown): Promise<unknown>
+      }>(this.ctx, 'remote')
       if (remote?.call) {
         const result = await Promise.race([
           remote.call(sessionId, method, params),
@@ -135,12 +155,22 @@ export class DSHAdapter {
   }
 
   onSessionEvent(handler: SessionEventHandler): () => void {
-    // 订阅 DSH 全局会话事件，过滤后转发
-    const off = (this.ctx as any).on?.('session/event', (data: any) => {
-      if (data?.sessionId && data?.event) {
-        handler(data.sessionId, data.event, data.payload)
-      }
-    })
-    return typeof off === 'function' ? off : () => {}
+    // ctx.on 是 cordis 事件总线混入的真实方法；仍用 safeCtxMethod 兜底。
+    const on = safeCtxMethod<(event: string, cb: (data: { sessionId?: string; event?: string; payload?: unknown }) => void) => unknown>(
+      this.ctx,
+      'on',
+    )
+    if (!on) return () => {}
+    try {
+      const off = on('session/event', (data) => {
+        if (data?.sessionId && data?.event) {
+          handler(data.sessionId, data.event, data.payload)
+        }
+      })
+      return typeof off === 'function' ? (off as () => void) : () => {}
+    } catch (e) {
+      console.warn('[DSHAdapter] onSessionEvent 订阅失败:', e)
+      return () => {}
+    }
   }
 }

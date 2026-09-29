@@ -9,3 +9,5 @@ export type {
   RailLayout,
 } from './connection.js'
 export type { CardInstance, CardManifest, CardAPI } from './card.js'
+export { RPC_CHANNEL, RPC_ENDPOINTS } from './rpc.js'
+export type { RpcResult, RpcOk, RpcFail, RpcEndpoint } from './rpc.js'

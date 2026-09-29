@@ -1,40 +1,74 @@
 /**
- * ConnectionPanel — 卡片面板。
+ * ConnectionPanel — 连接卡片面板。
  * 入口：sidebar.panellist 槽位。
  * 结构：顶部 tab（全部/正常/告警）→ 连接行（可展开卡片列表）。
- * 悬停连接行 → 轨道对应高亮；悬停轨道 → 面板行背景填充。
+ *
+ * 数据来自宿主（经 Connection RPC），用 useConnections 轮询刷新。
  */
-import { useState, useEffect, useCallback } from 'react'
-import type { ConnectionCardHostService } from '../adapter/stable-api.js'
-import type { Connection } from '../types/index.js'
+import { useState, useCallback } from 'react'
+import type { Connection, PermissionLevel } from '../types/index.js'
+import type { ConnectionCardHostClient } from '../client/host-client.js'
+import { useConnections } from './hooks/useConnections.js'
 import { CardStack } from './CardStack.js'
 
 interface ConnectionPanelProps {
-  host: ConnectionCardHostService
+  client: ConnectionCardHostClient | null
 }
 
 type Tab = 'all' | 'normal' | 'alert'
 
-const PERM_LABELS = { read: '只读', suggest: '建议', write: '写入' } as const
+const PERM_LABELS: Record<PermissionLevel, string> = {
+  read: '只读',
+  suggest: '建议',
+  write: '写入',
+}
 
-export function ConnectionPanel({ host }: ConnectionPanelProps) {
-  const [connections, setConnections] = useState<Connection[]>([])
+const PERM_CYCLE: PermissionLevel[] = ['read', 'suggest', 'write']
+
+export function ConnectionPanel({ client }: ConnectionPanelProps) {
+  const { connections, error, loaded, refresh } = useConnections(client)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>('all')
-
-  // 订阅连接变更，实时刷新
-  useEffect(() => {
-    const refresh = () => setConnections(host.getAllConnections())
-    refresh()
-    const off1 = host.onConnectionEvent('created', refresh)
-    const off2 = host.onConnectionEvent('updated', refresh)
-    const off3 = host.onConnectionEvent('disconnected', refresh)
-    return () => { off1(); off2(); off3() }
-  }, [host])
+  const [busy, setBusy] = useState<string | null>(null)
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id))
   }, [])
+
+  /** 权限升级：低→高走协商（需双方确认），高→低直接生效。 */
+  const cyclePermission = useCallback(
+    async (conn: Connection, direction: 'aToB' | 'bToA') => {
+      if (!client) return
+      const current = conn.permission[direction]
+      const next = PERM_CYCLE[(PERM_CYCLE.indexOf(current) + 1) % PERM_CYCLE.length]
+      setBusy(conn.id)
+      try {
+        await client.requestPermissionUpgrade(conn.id, direction, next)
+        await refresh()
+      } catch (e) {
+        console.error('[connection-panel] 权限变更失败:', e)
+      } finally {
+        setBusy(null)
+      }
+    },
+    [client, refresh],
+  )
+
+  const disconnect = useCallback(
+    async (id: string) => {
+      if (!client) return
+      setBusy(id)
+      try {
+        await client.disconnect(id)
+        await refresh()
+      } catch (e) {
+        console.error('[connection-panel] 断开失败:', e)
+      } finally {
+        setBusy(null)
+      }
+    },
+    [client, refresh],
+  )
 
   const filtered = connections.filter((c) => {
     if (tab === 'all') return true
@@ -55,15 +89,31 @@ export function ConnectionPanel({ host }: ConnectionPanelProps) {
           </div>
         ))}
       </div>
+
+      {!client && (
+        <div style={{ padding: 16, opacity: 0.6 }}>
+          连接宿主通道未就绪
+        </div>
+      )}
+
+      {client && error && (
+        <div style={{ padding: '8px 12px', color: '#EF4444', fontSize: 12 }}>
+          宿主通信失败：{error}
+        </div>
+      )}
+
+      {client && !error && loaded && filtered.length === 0 && (
+        <div style={{ padding: 16, opacity: 0.5 }}>暂无连接</div>
+      )}
+
       <div className="connection-panel__list">
-        {filtered.length === 0 && (
-          <div style={{ padding: 16, opacity: 0.5 }}>暂无连接</div>
-        )}
         {filtered.map((conn) => {
+          const aToB = conn.permission.aToB
+          const bToA = conn.permission.bToA
           const permLabel =
-            conn.permission.aToB === conn.permission.bToA
-              ? PERM_LABELS[conn.permission.aToB]
-              : `${PERM_LABELS[conn.permission.aToB]}↔${PERM_LABELS[conn.permission.bToA]}`
+            aToB === bToA
+              ? PERM_LABELS[aToB]
+              : `${PERM_LABELS[aToB]}↔${PERM_LABELS[bToA]}`
           const healthColor =
             conn.health === 'green' ? '#10B981' : conn.health === 'yellow' ? '#F59E0B' : '#EF4444'
           return (
@@ -76,7 +126,43 @@ export function ConnectionPanel({ host }: ConnectionPanelProps) {
                 {conn.sessionA.slice(0, 6)} ↔ {conn.sessionB.slice(0, 6)}{' '}
                 {permLabel} [{conn.cards.length} 张卡片]
               </div>
-              {expandedId === conn.id && <CardStack connection={conn} />}
+              {expandedId === conn.id && (
+                <>
+                  <CardStack connection={conn} />
+                  <div style={{ display: 'flex', gap: 8, padding: '6px 12px', fontSize: 12 }}>
+                    <button
+                      type="button"
+                      disabled={busy === conn.id}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void cyclePermission(conn, 'aToB')
+                      }}
+                    >
+                      权限 A→B: {PERM_LABELS[aToB]}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy === conn.id}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void cyclePermission(conn, 'bToA')
+                      }}
+                    >
+                      权限 B→A: {PERM_LABELS[bToA]}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy === conn.id}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void disconnect(conn.id)
+                      }}
+                    >
+                      断开
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           )
         })}

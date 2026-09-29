@@ -34,8 +34,16 @@ export declare class DSHAdapter {
         whitelistCheck?: (connectionId: string, method: string) => boolean;
         auditLog?: (msg: string) => void;
     });
-    /** 启动时调用，检查 DSH 版本兼容性 */
+    /**
+     * 启动时调用，检查 DSH 版本兼容性。
+     *
+     * ⚠️ 不要在 cordis 上下文上直接读未声明的服务：Context 是 Proxy，
+     * 读未 inject 的属性会抛 `cannot get property "x" without inject`。
+     * 一律经 safeCtxGet。
+     */
     init(): VersionCheckResult;
+    /** 尽力探测 DSH 版本；拿不到就返回 undefined（守卫会 fail-open）。 */
+    private detectVersion;
     getVersionCheck(): VersionCheckResult;
     getSessionStatus(sessionId: string): Promise<SessionStatus>;
     getSessionLog(_sessionId: string): Promise<SessionLogEntry[]>;
