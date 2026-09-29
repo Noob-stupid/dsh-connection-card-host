@@ -45,6 +45,8 @@ export const RPC_ENDPOINTS = {
   loadCard: 'cards/load',
   unloadCard: 'cards/unload',
   reloadCard: 'cards/reload',
+  listCardTemplates: 'cards/templates',
+  renderCardPanel: 'cards/panel',
   listWhitelist: 'whitelist/list',
   listSessions: 'sessions/list',
   /** 浏览器半的诊断上报通道（宿主落到 client-debug.log）。 */

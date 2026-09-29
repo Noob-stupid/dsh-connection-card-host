@@ -25,6 +25,18 @@ export interface KnownSessionView {
   updatedAt: number
 }
 
+/** 可用卡片模板（面板的卡片装载区）。 */
+export interface CardTemplateView {
+  templateId: string
+  name: string
+  version: string
+  source: 'builtin' | 'installed'
+  requires: { read: string[]; write: string[] }
+  events: string[]
+  hasPanel: boolean
+  loadedCount: number
+}
+
 export interface ConnectionCardHostClient {
   health(): Promise<{ ready: boolean; connections: number }>
   listConnections(): Promise<RemoteConnection[]>
@@ -42,6 +54,8 @@ export interface ConnectionCardHostClient {
   loadCard(templateId: string, connectionId: string): Promise<RemoteCardInstance>
   unloadCard(instanceId: string): Promise<void>
   reloadCard(instanceId: string): Promise<void>
+  listCardTemplates(connectionId?: string): Promise<CardTemplateView[]>
+  renderCardPanel(instanceId: string): Promise<string | null>
   listWhitelistedMethods(connectionId: string): Promise<WhitelistEntryView[]>
   listSessions(): Promise<KnownSessionView[]>
   /** 诊断上报（浏览器里读不到 console，只能借 RPC 落盘）。 */
@@ -102,6 +116,9 @@ export function createHostClient(rpc: RpcCaller): ConnectionCardHostClient {
       invoke(RPC_ENDPOINTS.loadCard, { templateId, connectionId }),
     unloadCard: (instanceId) => invoke(RPC_ENDPOINTS.unloadCard, { instanceId }),
     reloadCard: (instanceId) => invoke(RPC_ENDPOINTS.reloadCard, { instanceId }),
+    listCardTemplates: (connectionId) =>
+      invoke(RPC_ENDPOINTS.listCardTemplates, connectionId ? { connectionId } : {}),
+    renderCardPanel: (instanceId) => invoke(RPC_ENDPOINTS.renderCardPanel, { instanceId }),
     listWhitelistedMethods: (connectionId) =>
       invoke(RPC_ENDPOINTS.listWhitelist, { connectionId }),
     listSessions: () => invoke(RPC_ENDPOINTS.listSessions),

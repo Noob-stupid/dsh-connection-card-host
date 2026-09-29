@@ -40,6 +40,8 @@ export declare const RPC_ENDPOINTS: {
     readonly loadCard: "cards/load";
     readonly unloadCard: "cards/unload";
     readonly reloadCard: "cards/reload";
+    readonly listCardTemplates: "cards/templates";
+    readonly renderCardPanel: "cards/panel";
     readonly listWhitelist: "whitelist/list";
     readonly listSessions: "sessions/list";
     /** 浏览器半的诊断上报通道（宿主落到 client-debug.log）。 */

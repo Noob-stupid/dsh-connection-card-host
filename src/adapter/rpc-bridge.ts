@@ -122,6 +122,17 @@ function buildEndpoints(
       return null
     },
 
+    // connectionId 可选：不传就只列模板（loadedCount 全为 0）
+    [RPC_ENDPOINTS.listCardTemplates]: (p) => {
+      const connectionId = (p as { connectionId?: unknown } | null)?.connectionId
+      return service.listCardTemplates(
+        typeof connectionId === 'string' && connectionId ? connectionId : undefined,
+      )
+    },
+
+    [RPC_ENDPOINTS.renderCardPanel]: (p) =>
+      service.renderCardPanel(str(p, 'instanceId')),
+
     [RPC_ENDPOINTS.listWhitelist]: (p) =>
       service.listWhitelistedMethods(str(p, 'connectionId')),
 

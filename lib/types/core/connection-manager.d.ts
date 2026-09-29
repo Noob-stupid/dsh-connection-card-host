@@ -25,6 +25,11 @@ export declare class ConnectionManager {
     acceptPermissionUpgrade(requestId: string, acceptorId: string): boolean;
     /** 拒绝权限升级请求 */
     rejectPermissionUpgrade(requestId: string, rejectorId: string): void;
+    /**
+     * 把某条连接的当前状态落盘。
+     * 连接上的卡片增删不经过 create/updatePermission，需要显式调用。
+     */
+    persistConnection(id: string): void;
     updatePermission(id: string, direction: 'aToB' | 'bToA', level: PermissionLevel): void;
     disconnect(id: string): void;
     getBySession(sessionId: string): Connection[];

@@ -20,6 +20,20 @@ export interface KnownSessionView {
     title: string;
     updatedAt: number;
 }
+/** 可用卡片模板（面板的卡片装载区）。 */
+export interface CardTemplateView {
+    templateId: string;
+    name: string;
+    version: string;
+    source: 'builtin' | 'installed';
+    requires: {
+        read: string[];
+        write: string[];
+    };
+    events: string[];
+    hasPanel: boolean;
+    loadedCount: number;
+}
 export interface ConnectionCardHostClient {
     health(): Promise<{
         ready: boolean;
@@ -36,6 +50,8 @@ export interface ConnectionCardHostClient {
     loadCard(templateId: string, connectionId: string): Promise<RemoteCardInstance>;
     unloadCard(instanceId: string): Promise<void>;
     reloadCard(instanceId: string): Promise<void>;
+    listCardTemplates(connectionId?: string): Promise<CardTemplateView[]>;
+    renderCardPanel(instanceId: string): Promise<string | null>;
     listWhitelistedMethods(connectionId: string): Promise<WhitelistEntryView[]>;
     listSessions(): Promise<KnownSessionView[]>;
     /** 诊断上报（浏览器里读不到 console，只能借 RPC 落盘）。 */

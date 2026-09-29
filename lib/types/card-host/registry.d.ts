@@ -7,11 +7,21 @@ export interface CardTemplate {
     templateId: string;
     version: string;
     dir: string;
+    /** 入口模块（package.json 的 main，缺省 dist/index.js）。 */
+    entry: string;
+    /** 来源：随插件发布 / 用户安装。 */
+    source: 'builtin' | 'installed';
     manifest: CardManifest;
 }
 export interface CardModule {
     apply?: (api: unknown) => void;
-    mountPanel?: (element: HTMLElement, api: unknown) => void;
+    /**
+     * 面板渲染。宿主侧调用（卡片模块跑在宿主进程里），
+     * `element` 是宿主提供的 DOM 替身，只取 innerHTML 结果。
+     */
+    mountPanel?: (element: unknown, api: unknown) => void;
+    /** 纯字符串面板（优先于 mountPanel；对宿主更友好，不需要 DOM 替身）。 */
+    renderPanel?: (api: unknown) => string;
 }
 export declare class CardRegistry {
     private templates;

@@ -289,7 +289,7 @@ export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
                       </div>
                     </div>
 
-                    <CardStack connection={conn} />
+                    <CardStack connection={conn} client={client} onChanged={refresh} />
 
                     <div className="ccr-conn__actions">
                       <button

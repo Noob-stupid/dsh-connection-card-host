@@ -170,3 +170,61 @@ export function mountPanel(element, api) {
 | monitor-card | 监控预设状态、会话空闲 | read | preset_error, session_idle |
 | self-heal-card | 预设损坏时自动修复 | read + write | preset_error, preset_repaired |
 | goal-relay-card | 在连接的会话间中继目标 | read + write | goal_updated, goal_completed |
+
+---
+
+## 实现状态
+
+### 已实现（可用）
+
+| 能力 | 入口 | 说明 |
+|---|---|---|
+| 模板发现 | `listTemplates()` / RPC `cards/templates` | 扫描两个根目录：内置（随插件发布的 `cards/`）+ 已安装（`$DSH_HOME/connection-cards/cards/`）。读每个包 `package.json` 的 `dshCard` 字段 |
+| 装载到连接 | `loadCard()` / RPC `cards/load` | import 模块 → 建实例 → 挂到连接 → `apply(api)` → **立即落盘** |
+| 卸载 | `unloadCard()` / RPC `cards/unload` | 从连接摘除 + 注销实例 + 落盘 |
+| 重载 | `reloadCard()` / RPC `cards/reload` | 清模块缓存重新 import（改卡片代码后不用重启） |
+| 面板渲染 | `renderCardPanel()` / RPC `cards/panel` | 见下方「面板渲染」 |
+| 重启重放 | `restoreAll()`（宿主 apply 时自动调用） | 连接从 `connections.json` 恢复，但卡片 `apply()` 不会自动重跑 —— 不重放卡片就是「哑」的（事件订阅、工具注册全丢） |
+| 崩溃隔离 | `sandbox.ts` | 卡片 import/apply 抛异常不会拖垮宿主 |
+| 面板 UI | 连接面板 → 展开连接 → 卡片区 | 列出可用模板一键添加；已装载的可「重载」「移除」 |
+
+### 面板渲染：为什么在宿主侧跑
+
+卡片模块 **import 在宿主进程**（`apply` 要订阅连接事件、注册工具，这些都在宿主侧），
+但协议里 `mountPanel(element, api)` 收的是 `HTMLElement`，而宿主没有 DOM。
+
+所以宿主提供一个**只支持 `innerHTML` 的 DOM 替身**（`card-host/dom-shim.ts`），
+调用 `mountPanel` 后取回 HTML 交给浏览器注入。
+
+**优先建议新卡片导出 `renderPanel(api): string`** —— 纯字符串，不需要 DOM 替身，语义更干净：
+
+```js
+export function renderPanel(api) {
+  return `<div class="my-card">状态：${api ? '正常' : '未知'}</div>`
+}
+```
+
+**局限（务必知悉）**：`mountPanel` 里做真实 DOM 操作
+（`appendChild`、`addEventListener`、`querySelector`）**不会生效** ——
+替身只提供空实现。需要交互式面板的卡片必须导出 `renderPanel`，
+或者等后续把卡片 UI 资源下发给浏览器执行。
+
+### 未实现
+
+| 能力 | 状态 |
+|---|---|
+| npm registry 安装 | 未实现。目前只能把卡片目录放到 `$DSH_HOME/connection-cards/cards/<id>/` |
+| 自定义 URL 安装 | 未实现 |
+| 卡片面板的浏览器侧执行 | 未实现（见上方局限） |
+| `requestRemote` | **空壳**：宿主没有 `ctx.remote`，永远返回 `not_available`。白名单校验与审计日志已就绪，缺的是真正能打到对端会话的执行通道 |
+| `repairPreset` | stub，未接真实修复逻辑 |
+
+### 手动安装一张卡片
+
+```powershell
+# 卡片目录需含 package.json（带 dshCard 字段）与入口 JS
+Copy-Item -Recurse .\my-card "$env:USERPROFILE\.dsh\connection-cards\cards\my-card"
+```
+
+宿主下次扫描模板时即可在面板里看到它（`scanTemplates()` 幂等，重载插件即刷新）。
+

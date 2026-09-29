@@ -5,9 +5,9 @@
 import type { Connection, PermissionLevel, CardInstance } from '../types/index.js';
 import type { ConnectionManager } from '../core/connection-manager.js';
 import type { ConnectionEventBus } from '../core/event-bus.js';
-import type { CardHost } from '../card-host/loader.js';
+import type { CardHost, CardTemplateInfo } from '../card-host/loader.js';
 import type { DSHAdapter, KnownSession } from './dsh-adapter.js';
-export type { KnownSession };
+export type { KnownSession, CardTemplateInfo };
 export interface ConnectionCardHostService {
     createConnection(sessionA: string, sessionB: string): Connection;
     disconnect(id: string): void;
@@ -24,6 +24,10 @@ export interface ConnectionCardHostService {
     loadCard(templateId: string, connectionId: string): Promise<CardInstance>;
     unloadCard(instanceId: string): Promise<void>;
     reloadCard(instanceId: string): Promise<void>;
+    /** 可用卡片模板（含在当前连接上已装载的数量）。 */
+    listCardTemplates(connectionId?: string): CardTemplateInfo[];
+    /** 渲染卡片面板 HTML（宿主侧跑 renderPanel/mountPanel，取回 HTML）。 */
+    renderCardPanel(instanceId: string): Promise<string | null>;
     negotiateWhitelist(connectionId: string, methods: {
         method: string;
         description: string;

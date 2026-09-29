@@ -108,6 +108,16 @@ export class ConnectionManager {
     this.upgradeManager.rejectUpgrade(requestId, rejectorId)
   }
 
+  /**
+   * 把某条连接的当前状态落盘。
+   * 连接上的卡片增删不经过 create/updatePermission，需要显式调用。
+   */
+  persistConnection(id: string): void {
+    const conn = this.connections.get(id)
+    if (!conn) return
+    this.persistence.updateConnection(id, () => conn)
+  }
+
   updatePermission(
     id: string,
     direction: 'aToB' | 'bToA',

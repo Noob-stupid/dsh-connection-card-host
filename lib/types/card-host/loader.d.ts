@@ -3,10 +3,26 @@ import type { ConnectionManager } from '../core/connection-manager.js';
 import type { ConnectionEventBus } from '../core/event-bus.js';
 import type { DSHAdapter } from '../adapter/dsh-adapter.js';
 export interface CardHostOptions {
-    /** 内置卡片根目录（随插件包发布，位于 cards/） */
+    /** 内置卡片根目录（随插件包发布的 cards/）。 */
     builtinRoot?: string;
-    /** 卡片专用目录（$DSH_HOME/connection-cards/<card-id>/plugins/） */
-    cardHomeRoot?: string;
+    /** 已安装卡片的根目录（$DSH_HOME/connection-cards/cards/）。 */
+    installedRoot?: string;
+}
+/** 面板里展示的模板摘要。 */
+export interface CardTemplateInfo {
+    templateId: string;
+    name: string;
+    version: string;
+    source: 'builtin' | 'installed';
+    requires: {
+        read: string[];
+        write: string[];
+    };
+    events: string[];
+    /** 是否提供面板 UI。 */
+    hasPanel: boolean;
+    /** 已加到当前连接的实例数（由调用方填充）。 */
+    loadedCount: number;
 }
 export declare class CardHost {
     private registry;
@@ -14,11 +30,25 @@ export declare class CardHost {
     private eventBus;
     private adapter;
     private options;
-    /** instanceId → CardAPI（供 reload/unload 释放） */
+    /** instanceId → CardAPI。 */
     private apiByInstance;
+    private scanned;
     constructor(manager: ConnectionManager, eventBus: ConnectionEventBus, adapter: DSHAdapter, options?: CardHostOptions);
     /**
-     * 在目标连接上加载一张卡片实例。
+     * 默认根目录：内置取本包同级 `cards/`；已安装取 `$DSH_HOME/connection-cards/cards/`。
+     * `lib/card-host/loader.js` → 上溯两级到包根。
+     */
+    private builtinRoot;
+    private installedRoot;
+    /** 扫描两个根目录下的卡片包（幂等）。 */
+    scanTemplates(force?: boolean): void;
+    private scanRoot;
+    /** 读一个卡片目录的 package.json → 注册模板。 */
+    private registerTemplateDir;
+    /** 可用模板清单（含在当前连接上已装载的数量）。 */
+    listTemplates(connectionId?: string): CardTemplateInfo[];
+    /**
+     * 在目标连接上装载一张卡片。
      * @param templateId 卡片模板 id
      * @param connectionId 目标连接 id
      */
@@ -27,11 +57,21 @@ export declare class CardHost {
     reloadCard(instanceId: string): Promise<void>;
     getCardApi(instanceId: string): CardAPI | undefined;
     /**
-     * 加载内置模板（cards/<card-id>/ 目录）。
-     * 从 package.json 读取 dshCard 字段作为 manifest。
+     * 渲染卡片面板 HTML。
+     *
+     * 优先 `renderPanel(api)`（纯字符串，宿主友好）；
+     * 否则给 `mountPanel` 一个只支持 innerHTML 的 DOM 替身，取回结果。
+     *
+     * @returns HTML 字符串；卡片没有面板或渲染失败时返回 null。
      */
-    private resolveBuiltinTemplate;
-    private tryRegisterTemplate;
-    /** 手动注册内置模板目录（供宿主启动时扫描内置卡片） */
-    registerBuiltinTemplate(templateId: string, cardDir: string): boolean;
+    renderCardPanel(instanceId: string): Promise<string | null>;
+    /**
+     * 启动重放：把已持久化在连接上的卡片重新 import + apply。
+     *
+     * 连接是从 connections.json 恢复的，卡片的 apply（订阅/注册工具）不会自动重跑，
+     * 不重放的话重启后卡片就"哑"了。
+     *
+     * @returns 成功重放的卡片数
+     */
+    restoreAll(): Promise<number>;
 }
