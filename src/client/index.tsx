@@ -48,6 +48,49 @@ type ClientContext = Context & {
 /** 需要 slots 注入 UI，connection 提供宿主 RPC，sessions 提供会话身份。 */
 export const inject = ['slots', 'connection', 'sessions']
 
+const STYLE_TAG_ID = 'dsh-connection-card-host-styles'
+
+/**
+ * 布局探针：把锚点往上 5 层祖先的尺寸记下来。
+ *
+ * 用户反馈「拖拽时整个输入区域在动」，但看不到屏幕，只能靠这个定位
+ * 究竟是哪一层盒子被撑开/移位（例如脉冲光环没被绝对定位、样式表丢失等）。
+ */
+function layoutSnapshot(): string {
+  const parts: string[] = []
+  const styleTag = document.getElementById(STYLE_TAG_ID)
+  parts.push(`style=${styleTag ? 'yes' : 'MISSING'}`)
+
+  const anchor = document.querySelector('.ccr-anchor')
+  if (!anchor) {
+    parts.push('anchor=absent')
+    return parts.join(' ')
+  }
+
+  const fmt = (el: Element): string => {
+    const r = el.getBoundingClientRect()
+    return `${Math.round(r.width)}x${Math.round(r.height)}@${Math.round(r.left)},${Math.round(r.top)}`
+  }
+
+  parts.push(`anchor=${fmt(anchor)}`)
+  // 脉冲元素是否存在、是否脱离文档流（position:absolute 才算正常）
+  const pulse = anchor.querySelector('.ccr-anchor__pulse')
+  parts.push(
+    pulse
+      ? `pulse=${fmt(pulse)}/${
+          window.getComputedStyle(pulse).position
+        }`
+      : 'pulse=none',
+  )
+
+  let node: Element | null = anchor.parentElement
+  for (let i = 0; node && i < 5; i++) {
+    parts.push(`up${i + 1}=${node.tagName.toLowerCase()}.${(node.className || '').toString().split(' ')[0]}:${fmt(node)}`)
+    node = node.parentElement
+  }
+  return parts.join(' ')
+}
+
 export function apply(ctx: ClientContext): void {
   const rpc = resolveRpcCaller(ctx)
   const client = rpc ? createHostClient(rpc) : null
@@ -115,6 +158,7 @@ export function apply(ctx: ClientContext): void {
               `rows=${document.querySelectorAll('[role="treeitem"]').length} ` +
               `marked=${document.querySelectorAll('[data-ccr-session]').length}`,
           )
+          client.report(`layout BEFORE ${layoutSnapshot()}`)
         }
         drag.onMouseDown(x, y)
       },
@@ -168,16 +212,23 @@ export function apply(ctx: ClientContext): void {
     // 鼠标拖拽
     useEffect(() => {
       if (!drag.state.dragging) return
+      let moveCount = 0
 
       const onMove = (e: MouseEvent) => {
         const h = handlersRef.current
         h.drag.onMouseMove(e.clientX, e.clientY)
         h.trackTarget(e.clientX, e.clientY)
+        // 只在前几帧记布局，避免刷屏
+        if (moveCount < 3) {
+          moveCount++
+          client?.report(`layout MOVE#${moveCount} ${layoutSnapshot()}`)
+        }
       }
       const onUp = (e: MouseEvent) => {
         const h = handlersRef.current
         h.finishAt(e.clientX, e.clientY)
         h.drag.onMouseUp()
+        client?.report(`layout AFTER ${layoutSnapshot()}`)
       }
       const onKey = (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
