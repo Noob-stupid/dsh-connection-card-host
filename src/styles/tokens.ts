@@ -149,6 +149,12 @@ export const CONNECTION_CARD_CSS = `
   box-shadow: inset 2px 0 0 var(--ccr-flow-color) !important;
 }
 
+/* 已连的目标：松手会断开，用红调区分于「会连接」 */
+.ccr-target--disconnect {
+  background: rgba(239, 68, 68, 0.13) !important;
+  box-shadow: inset 2px 0 0 #EF4444 !important;
+}
+
 /* ═══ 面板（main 槽位，整页宽度） ═══ */
 .ccr-page {
   box-sizing: border-box;

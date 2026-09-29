@@ -128,33 +128,63 @@ export function apply(ctx: ClientContext): void {
     const [lineDone, setLineDone] = useState(false)
     // 当前被高亮的会话行（拖拽落点提示）
     const highlightedRef = useRef<Element | null>(null)
+    /** 当前落点是「会连接」还是「会断开」，用于避免无谓的 class 抖动。 */
+    const highlightModeRef = useRef<'connect' | 'disconnect' | null>(null)
 
     const clearHighlight = useCallback(() => {
-      highlightedRef.current?.classList.remove('ccr-target')
+      highlightedRef.current?.classList.remove('ccr-target', 'ccr-target--disconnect')
       highlightedRef.current = null
+      highlightModeRef.current = null
     }, [])
 
-    /** 落点解析：目标会话 + 起点会话 + 失败原因（诊断用）。 */
+    /** 拖拽开始时缓存的连接表，用于落点提示与「连上则断」判定。 */
+    const connsRef = useRef<{ sessionA: string; sessionB: string; id: string }[]>([])
+
+    /** 两个会话之间是否已有连接。 */
+    const findExisting = useCallback(
+      (list: { sessionA: string; sessionB: string; id: string }[], a: string, b: string) =>
+        list.find(
+          (c) =>
+            (c.sessionA === a && c.sessionB === b) || (c.sessionA === b && c.sessionB === a),
+        ),
+      [],
+    )
+
+    /** 落点解析：目标会话 + 起点会话 + 是否已连 + 失败原因（诊断用）。 */
     const resolveDrop = useCallback(
       (x: number, y: number) => {
         const snap = sessions?.getSnapshot()
         const hit = sessionRowAtPoint(x, y, snap ?? null)
         // 起点优先用槽位给的 sessionId，快照 current 只作兜底
         const sourceId = sessionId ?? snap?.current ?? null
+        const existing =
+          hit && sourceId ? findExisting(connsRef.current, sourceId, hit.id) : undefined
         let reason: string
         if (!sessions) reason = 'no-sessions-bridge'
         else if (!hit) reason = 'no-row-under-cursor'
         else if (!sourceId) reason = 'no-current-session'
         else if (hit.id === sourceId) reason = 'same-session'
         else reason = 'ok'
-        return { hit, sourceId, reason, idCount: snap?.ids?.length ?? 0 }
+        return { hit, sourceId, reason, existing, idCount: snap?.ids?.length ?? 0 }
       },
-      [sessions, sessionId],
+      [sessions, sessionId, findExisting],
     )
 
     const beginDrag = useCallback(
       (x: number, y: number) => {
         setLineDone(false)
+        // 抓一份连接表：落点提示要知道「这一拖是连上还是断开」
+        connsRef.current = []
+        if (client) {
+          void client
+            .listConnections()
+            .then((list) => {
+              connsRef.current = list
+            })
+            .catch(() => {
+              connsRef.current = []
+            })
+        }
         if (client) {
           const snap = sessions?.getSnapshot()
           client.report(
@@ -169,38 +199,52 @@ export function apply(ctx: ClientContext): void {
       [drag, client, sessions, sessionId],
     )
 
-    /** 松手：命中会话行就建连接。起点取 DSH 的当前会话。 */
+    /**
+     * 松手：**开关语义** —— 已连则断开，未连则连接。
+     * 这样不必专门跑面板去断。
+     */
     const finishAt = useCallback(
       (x: number, y: number) => {
-        const { hit, sourceId, reason, idCount } = resolveDrop(x, y)
-        if (client) {
-          client.report(
-            `dragEnd reason=${reason} hit=${hit?.id ?? 'none'} source=${sourceId ?? 'none'} ids=${idCount}`,
-          )
+        const { hit, sourceId, reason } = resolveDrop(x, y)
+        if (reason !== 'ok' || !hit || !sourceId) {
+          if (client) client.report(`dragEnd reason=${reason} hit=${hit?.id ?? 'none'}`)
+          clearHighlight()
+          return
         }
-        if (reason === 'ok' && hit && sourceId) {
-          void client
-            ?.createConnection(sourceId, hit.id)
-            .then(() => client?.report(`dragEnd created ${sourceId} <-> ${hit.id}`))
-            .catch((err) => {
-              client?.report(`dragEnd create-failed ${String(err)}`)
-              console.error('[connection-card-host] 建立连接失败:', err)
-            })
-        }
+
         clearHighlight()
+        void (async () => {
+          try {
+            // 决策前重新取一次，避免用拖拽开始时的旧快照误判
+            const list = client ? await client.listConnections() : []
+            const existing = findExisting(list, sourceId, hit.id)
+            if (existing) {
+              await client?.disconnect(existing.id)
+              client?.report(`dragEnd toggled-OFF ${sourceId} <-> ${hit.id}`)
+            } else {
+              await client?.createConnection(sourceId, hit.id)
+              client?.report(`dragEnd toggled-ON ${sourceId} <-> ${hit.id}`)
+            }
+          } catch (err) {
+            client?.report(`dragEnd toggle-failed ${String(err)}`)
+            console.error('[connection-card-host] 连接开关失败:', err)
+          }
+        })()
       },
-      [client, resolveDrop, clearHighlight],
+      [client, resolveDrop, findExisting, clearHighlight],
     )
 
-    /** 拖拽中的落点高亮。 */
+    /** 拖拽中的落点高亮。已连的目标用「断开」样式区分。 */
     const trackTarget = useCallback(
       (x: number, y: number) => {
-        const { hit, sourceId } = resolveDrop(x, y)
+        const { hit, sourceId, existing } = resolveDrop(x, y)
         const next = hit && hit.id !== sourceId ? hit.element : null
-        if (next !== highlightedRef.current) {
-          highlightedRef.current?.classList.remove('ccr-target')
-          next?.classList.add('ccr-target')
+        const mode: 'connect' | 'disconnect' = existing ? 'disconnect' : 'connect'
+        if (next !== highlightedRef.current || mode !== highlightModeRef.current) {
+          highlightedRef.current?.classList.remove('ccr-target', 'ccr-target--disconnect')
+          if (next) next.classList.add(mode === 'disconnect' ? 'ccr-target--disconnect' : 'ccr-target')
           highlightedRef.current = next
+          highlightModeRef.current = next ? mode : null
         }
       },
       [resolveDrop],
