@@ -118,7 +118,11 @@ export function apply(ctx: ClientContext): void {
   }
 
   // ═══ 小圆点 + 拖拽拉线 ═══
-  const AnchorWidget = () => {
+  //
+  // `sessionId` 来自槽位的 standardProps —— conversation.input.left 是 session 作用域，
+  // 官方直接把当前会话 id 传进来了。**不要**去读 ctx.sessions 快照的 current 字段：
+  // 实测该字段在当前 DSH 构建里是 undefined（详见 client-debug.log 的 current=none）。
+  const AnchorWidget = ({ sessionId }: { sessionId?: string }) => {
     const drag = useDragLine()
     const [lineDone, setLineDone] = useState(false)
     // 当前被高亮的会话行（拖拽落点提示）
@@ -133,19 +137,18 @@ export function apply(ctx: ClientContext): void {
     const resolveDrop = useCallback(
       (x: number, y: number) => {
         const snap = sessions?.getSnapshot()
-        const ids = snap?.ids ?? []
-        const hit = sessionRowAtPoint(x, y, ids)
-        const sourceId = snap?.current ?? null
+        const hit = sessionRowAtPoint(x, y, snap ?? null)
+        // 起点优先用槽位给的 sessionId，快照 current 只作兜底
+        const sourceId = sessionId ?? snap?.current ?? null
         let reason: string
         if (!sessions) reason = 'no-sessions-bridge'
-        else if (ids.length === 0) reason = 'empty-session-list'
         else if (!hit) reason = 'no-row-under-cursor'
         else if (!sourceId) reason = 'no-current-session'
         else if (hit.id === sourceId) reason = 'same-session'
         else reason = 'ok'
-        return { hit, sourceId, reason, idCount: ids.length }
+        return { hit, sourceId, reason, idCount: snap?.ids?.length ?? 0 }
       },
-      [sessions],
+      [sessions, sessionId],
     )
 
     const beginDrag = useCallback(
@@ -154,15 +157,15 @@ export function apply(ctx: ClientContext): void {
         if (client) {
           const snap = sessions?.getSnapshot()
           client.report(
-            `dragStart current=${snap?.current ?? 'none'} ids=${snap?.ids?.length ?? 0} ` +
+            `dragStart slotSessionId=${sessionId ?? 'none'} snapshotCurrent=${snap?.current ?? 'none'} ` +
+              `ids=${snap?.ids?.length ?? 0} ` +
               `rows=${document.querySelectorAll('[role="treeitem"]').length} ` +
               `marked=${document.querySelectorAll('[data-ccr-session]').length}`,
           )
-          client.report(`layout BEFORE ${layoutSnapshot()}`)
         }
         drag.onMouseDown(x, y)
       },
-      [drag, client, sessions],
+      [drag, client, sessions, sessionId],
     )
 
     /** 松手：命中会话行就建连接。起点取 DSH 的当前会话。 */
@@ -212,23 +215,16 @@ export function apply(ctx: ClientContext): void {
     // 鼠标拖拽
     useEffect(() => {
       if (!drag.state.dragging) return
-      let moveCount = 0
 
       const onMove = (e: MouseEvent) => {
         const h = handlersRef.current
         h.drag.onMouseMove(e.clientX, e.clientY)
         h.trackTarget(e.clientX, e.clientY)
-        // 只在前几帧记布局，避免刷屏
-        if (moveCount < 3) {
-          moveCount++
-          client?.report(`layout MOVE#${moveCount} ${layoutSnapshot()}`)
-        }
       }
       const onUp = (e: MouseEvent) => {
         const h = handlersRef.current
         h.finishAt(e.clientX, e.clientY)
         h.drag.onMouseUp()
-        client?.report(`layout AFTER ${layoutSnapshot()}`)
       }
       const onKey = (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
@@ -324,7 +320,9 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('conversation.input.left', () =>
     ctx.slots.register(
       { name: 'conversation.input.left', id: 'connection-anchor', order: 100, label: '连接' },
-      () => AnchorWidget(),
+      // standardProps 里有 sessionId（session 作用域槽位）—— 当前会话 id 由官方传入
+      (props?: unknown) =>
+        AnchorWidget({ sessionId: (props as { sessionId?: string } | undefined)?.sessionId }),
     ),
   )
 

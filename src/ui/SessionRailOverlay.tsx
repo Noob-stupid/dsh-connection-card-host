@@ -1,14 +1,14 @@
 /**
- * SessionRailOverlay — 左侧工作区的「垂直连接」。
+ * SessionRailOverlay — 会话列表上的「垂直连接」。
  *
- * 用户要求：连上之后拖拽线消失，改为在左侧会话列表里保留一条竖直连线。
+ * 用户要求：
+ *   - 连上后拖拽线消失，改为在会话列表里保留竖线；
+ *   - 风格与拖拽的「水流」线近似（白色半透明 + 光晕 + 微流动）；
+ *   - **画在会话行上**，不要挤到最左侧的窄边沟里。
  *
- * 实现方式：挂到 `shell.overlay`（root 作用域 / list / replaceRisk none，
- * 只是覆盖一层，不抢任何已有槽位），然后**测量 DOM 里会话行的实际位置**
- * 来定位端点 —— 因为 DSH 没有暴露「会话行坐标」的接口，
- * 而 `[data-session-id]` 是会话行的既有属性（拖拽建连接也用同一个选择器）。
- *
- * lane 分配复用 core/lane-allocator 的贪心区间着色。
+ * 实现：挂 `shell.overlay`（root/list/replaceRisk none，纯覆盖不抢槽位），
+ * 测量会话行实际坐标后作画 —— DSH 没暴露行坐标接口，只能实测。
+ * id 的来源见 client/row-map.ts。
  */
 import { useEffect, useMemo, useState } from 'react'
 import { allocateLanes } from '../core/lane-allocator.js'
@@ -26,8 +26,8 @@ interface SessionRailOverlayProps {
 
 /** 每条 lane 的水平间距（px）。 */
 const LANE_WIDTH = 5
-/** rail 相对会话行左边缘的偏移。 */
-const RAIL_INSET = 8
+/** 竖线相对会话行**右边缘**内缩多少（贴行画，不占左侧窄沟）。 */
+const ROW_RIGHT_INSET = 12
 /** 会话行位置的采样间隔。DOM 没有坐标接口，只能定期量。 */
 const MEASURE_INTERVAL_MS = 400
 
@@ -42,13 +42,12 @@ export function SessionRailOverlay({ client, sessions }: SessionRailOverlayProps
   const { snapshot } = useSessionList(sessions)
   const [rows, setRows] = useState<SessionRowInfo[]>([])
 
-  // 量会话行的位置（滚动/缩放/列表变化都要跟上）。
-  // id 的来源见 client/row-map.ts —— DOM 本身没有会话 id。
+  // 量会话行的位置（滚动/缩放/列表变化都要跟上）
   useEffect(() => {
     if (typeof document === 'undefined') return
 
     const measure = () => {
-      const next = collectSessionRows(snapshot.ids)
+      const next = collectSessionRows(snapshot)
       setRows((prev) => {
         // 只在真正变化时 setState，避免每 400ms 触发一次无意义渲染
         if (prev.length === next.length) {
@@ -60,7 +59,7 @@ export function SessionRailOverlay({ client, sessions }: SessionRailOverlayProps
               a.id !== b.id ||
               Math.abs(a.top - b.top) > 0.5 ||
               Math.abs(a.bottom - b.bottom) > 0.5 ||
-              Math.abs(a.left - b.left) > 0.5
+              Math.abs(a.right - b.right) > 0.5
             ) {
               same = false
               break
@@ -81,7 +80,7 @@ export function SessionRailOverlay({ client, sessions }: SessionRailOverlayProps
       window.removeEventListener('scroll', measure, true)
       window.removeEventListener('resize', measure)
     }
-  }, [snapshot.ids])
+  }, [snapshot])
 
   const rail = useMemo(() => {
     if (rows.length < 2 || connections.length === 0) return null
@@ -90,7 +89,8 @@ export function SessionRailOverlay({ client, sessions }: SessionRailOverlayProps
     const layout = allocateLanes(connections, sessionOrder)
     const rowById = new Map(rows.map((r) => [r.id, r]))
 
-    const railX = Math.max(2, Math.min(...rows.map((r) => r.left)) - RAIL_INSET)
+    // 画在会话行上：贴着行的右边缘往左排 lane
+    const baseX = Math.max(...rows.map((r) => r.right)) - ROW_RIGHT_INSET
 
     const segments = []
     for (const conn of connections) {
@@ -102,10 +102,7 @@ export function SessionRailOverlay({ client, sessions }: SessionRailOverlayProps
 
       const y1 = (a.top + a.bottom) / 2
       const y2 = (b.top + b.bottom) / 2
-      const top = Math.min(y1, y2)
-      const bottom = Math.max(y1, y2)
-      // 两个端点太近就不画线（只画两个点）
-      const x = railX + assignment.laneIndex * LANE_WIDTH
+      const x = baseX - assignment.laneIndex * LANE_WIDTH
       const level = conn.permission.aToB
 
       segments.push({
@@ -113,8 +110,8 @@ export function SessionRailOverlay({ client, sessions }: SessionRailOverlayProps
         x,
         y1,
         y2,
-        top,
-        bottom,
+        top: Math.min(y1, y2),
+        bottom: Math.max(y1, y2),
         color: PERMISSION_COLOR[level] ?? '#9CA3AF',
         broken: conn.status === 'broken',
       })
@@ -122,13 +119,15 @@ export function SessionRailOverlay({ client, sessions }: SessionRailOverlayProps
 
     if (segments.length === 0) return null
 
-    const bounds = {
-      left: Math.min(...segments.map((s) => s.x)) - 6,
-      right: Math.max(...segments.map((s) => s.x)) + 6,
-      top: Math.min(...segments.map((s) => s.top)) - 6,
-      bottom: Math.max(...segments.map((s) => s.bottom)) + 6,
+    return {
+      segments,
+      bounds: {
+        left: Math.min(...segments.map((s) => s.x)) - 8,
+        right: Math.max(...segments.map((s) => s.x)) + 8,
+        top: Math.min(...segments.map((s) => s.top)) - 8,
+        bottom: Math.max(...segments.map((s) => s.bottom)) + 8,
+      },
     }
-    return { segments, bounds }
   }, [rows, connections])
 
   if (!rail) return null
@@ -152,29 +151,69 @@ export function SessionRailOverlay({ client, sessions }: SessionRailOverlayProps
         overflow: 'visible',
       }}
     >
+      <defs>
+        <filter id="ccr-rail-glow" x="-80%" y="-30%" width="260%" height="160%">
+          <feGaussianBlur stdDeviation="2" />
+        </filter>
+      </defs>
+
       {segments.map((seg) => (
         <g key={seg.id} opacity={seg.broken ? 0.35 : 1}>
-          {/* 竖线主体：细、半透明，贴着背景色，不抢视线 */}
+          {/* 光晕层：与拖拽拉线的「水汽」同一手法 */}
           <line
             x1={seg.x - bounds.left}
             y1={seg.y1 - bounds.top}
             x2={seg.x - bounds.left}
             y2={seg.y2 - bounds.top}
-            stroke={seg.color}
-            strokeWidth={1.5}
-            strokeOpacity={0.4}
+            stroke="var(--ccr-flow-color, #fff)"
+            strokeWidth={5}
+            strokeOpacity={0.14}
+            strokeLinecap="round"
+            filter="url(#ccr-rail-glow)"
+          />
+          {/* 主线：白色半透明、圆头 —— 风格对齐拖拽线 */}
+          <line
+            x1={seg.x - bounds.left}
+            y1={seg.y1 - bounds.top}
+            x2={seg.x - bounds.left}
+            y2={seg.y2 - bounds.top}
+            stroke="var(--ccr-flow-color, #fff)"
+            strokeWidth={2}
+            strokeOpacity={0.55}
             strokeLinecap="round"
           />
-          {/* 两端节点 */}
+          {/* 微流动：短划线缓慢下滑，比拖拽线克制 */}
+          <line
+            x1={seg.x - bounds.left}
+            y1={seg.y1 - bounds.top}
+            x2={seg.x - bounds.left}
+            y2={seg.y2 - bounds.top}
+            stroke="var(--ccr-flow-color, #fff)"
+            strokeWidth={1.2}
+            strokeOpacity={0.45}
+            strokeLinecap="round"
+            strokeDasharray="10 26"
+            className="ccr-rail__flow"
+          />
+          {/* 两端节点：权限色区分 */}
           {[seg.y1, seg.y2].map((y, i) => (
-            <circle
-              key={i}
-              cx={seg.x - bounds.left}
-              cy={y - bounds.top}
-              r={2.6}
-              fill={seg.color}
-              fillOpacity={0.75}
-            />
+            <g key={i}>
+              <circle
+                cx={seg.x - bounds.left}
+                cy={y - bounds.top}
+                r={4.5}
+                fill={seg.color}
+                fillOpacity={0.22}
+                filter="url(#ccr-rail-glow)"
+              />
+              <circle
+                cx={seg.x - bounds.left}
+                cy={y - bounds.top}
+                r={2.6}
+                fill={seg.color}
+                fillOpacity={0.9}
+              />
+            </g>
           ))}
         </g>
       ))}
