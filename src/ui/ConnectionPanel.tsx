@@ -258,9 +258,9 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
               <Fragment key={index}>
                 {index > 0 && (
                   /*
-                   * 中间的连接符。点它可以加/减一个会话槽位 ——
-                   * 三个会话会**两两相连**（A-B、B-C、A-C 三条），
-                   * 相当于把「三个对话互相都通」一次配好。
+                   * 中间的连接符。默认就是普通的 ↔（与旧样式一致），
+                   * **鼠标悬浮时才显出一个 +**，提示这里可以再加一个会话。
+                   * 三个会话会两两相连（A-B、B-C、A-C 三条）。
                    */
                   <button
                     type="button"
@@ -274,7 +274,12 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
                       setPicks((prev) => (prev.length >= 3 ? ['', ''] : [...prev, '']))
                     }
                   >
-                    {picks.length >= 3 ? '↔ ⊖' : '↔ ⊕'}
+                    <span className="ccr-form__join-arrow" aria-hidden="true">
+                      ↔
+                    </span>
+                    <span className="ccr-form__join-mark" aria-hidden="true">
+                      {picks.length >= 3 ? '−' : '+'}
+                    </span>
                   </button>
                 )}
                 {useManualInput ? (
