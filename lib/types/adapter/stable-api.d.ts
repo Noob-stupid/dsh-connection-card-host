@@ -7,6 +7,7 @@ import type { ConnectionManager } from '../core/connection-manager.js';
 import type { ConnectionEventBus } from '../core/event-bus.js';
 import type { CardHost, CardTemplateInfo } from '../card-host/loader.js';
 import type { DSHAdapter, KnownSession } from './dsh-adapter.js';
+import type { SessionBridge } from './session-bridge.js';
 export type { KnownSession, CardTemplateInfo };
 export interface ConnectionCardHostService {
     createConnection(sessionA: string, sessionB: string): Connection;
@@ -58,5 +59,23 @@ export interface ConnectionCardHostService {
     }): SendGate & {
         message?: ConnectionMessage;
     };
+    /** 会话桥能力探测。 */
+    relayCapabilities(): {
+        observe: boolean;
+        deliver: boolean;
+        via: string[];
+        notes: string[];
+    };
+    /** 直接往某个会话投递文本（目标必须有 live agent）。 */
+    deliverToSession(sessionId: string, text: string, wake?: boolean): Promise<{
+        ok: boolean;
+        via?: string;
+        reason?: string;
+    }>;
+    /** 读取某会话最近的消息（诊断用）。 */
+    readSessionRecent(sessionId: string, limit?: number): {
+        role: string;
+        text: string;
+    }[];
 }
-export declare function createStableApi(manager: ConnectionManager, eventBus: ConnectionEventBus, cardHost?: CardHost, adapter?: DSHAdapter): ConnectionCardHostService;
+export declare function createStableApi(manager: ConnectionManager, eventBus: ConnectionEventBus, cardHost?: CardHost, adapter?: DSHAdapter, bridge?: SessionBridge): ConnectionCardHostService;

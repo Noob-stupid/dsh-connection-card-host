@@ -154,6 +154,25 @@ export function SessionRailOverlay({ client, sessions }: SessionRailOverlayProps
     }
   }, [rows, connections])
 
+  // 诊断：轨道到底算出了什么。
+  // 「连着但看不见线」的原因只可能是这几个之一：行没映射上 / 会话不在侧栏 /
+  // 连接数为 0 / 只有一段没画出来。全部上报，免得靠猜。
+  useEffect(() => {
+    if (!client) return
+    const short = (s: string) => s.replace(/^session-/, '').slice(0, 8)
+    const needed = Array.from(
+      new Set(connections.flatMap((c) => [c.sessionA, c.sessionB])),
+    )
+    const mappedIds = new Set(rows.map((r) => r.id))
+    const missing = needed.filter((id) => !mappedIds.has(id))
+    client.report(
+      `rail conns=${connections.length} rows=${rows.length} ` +
+        `segments=${rail?.segments.length ?? 0} ` +
+        `missing=[${missing.map(short).join(',') || '无'}] ` +
+        `mapped=[${rows.map((r) => short(r.id)).join(',')}]`,
+    )
+  }, [rail, rows, connections, client])
+
   if (!rail) return null
 
   const { segments, bounds } = rail

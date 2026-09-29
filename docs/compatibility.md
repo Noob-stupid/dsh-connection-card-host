@@ -11,6 +11,32 @@
 
 **验证方式**: 启动时调用 `adapter.init()` 检查 `VersionCheckResult.supported`。不支持时进入降级模式。
 
+### 会话消息来源契约（V4 · 必读）
+
+框架把会话消息格式升到 **v4**（0.1.7-rc.1 起）后，**每条被解释的消息**（`user/message`、
+`assistant/message`、`tool/result`、`agent/inbox/spliced` 的 `inserted[]` 等）的 `source`
+必须带一个 **producer-owned kind**：非空字符串，且**不能**是字面量 `plugin`
+（那是已退役的 V3 包装 `{ kind: 'plugin', plugin: X }`）。第三方插件的规范形状是
+`plugin:<包名>`，与框架自带 V3→V4 迁移器的映射一致。
+
+```ts
+// ❌ V3（已退役）：一发消息就报错，且整条会话卡死
+source: { kind: 'plugin', plugin: 'dsh-connection-card-host' }
+// ✅ V4：本插件投递中继消息时使用的形状
+source: { kind: 'plugin:dsh-connection-card-host', form: 'relay', summary: '连接消息' }
+```
+
+失败形态（2026-09-30 真机事故）：中继投递 → `agent.followup(msg)` → agent 回合开始时
+splice 进会话 → 落盘编码 `session-format-v3-to-v4` 的 `assertV4RowAdmission` 抛
+`format v4 message requires a producer-owned source kind` → 回合以 error 结束；
+坏事件**留在写句柄的缓冲里**（`JsonlSessionHandle.buffered` + `drainPaused`），
+此后该会话每次发言都失败（磁盘上查不到坏行——它压根没落盘）。
+修法：① 改生产方代码（`PLUGIN_SOURCE_KIND`）+ 重建 + 热重载；
+② 已卡死的会话再清写缓冲：`sessionPersistence.tracker.writers.get(id)` → 把 `buffered`
+里的坏 `source` 改成 producer-owned kind → `drainLive()` + `flush()`。
+现场用的巡检/修复工具留在 `D:\dsh-link\_v4fix-2026-09-30\`（`wedge_probe` / `flush_repair2`，
+经 `dsh-super-injector` 的 `dev_stage_call` 调用）。
+
 ## 失败降级行为
 
 ### 卡片加载失败

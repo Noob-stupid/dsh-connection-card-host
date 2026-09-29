@@ -7,6 +7,7 @@ import type { ConnectionManager } from '../core/connection-manager.js'
 import type { ConnectionEventBus } from '../core/event-bus.js'
 import type { CardHost, CardTemplateInfo } from '../card-host/loader.js'
 import type { DSHAdapter, KnownSession } from './dsh-adapter.js'
+import type { SessionBridge } from './session-bridge.js'
 
 export type { KnownSession, CardTemplateInfo }
 
@@ -67,6 +68,14 @@ export interface ConnectionCardHostService {
     text: string,
     options?: { replyTo?: string },
   ): SendGate & { message?: ConnectionMessage }
+
+  // 会话桥（「A 说话 B 能感知」）
+  /** 会话桥能力探测。 */
+  relayCapabilities(): { observe: boolean; deliver: boolean; via: string[]; notes: string[] }
+  /** 直接往某个会话投递文本（目标必须有 live agent）。 */
+  deliverToSession(sessionId: string, text: string, wake?: boolean): Promise<{ ok: boolean; via?: string; reason?: string }>
+  /** 读取某会话最近的消息（诊断用）。 */
+  readSessionRecent(sessionId: string, limit?: number): { role: string; text: string }[]
 }
 
 export function createStableApi(
@@ -74,6 +83,7 @@ export function createStableApi(
   eventBus: ConnectionEventBus,
   cardHost?: CardHost,
   adapter?: DSHAdapter,
+  bridge?: SessionBridge,
 ): ConnectionCardHostService {
   return {
     createConnection: (a, b) => manager.create(a, b),
@@ -116,5 +126,18 @@ export function createStableApi(
         ? { ok: true, ...(result.message ? { message: result.message } : {}) }
         : { ok: false, reason: result.reason }
     },
+    relayCapabilities: () =>
+      bridge?.capabilities() ?? {
+        observe: false,
+        deliver: false,
+        via: [],
+        notes: ['会话桥未装配'],
+      },
+    deliverToSession: async (sessionId, text, wake = true) => {
+      if (!bridge) return { ok: false, reason: '会话桥未装配' }
+      const r = await bridge.deliver(sessionId, text, wake)
+      return r.ok ? { ok: true, ...(r.via ? { via: r.via } : {}) } : { ok: false, reason: r.reason }
+    },
+    readSessionRecent: (sessionId, limit) => bridge?.readRecent(sessionId, limit ?? 20) ?? [],
   }
 }

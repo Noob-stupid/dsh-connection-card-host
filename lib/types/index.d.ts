@@ -2,8 +2,15 @@ import type { Context } from '@deepseek-ai/cordis';
 import { type ConnectionCardHostService } from './adapter/stable-api.js';
 export declare const name = "connection-card-host";
 /**
- * 不声明必需依赖：核心能力（连接管理/持久化/卡片宿主）独立于 connection 服务，
- * 只有 RPC 桥需要它。用 ctx.inject() 延迟注册，避免 connection 缺席时整个插件不加载。
+ * 必需依赖。
+ *
+ * ⚠️ cordis 的 Context 是 Proxy：**未在此声明的服务读不到**（读会抛，
+ * safeCtxGet 会把它变成 undefined）。所以要用 ctx.agents / ctx.sessions /
+ * ctx.tools 就必须在这里声明，否则能力探测会误报"不可用"。
+ *
+ * `agents` 与 `sessions` 两个版本都有；`sessionController` 仅 runtime 0.2+ 有，
+ * 因此**不放进这个数组**（否则 checkout 上插件直接不加载），
+ * 改用 ctx.inject(['sessionController'], ...) 作可选增强。
  */
 export declare const inject: string[];
 /**

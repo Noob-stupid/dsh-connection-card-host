@@ -190,6 +190,15 @@ function buildEndpoints(
       })
     },
 
+    [RPC_ENDPOINTS.relayCapabilities]: () => service.relayCapabilities(),
+
+    // 调试：直接往某个会话投递，验证「A 说话 B 能感知」的最后一跳
+    [RPC_ENDPOINTS.debugDeliver]: async (p) => {
+      const raw = p as { wake?: unknown } | null
+      const wake = raw?.wake !== false
+      return service.deliverToSession(str(p, 'sessionId'), str(p, 'text'), wake)
+    },
+
     [RPC_ENDPOINTS.listWhitelist]: (p) =>
       service.listWhitelistedMethods(str(p, 'connectionId')),
 

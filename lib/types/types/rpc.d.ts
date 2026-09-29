@@ -59,5 +59,12 @@ export declare const RPC_ENDPOINTS: {
     readonly listMessages: "messages/list";
     /** 以某一端的身份发一条连接消息。 */
     readonly sendMessage: "messages/send";
+    /**
+     * 调试用：直接往某个会话投递一段文本（验证「A 说话 B 能感知」的最后一跳）。
+     * 目标会话必须有 live agent，否则返回失败原因。
+     */
+    readonly debugDeliver: "debug/deliver";
+    /** 会话桥的能力探测结果。 */
+    readonly relayCapabilities: "relay/capabilities";
 };
 export type RpcEndpoint = (typeof RPC_ENDPOINTS)[keyof typeof RPC_ENDPOINTS];
