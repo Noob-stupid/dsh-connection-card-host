@@ -147,20 +147,26 @@ export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
     }
   }, [client, sessionA, sessionB, refresh, flash])
 
-  /** 设置权限：双向一起设（用户看到的是一个「权限」）。 */
+  /**
+   * 设置**某一个方向**的权限。
+   *
+   * 两个方向本来就是分开的（aToB / bToA），可以做成不对称：
+   * 例如「A 可读写 B，但 B 对 A 只能只读」。
+   * 界面用真实会话名而不是 A/B 字母，避免看不懂。
+   */
   const applyPermission = useCallback(
-    async (conn: Connection, level: PermissionLevel) => {
+    async (conn: Connection, direction: 'aToB' | 'bToA', level: PermissionLevel) => {
       if (!client) return
       setBusy(conn.id)
       try {
-        const isUpgrade =
-          permValue(level) > permValue(conn.permission.aToB) ||
-          permValue(level) > permValue(conn.permission.bToA)
-
-        await client.requestPermissionUpgrade(conn.id, 'aToB', level)
-        await client.requestPermissionUpgrade(conn.id, 'bToA', level)
+        const isUpgrade = permValue(level) > permValue(conn.permission[direction])
+        await client.requestPermissionUpgrade(conn.id, direction, level)
         await refresh()
-        flash(isUpgrade ? '已发出升级请求（需双方确认，60 秒内有效）' : '权限已更新')
+        flash(
+          isUpgrade
+            ? '已发出升级请求：需要被授权的一方确认（面板上会出现待确认）'
+            : '权限已更新',
+        )
       } catch (e) {
         flash(e instanceof Error ? e.message : String(e))
       } finally {
@@ -303,8 +309,18 @@ export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
         <div className="ccr-list">
           {connections.map((conn) => {
             const health = conn.health ?? 'green'
-            const level = conn.permission.aToB
-            const symmetric = conn.permission.aToB === conn.permission.bToA
+            const label = (l: PermissionLevel) =>
+              PERMISSION_CHOICES.find((c) => c.value === l)?.label ?? l
+            const aToB = conn.permission.aToB
+            const bToA = conn.permission.bToA
+            const symmetric = aToB === bToA
+            /**
+             * 权限摘要。不对称时用箭头表达方向（A→B 只出现在这里，
+             * 且两端都是真实会话名，不是 A/B 字母）。
+             */
+            const permSummary = symmetric
+              ? label(aToB)
+              : `${label(aToB)} → / ← ${label(bToA)}`
             const open = expandedId === conn.id
             return (
               <article key={conn.id} className={`ccr-conn${open ? ' ccr-conn--open' : ''}`}>
@@ -320,11 +336,7 @@ export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
                     <span className="ccr-conn__session">{labelOf(conn.sessionB)}</span>
                   </span>
                   <span className="ccr-conn__meta">
-                    {HEALTH_TEXT[health] ?? health} ·{' '}
-                    {symmetric
-                      ? PERMISSION_CHOICES.find((c) => c.value === level)?.label ?? level
-                      : '权限不一致'}{' '}
-                    · {conn.cards.length} 卡片
+                    {HEALTH_TEXT[health] ?? health} · {permSummary} · {conn.cards.length} 卡片
                   </span>
                   <span className="ccr-chevron">{open ? '▾' : '▸'}</span>
                 </button>
@@ -362,24 +374,54 @@ export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
                       ))}
 
                     <div className="ccr-field">
-                      <div className="ccr-field__label">权限</div>
-                      <div className="ccr-seg">
-                        {PERMISSION_CHOICES.map((choice) => (
-                          <button
-                            key={choice.value}
-                            type="button"
-                            className={`ccr-seg__item${level === choice.value && symmetric ? ' ccr-seg__item--active' : ''}`}
-                            disabled={busy === conn.id}
-                            title={choice.hint}
-                            onClick={() => void applyPermission(conn, choice.value)}
-                          >
-                            {choice.label}
-                          </button>
-                        ))}
-                      </div>
+                      <div className="ccr-field__label">权限（两个方向可分别设置）</div>
+
+                      {(
+                        [
+                          {
+                            direction: 'aToB' as const,
+                            fromLabel: labelOf(conn.sessionA),
+                            toLabel: labelOf(conn.sessionB),
+                            current: conn.permission.aToB,
+                          },
+                          {
+                            direction: 'bToA' as const,
+                            fromLabel: labelOf(conn.sessionB),
+                            toLabel: labelOf(conn.sessionA),
+                            current: conn.permission.bToA,
+                          },
+                        ] as const
+                      ).map((row) => (
+                        <div key={row.direction} className="ccr-perm-row">
+                          <div className="ccr-perm-row__who" title={`${row.fromLabel} → ${row.toLabel}`}>
+                            <span className="ccr-perm-row__name">{row.fromLabel}</span>
+                            <span className="ccr-perm-row__verb">可以</span>
+                          </div>
+                          <div className="ccr-seg">
+                            {PERMISSION_CHOICES.map((choice) => (
+                              <button
+                                key={choice.value}
+                                type="button"
+                                className={`ccr-seg__item${row.current === choice.value ? ' ccr-seg__item--active' : ''}`}
+                                disabled={busy === conn.id}
+                                title={choice.hint}
+                                onClick={() =>
+                                  void applyPermission(conn, row.direction, choice.value)
+                                }
+                              >
+                                {choice.label}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="ccr-perm-row__target" title={row.toLabel}>
+                            {row.toLabel}
+                          </div>
+                        </div>
+                      ))}
+
                       <div className="ccr-field__hint">
-                        {PERMISSION_CHOICES.find((c) => c.value === level)?.hint}
-                        （双向同时设置；升级需要双方确认）
+                        提高权限需要**被授权的一方**确认，面板上会出现待确认；
+                        降低权限立即生效。两个方向互不影响，可以做成一端可读写、另一端只读。
                       </div>
                     </div>
 

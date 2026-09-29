@@ -460,6 +460,49 @@ export const CONNECTION_CARD_CSS = `
   font-size: 12px;
 }
 
+/* ═══ 权限（两个方向可分别设置） ═══ */
+.ccr-perm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  min-width: 0;
+}
+
+.ccr-perm-row__who {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ccr-perm-row__name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 42%;
+  font-size: 12px;
+}
+
+.ccr-perm-row__verb {
+  flex: none;
+  font-size: 11px;
+  opacity: 0.5;
+}
+
+.ccr-perm-row__target {
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 42%;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.ccr-perm-row .ccr-seg { flex: none; }
+
 /* ═══ 待确认的权限升级 ═══ */
 .ccr-pending {
   margin: 10px 0;
