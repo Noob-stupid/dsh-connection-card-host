@@ -5,3 +5,7 @@ host-debug.log
 
 # lib/ 故意提交：GitHub 直接安装（npm install github:...）不走构建，
 # 必须自带编译产物。修改 src/ 后请重新 build 并提交 lib/。
+
+# 临时提交信息文件
+MSG*.txt
+COMMIT_MSG.txt
