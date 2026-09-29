@@ -315,12 +315,12 @@ export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
             const bToA = conn.permission.bToA
             const symmetric = aToB === bToA
             /**
-             * 权限摘要。不对称时用箭头表达方向（A→B 只出现在这里，
-             * 且两端都是真实会话名，不是 A/B 字母）。
+             * 权限摘要。不对称时给两个方向的值（顺序同展开后的两行），
+             * 具体哪个方向是哪一行由展开区呈现。
              */
             const permSummary = symmetric
               ? label(aToB)
-              : `${label(aToB)} → / ← ${label(bToA)}`
+              : `${label(aToB)} / ${label(bToA)}`
             const open = expandedId === conn.id
             return (
               <article key={conn.id} className={`ccr-conn${open ? ' ccr-conn--open' : ''}`}>
@@ -335,7 +335,14 @@ export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
                     <span className="ccr-conn__arrow">↔</span>
                     <span className="ccr-conn__session">{labelOf(conn.sessionB)}</span>
                   </span>
-                  <span className="ccr-conn__meta">
+                  <span
+                    className="ccr-conn__meta"
+                    title={
+                      symmetric
+                        ? '两个方向权限相同'
+                        : '两个方向权限不同（顺序与展开后的两行一致），点开可分别设置'
+                    }
+                  >
                     {HEALTH_TEXT[health] ?? health} · {permSummary} · {conn.cards.length} 卡片
                   </span>
                   <span className="ccr-chevron">{open ? '▾' : '▸'}</span>
@@ -395,7 +402,9 @@ export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
                         <div key={row.direction} className="ccr-perm-row">
                           <div className="ccr-perm-row__who" title={`${row.fromLabel} → ${row.toLabel}`}>
                             <span className="ccr-perm-row__name">{row.fromLabel}</span>
-                            <span className="ccr-perm-row__verb">可以</span>
+                            <span className="ccr-perm-row__verb" aria-hidden="true">
+                              →
+                            </span>
                           </div>
                           <div className="ccr-seg">
                             {PERMISSION_CHOICES.map((choice) => (

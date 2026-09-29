@@ -487,8 +487,9 @@ export const CONNECTION_CARD_CSS = `
 
 .ccr-perm-row__verb {
   flex: none;
-  font-size: 11px;
-  opacity: 0.5;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.45;
 }
 
 .ccr-perm-row__target {
