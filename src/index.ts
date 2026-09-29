@@ -68,6 +68,17 @@ export function apply(ctx: HostContext, _config?: Record<string, unknown>): void
       }
     }
 
+    // 浏览器半的诊断上报：单独文件，避免与宿主审计混在一起。
+    // 浏览器里读不到 console，拖拽这类交互问题只能靠它落盘。
+    const clientLogFile = join(persistence.baseDir(), 'client-debug.log')
+    const clientLog = (msg: string): void => {
+      try {
+        appendFileSync(clientLogFile, `[${new Date().toISOString()}] ${msg}\n`)
+      } catch {
+        /* 诊断失败不影响业务 */
+      }
+    }
+
     // 适配层（注入白名单检查函数 + 审计日志）
     const adapter = new DSHAdapter(ctx, {
       whitelistCheck: (connId, method) => manager.whitelist.isAllowed(connId, method),
@@ -126,7 +137,11 @@ export function apply(ctx: HostContext, _config?: Record<string, unknown>): void
     }
 
     if (hasConnection) {
-      const dispose = registerRpcBridge(ctx, service, { logger: bridgeLogger, audit: auditLog })
+      const dispose = registerRpcBridge(ctx, service, {
+        logger: bridgeLogger,
+        audit: auditLog,
+        clientLog,
+      })
       if (dispose) ctx.effect(() => dispose, 'connection-card-host: rpc channel')
       debug(`apply: direct bridge done (dispose=${dispose ? 'yes' : 'no'})`)
     } else {
@@ -138,6 +153,7 @@ export function apply(ctx: HostContext, _config?: Record<string, unknown>): void
         const dispose = registerRpcBridge(scope, service, {
           logger: bridgeLogger,
           audit: auditLog,
+          clientLog,
         })
         if (dispose) scope.effect(() => dispose, 'connection-card-host: rpc channel')
         debug(`inject: bridge done (dispose=${dispose ? 'yes' : 'no'})`)

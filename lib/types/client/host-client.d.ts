@@ -38,6 +38,8 @@ export interface ConnectionCardHostClient {
     reloadCard(instanceId: string): Promise<void>;
     listWhitelistedMethods(connectionId: string): Promise<WhitelistEntryView[]>;
     listSessions(): Promise<KnownSessionView[]>;
+    /** 诊断上报（浏览器里读不到 console，只能借 RPC 落盘）。 */
+    report(message: string): void;
 }
 /** RPC 调用器的形状（取自 ctx.connection.rpc）。 */
 export interface RpcCaller {

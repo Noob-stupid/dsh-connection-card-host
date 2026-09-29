@@ -44,6 +44,8 @@ export interface ConnectionCardHostClient {
   reloadCard(instanceId: string): Promise<void>
   listWhitelistedMethods(connectionId: string): Promise<WhitelistEntryView[]>
   listSessions(): Promise<KnownSessionView[]>
+  /** 诊断上报（浏览器里读不到 console，只能借 RPC 落盘）。 */
+  report(message: string): void
 }
 
 /** RPC 调用器的形状（取自 ctx.connection.rpc）。 */
@@ -103,5 +105,11 @@ export function createHostClient(rpc: RpcCaller): ConnectionCardHostClient {
     listWhitelistedMethods: (connectionId) =>
       invoke(RPC_ENDPOINTS.listWhitelist, { connectionId }),
     listSessions: () => invoke(RPC_ENDPOINTS.listSessions),
+    // 诊断：不能阻塞交互，失败静默
+    report: (message) => {
+      void rpc
+        .call(RPC_CHANNEL, RPC_ENDPOINTS.debugLog, { message })
+        .catch(() => {})
+    },
   }
 }

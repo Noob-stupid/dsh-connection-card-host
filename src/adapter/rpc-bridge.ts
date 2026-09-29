@@ -63,12 +63,22 @@ function level(payload: unknown): PermissionLevel {
 type Handler = (payload: unknown) => unknown | Promise<unknown>
 
 /** 端点 → 处理函数。返回值会被包进 RpcResult.value。 */
-function buildEndpoints(service: ConnectionCardHostService): Record<string, Handler> {
+function buildEndpoints(
+  service: ConnectionCardHostService,
+  clientLog?: (msg: string) => void,
+): Record<string, Handler> {
   return {
     [RPC_ENDPOINTS.health]: () => ({
       ready: true,
       connections: service.getAllConnections().length,
     }),
+
+    // 浏览器半的诊断上报：浏览器里读不到 console，只能借这条通道落盘
+    [RPC_ENDPOINTS.debugLog]: (p) => {
+      const message = (p as { message?: unknown } | null)?.message
+      if (typeof message === 'string') clientLog?.(message)
+      return null
+    },
 
     [RPC_ENDPOINTS.listConnections]: () => service.getAllConnections(),
 
@@ -208,6 +218,8 @@ export interface RpcBridgeOptions {
   logger?: { info?(msg: string): void; warn?(msg: string): void }
   /** 审计/诊断落盘（可选）。 */
   audit?(msg: string): void
+  /** 浏览器半的诊断上报落盘（可选）。 */
+  clientLog?(msg: string): void
 }
 
 /**
@@ -234,7 +246,7 @@ export function registerRpcBridge(
     return undefined
   }
 
-  const endpoints = buildEndpoints(service)
+  const endpoints = buildEndpoints(service, options.clientLog)
 
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     if (!isTrusted(req)) {

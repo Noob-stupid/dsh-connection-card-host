@@ -35,8 +35,14 @@ export function AnchorCircle({
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
+    e.stopPropagation()
     onDragStart(e.clientX, e.clientY)
   }, [onDragStart])
+
+  /** 阻止浏览器把这次按压升级成原生 HTML5 拖拽（否则会拖动/重排元素）。 */
+  const handleNativeDragStart = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+  }, [])
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (!onTouchStart) return
@@ -89,6 +95,8 @@ export function AnchorCircle({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onMouseDown={handleMouseDown}
+      onDragStart={handleNativeDragStart}
+      draggable={false}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}

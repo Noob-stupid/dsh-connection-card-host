@@ -47,6 +47,8 @@ export const RPC_ENDPOINTS = {
   reloadCard: 'cards/reload',
   listWhitelist: 'whitelist/list',
   listSessions: 'sessions/list',
+  /** 浏览器半的诊断上报通道（宿主落到 client-debug.log）。 */
+  debugLog: 'debug/log',
 } as const
 
 export type RpcEndpoint = (typeof RPC_ENDPOINTS)[keyof typeof RPC_ENDPOINTS]

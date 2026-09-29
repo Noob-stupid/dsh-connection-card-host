@@ -8,6 +8,8 @@ export interface RpcBridgeOptions {
     };
     /** 审计/诊断落盘（可选）。 */
     audit?(msg: string): void;
+    /** 浏览器半的诊断上报落盘（可选）。 */
+    clientLog?(msg: string): void;
 }
 /**
  * 在 webServer 上注册 RPC 路由。

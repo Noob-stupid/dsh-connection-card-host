@@ -1,0 +1,29 @@
+fix: 拖拽诊断通道 + 监听churn bug + 拖拽防干扰
+
+用户反馈：拖拽时会话框"跑"，且并未联通。
+先取证：宿主 connections.json 里只有我探活时建的测试连接（sess-alpha/beta），
+用户的拖拽一条都没建成 —— 拖拽路径确实断了。
+
+已确认并修复的真实 bug：
+- 全局监听的依赖数组里放了整个 `drag` 对象，而 useDragLine 每次渲染都返回
+  新对象 → 每次 mousemove 都触发 effect 清理+重挂；cleanup 里的
+  clearHighlight() 刚加上的落点高亮立刻被抹掉，所以提示永远看不见。
+  改为把处理函数放进 ref，effect 只依赖 drag.state.dragging 一个开关；
+  clearHighlight 拆到独立 effect（拖动结束才清）。
+
+针对"拖拽时东西会跑"的防御性修复：
+- AnchorCircle: mousedown 增加 stopPropagation（避免冒泡给 composer 处理器）
+- AnchorCircle: 显式 draggable={false} + onDragStart preventDefault
+  （阻止浏览器把按压升级成原生 HTML5 拖拽，进而拖动/重排元素）
+- 拖拽期间给 body 加 userSelect:none + cursor:grabbing 并在结束时还原
+  （鼠标划过页面不再选中文字、不再触发选区自动滚动）
+
+新增浏览器→宿主诊断通道（浏览器里读不到 console）：
+- 宿主 rpc-bridge 新增 debug/log 端点，落盘 $DSH_HOME/connection-cards/client-debug.log
+- host-client 新增 report()（fire-and-forget，失败静默）
+- 拖拽路径埋点：dragStart（当前会话/会话数/行数/已标记行数）、
+  dragEnd（失败原因 reason + 命中 id + 起点 id + 会话数）、建连结果
+- 实测：HTTP 200，日志已落盘
+
+失败原因枚举（便于定位）：no-sessions-bridge / empty-session-list /
+no-row-under-cursor / no-current-session / same-session / ok

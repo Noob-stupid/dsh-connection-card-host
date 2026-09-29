@@ -42,5 +42,7 @@ export declare const RPC_ENDPOINTS: {
     readonly reloadCard: "cards/reload";
     readonly listWhitelist: "whitelist/list";
     readonly listSessions: "sessions/list";
+    /** 浏览器半的诊断上报通道（宿主落到 client-debug.log）。 */
+    readonly debugLog: "debug/log";
 };
 export type RpcEndpoint = (typeof RPC_ENDPOINTS)[keyof typeof RPC_ENDPOINTS];
