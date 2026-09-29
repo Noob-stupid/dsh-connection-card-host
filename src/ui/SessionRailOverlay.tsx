@@ -24,10 +24,10 @@ interface SessionRailOverlayProps {
   sessions: SessionsBridge | null
 }
 
-/** 每条 lane 的水平间距（px）。 */
-const LANE_WIDTH = 5
+/** 每条 lane 的水平间距（px）。多条连接并行时靠它拉开。 */
+const LANE_WIDTH = 9
 /** 竖线相对会话行**右边缘**内缩多少（贴行画，不占左侧窄沟）。 */
-const ROW_RIGHT_INSET = 12
+const ROW_RIGHT_INSET = 14
 /** 会话行位置的采样间隔。DOM 没有坐标接口，只能定期量。 */
 const MEASURE_INTERVAL_MS = 400
 
