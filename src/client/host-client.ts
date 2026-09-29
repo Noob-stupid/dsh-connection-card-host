@@ -25,6 +25,17 @@ export interface KnownSessionView {
   updatedAt: number
 }
 
+/** 待确认的权限升级请求。 */
+export interface PendingUpgradeView {
+  id: string
+  connectionId: string
+  direction: 'aToB' | 'bToA'
+  from: PermissionLevel
+  to: PermissionLevel
+  acceptedCount: number
+  requiredAccepts: number
+}
+
 /** 可用卡片模板（面板的卡片装载区）。 */
 export interface CardTemplateView {
   templateId: string
@@ -56,6 +67,13 @@ export interface ConnectionCardHostClient {
   reloadCard(instanceId: string): Promise<void>
   listCardTemplates(connectionId?: string): Promise<CardTemplateView[]>
   renderCardPanel(instanceId: string): Promise<string | null>
+  /** 待确认的权限升级请求。 */
+  listPendingUpgrades(connectionId?: string): Promise<PendingUpgradeView[]>
+  /** 协商可远程调用的方法白名单。 */
+  negotiateWhitelist(
+    connectionId: string,
+    methods: { method: string; description: string }[],
+  ): Promise<number>
   listWhitelistedMethods(connectionId: string): Promise<WhitelistEntryView[]>
   listSessions(): Promise<KnownSessionView[]>
   /** 诊断上报（浏览器里读不到 console，只能借 RPC 落盘）。 */
@@ -119,6 +137,10 @@ export function createHostClient(rpc: RpcCaller): ConnectionCardHostClient {
     listCardTemplates: (connectionId) =>
       invoke(RPC_ENDPOINTS.listCardTemplates, connectionId ? { connectionId } : {}),
     renderCardPanel: (instanceId) => invoke(RPC_ENDPOINTS.renderCardPanel, { instanceId }),
+    listPendingUpgrades: (connectionId) =>
+      invoke(RPC_ENDPOINTS.listUpgradeRequests, connectionId ? { connectionId } : {}),
+    negotiateWhitelist: (connectionId, methods) =>
+      invoke(RPC_ENDPOINTS.negotiateWhitelist, { connectionId, methods }),
     listWhitelistedMethods: (connectionId) =>
       invoke(RPC_ENDPOINTS.listWhitelist, { connectionId }),
     listSessions: () => invoke(RPC_ENDPOINTS.listSessions),

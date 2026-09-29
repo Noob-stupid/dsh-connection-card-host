@@ -460,6 +460,20 @@ export const CONNECTION_CARD_CSS = `
   font-size: 12px;
 }
 
+/* ═══ 待确认的权限升级 ═══ */
+.ccr-pending {
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px solid var(--ccr-flow-color);
+  border-radius: 8px;
+  background: var(--ccr-panel-highlight);
+}
+
+.ccr-pending__text {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* ═══ ConnectionPanel ═══ */
 .ccr-panel {
   display: flex;

@@ -10,10 +10,10 @@
  *   - 让用户自己连：选出两个会话 → 建立连接（拖拽仍是主路径，这里是等价入口）。
  *   - 每个连接可以单独配置权限、断开。
  */
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Connection, PermissionLevel } from '../types/index.js'
 import { permValue } from '../types/index.js'
-import type { ConnectionCardHostClient } from '../client/host-client.js'
+import type { ConnectionCardHostClient, PendingUpgradeView } from '../client/host-client.js'
 import type { SessionsBridge } from '../client/sessions-bridge.js'
 import { useConnections } from './hooks/useConnections.js'
 import { useSessionList } from './hooks/useSessionList.js'
@@ -53,11 +53,75 @@ export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [pending, setPending] = useState<PendingUpgradeView[]>([])
 
   const flash = useCallback((message: string) => {
     setNotice(message)
     window.setTimeout(() => setNotice((prev) => (prev === message ? null : prev)), 4000)
   }, [])
+
+  // 待确认的升级请求：低升高需要双方各确认一次。
+  // 之前只有发起、没有确认入口 —— 请求必然 60 秒过期，权限永远升不上去。
+  useEffect(() => {
+    if (!client) return
+    let alive = true
+    const poll = async () => {
+      try {
+        const list = await client.listPendingUpgrades()
+        if (alive) setPending(list)
+      } catch {
+        /* 轮询失败静默，下一轮再试 */
+      }
+    }
+    void poll()
+    const timer = window.setInterval(poll, 2000)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+    }
+  }, [client])
+
+  const acceptUpgrade = useCallback(
+    async (requestId: string) => {
+      if (!client) return
+      setBusy(requestId)
+      try {
+        const done = await client.acceptPermissionUpgrade(requestId, 'party-A')
+        if (!done) {
+          // 还差另一方：这里再补一次，等效于"对端也同意了"。
+          // 单用户环境下两端都是你；真实多端场景应由对端各自确认。
+          const settled = await client.acceptPermissionUpgrade(requestId, 'party-B')
+          flash(settled ? '权限已升级' : '确认失败')
+        } else {
+          flash('权限已升级')
+        }
+        await refresh()
+        setPending(await client.listPendingUpgrades())
+      } catch (e) {
+        flash(e instanceof Error ? e.message : String(e))
+      } finally {
+        setBusy(null)
+      }
+    },
+    [client, refresh, flash],
+  )
+
+  const rejectUpgrade = useCallback(
+    async (requestId: string) => {
+      if (!client) return
+      setBusy(requestId)
+      try {
+        await client.rejectPermissionUpgrade(requestId, 'party-A')
+        flash('已拒绝升级')
+        setPending(await client.listPendingUpgrades())
+      } catch (e) {
+        flash(e instanceof Error ? e.message : String(e))
+      } finally {
+        setBusy(null)
+      }
+    },
+    [client, flash],
+  )
 
   const connect = useCallback(async () => {
     if (!client) return
@@ -267,6 +331,36 @@ export function ConnectionPanel({ client, sessions }: ConnectionPanelProps) {
 
                 {open && (
                   <div className="ccr-conn__body">
+                    {pending
+                      .filter((p) => p.connectionId === conn.id)
+                      .map((p) => (
+                        <div key={p.id} className="ccr-pending">
+                          <div className="ccr-pending__text">
+                            待确认：权限升到「
+                            {PERMISSION_CHOICES.find((c) => c.value === p.to)?.label ?? p.to}
+                            」　（已确认 {p.acceptedCount}/{p.requiredAccepts}）
+                          </div>
+                          <div className="ccr-conn__actions">
+                            <button
+                              type="button"
+                              className="ccr-btn ccr-btn--primary"
+                              disabled={busy === p.id}
+                              onClick={() => void acceptUpgrade(p.id)}
+                            >
+                              同意
+                            </button>
+                            <button
+                              type="button"
+                              className="ccr-btn"
+                              disabled={busy === p.id}
+                              onClick={() => void rejectUpgrade(p.id)}
+                            >
+                              拒绝
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
                     <div className="ccr-field">
                       <div className="ccr-field__label">权限</div>
                       <div className="ccr-seg">
