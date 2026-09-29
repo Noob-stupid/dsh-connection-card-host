@@ -2,8 +2,22 @@
   "name": "@dsh-external/dsh-connection-card-host",
   "version": "1.0.0",
   "description": "会话连接卡片宿主：在DSH会话间建立有状态连接，挂载连接级卡片插件",
-  "private": true,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Noob-stupid/dsh-connection-card-host.git"
+  },
+  "homepage": "https://github.com/Noob-stupid/dsh-connection-card-host#readme",
+  "bugs": {
+    "url": "https://github.com/Noob-stupid/dsh-connection-card-host/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "connection",
+    "card"
+  ],
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
   "files": [
