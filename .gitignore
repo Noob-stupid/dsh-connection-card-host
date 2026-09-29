@@ -9,3 +9,13 @@ host-debug.log
 # 临时提交信息文件
 MSG*.txt
 COMMIT_MSG.txt
+
+# ── 内部设计/规划/排查文档：只留本地，不推远程 ──
+# 理由：这些是开发过程中的推演与事故记录，属于内部留档；
+# 对外只需要协议与 API 文档（docs/card-protocol.md、docs/adapter-api.md、
+# docs/compatibility.md、README.md）。
+docs/plugin-ecosystem-plan.md
+docs/internal/
+docs/*-plan.md
+_v4fix*/
+*.local.md
