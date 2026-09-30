@@ -98,6 +98,19 @@ export declare class SessionBridge {
     /** 清掉过期 id，避免集合无限增长。 */
     private pruneDeliveryIds;
     /**
+     * 记一笔"因来源非真人而跳过观察"。
+     *
+     * 每个会话、每种 kind **只记一次** —— 宿主通知可能很密（某个会话里
+     * model-selection 23 条、tool-jobs 5 条），逐条记会把日志刷爆，
+     * 而我们要的只是"**出现过**"这个信息。
+     *
+     * 留痕的价值：本 bug 家族已咬过两次（`signal` 漏传、`source` 被覆写），
+     * 共同点是"看着有、实际永远不生效、UI 和日志都看不出"。
+     * 有了这行，框架改 kind 或加新来源时会**自己浮出来**。
+     */
+    private noteSkippedKind;
+    private skippedKinds;
+    /**
      * 订阅**全部**会话事件（含 tool/call、step/start 等）。
      *
      * 与 `observe()` 的区别：那个只放行 user/assistant **消息**（"发言"），
