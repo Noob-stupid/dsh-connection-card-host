@@ -419,7 +419,7 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
             <span>
               有 <strong>{forwardingConnections.length}</strong> 条连接正在
               <strong>互相转发消息</strong>
-              —— 你在任一端说的话都会送进另一端，并**让对方被唤醒去回应**。
+              —— 你在任一端说的话都会送进另一端，并<strong>让对方被唤醒去回应</strong>。
               不需要时把它调回「只读」。
             </span>
           </div>
@@ -555,7 +555,7 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
                         可以做成一端可写入、另一端只读。
                       </div>
                       <div className="ccr-field__hint">
-                        提高权限需要**被授权的一方**确认，面板上会出现待确认；降低权限立即生效。
+                        提高权限需要<strong>被授权的一方</strong>确认，面板上会出现待确认；降低权限立即生效。
                       </div>
                     </div>
 

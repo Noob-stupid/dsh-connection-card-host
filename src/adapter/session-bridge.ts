@@ -515,7 +515,30 @@ export class SessionBridge {
    * @param text 文本
    * @param wake 是否唤醒对方（false = 只让它下次被唤醒时看到）
    */
-  async deliver(sessionId: string, text: string, wake = true): Promise<DeliverResult> {
+  /**
+   * 把一段文本投递给某个会话，使其 agent 能感知。
+   *
+   * @param form **这条消息的性质** —— 接收端据此判断"要不要动手"。
+   *
+   * ## 为什么必须有这个字段（对端会话从接收侧提出的缺口）
+   *
+   * 早先自动镜像与显式派活**落库形态完全一样**（同 kind、同前缀），
+   * 接收方**没有任何字段能判断**："这是它的进展汇报，还是它有意派给我的活？"
+   *
+   * 后果不是抽象的 —— 对端会话曾因此**开始做没人派给它的工作**：
+   * 中继把我的大段汇报镜像过去，它当成"用户对我的指令"去响应了。
+   * 它自己是这样描述的：
+   *   > 我无法区分「自动镜像」与「对方显式投递」—— 两者落库形态完全一样。
+   *
+   *   mirror  —— 自动同步的进展/汇报。**信息，不是任务**，不必动手。
+   *   handoff —— 明确派活/交接。**需要处理**。
+   */
+  async deliver(
+    sessionId: string,
+    text: string,
+    wake = true,
+    form: 'mirror' | 'handoff' = 'handoff',
+  ): Promise<DeliverResult> {
     const content = [{ type: 'text', text }]
 
     const agents = safeCtxGet<{ get?(id: string): unknown }>(this.ctx, 'agents')
@@ -558,7 +581,11 @@ export class SessionBridge {
       id: deliveryId,
       role: 'user',
       content,
-      source: { kind: PLUGIN_SOURCE_KIND, form: 'relay', summary: '连接消息' },
+      source: {
+        kind: PLUGIN_SOURCE_KIND,
+        form,
+        summary: form === 'mirror' ? '对方进展（自动同步）' : '对方派活（需要处理）',
+      },
     }
 
     // ── 首选：对端**活着**时走 agents 路径 ──

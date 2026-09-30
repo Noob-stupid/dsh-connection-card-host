@@ -284,7 +284,7 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
             {installMsg ?? (
               <>
                 支持 npm 包名、tgz 地址、本地目录。装到 <code>{root || '…'}</code>，
-                **不写入 DSH 的 profile**，所以不会影响 DSH 本身、也不会被它的更新破坏。
+                <strong>不写入 DSH 的 profile</strong>，所以不会影响 DSH 本身、也不会被它的更新破坏。
               </>
             )}
           </div>

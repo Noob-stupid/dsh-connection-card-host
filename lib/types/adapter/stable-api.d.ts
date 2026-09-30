@@ -127,7 +127,7 @@ export interface ConnectionCardHostService {
         notes: string[];
     };
     /** 直接往某个会话投递文本（目标必须有 live agent）。 */
-    deliverToSession(sessionId: string, text: string, wake?: boolean): Promise<{
+    deliverToSession(sessionId: string, text: string, wake?: boolean, form?: 'mirror' | 'handoff'): Promise<{
         ok: boolean;
         via?: string;
         reason?: string;

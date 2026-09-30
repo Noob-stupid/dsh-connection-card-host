@@ -138,7 +138,12 @@ export interface ConnectionCardHostService {
   /** 会话桥能力探测。 */
   relayCapabilities(): { observe: boolean; deliver: boolean; via: string[]; notes: string[] }
   /** 直接往某个会话投递文本（目标必须有 live agent）。 */
-  deliverToSession(sessionId: string, text: string, wake?: boolean): Promise<{ ok: boolean; via?: string; reason?: string }>
+  deliverToSession(
+    sessionId: string,
+    text: string,
+    wake?: boolean,
+    form?: 'mirror' | 'handoff',
+  ): Promise<{ ok: boolean; via?: string; reason?: string }>
   /** 读取某会话最近的消息（诊断用）。 */
   readSessionRecent(sessionId: string, limit?: number): { role: string; text: string }[]
 }
@@ -258,9 +263,9 @@ export function createStableApi(
     },
     renderConventions: (cid, aLabel, bLabel) =>
       box?.render(cid, aLabel, bLabel) ?? '公约盒未装配',
-    deliverToSession: async (sessionId, text, wake = true) => {
+    deliverToSession: async (sessionId, text, wake = true, form = 'handoff') => {
       if (!bridge) return { ok: false, reason: '会话桥未装配' }
-      const r = await bridge.deliver(sessionId, text, wake)
+      const r = await bridge.deliver(sessionId, text, wake, form)
       return r.ok ? { ok: true, ...(r.via ? { via: r.via } : {}) } : { ok: false, reason: r.reason }
     },
     readSessionRecent: (sessionId, limit) => bridge?.readRecent(sessionId, limit ?? 20) ?? [],

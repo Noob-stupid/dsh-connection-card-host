@@ -396,7 +396,7 @@ export function AwarenessPanel({
             </div>
 
             <div className="ccr-field__hint">
-              约定**只存不发**，不占对方上下文；参与连接的会话可用 connection_conventions
+              约定<strong>只存不发</strong>，不占对方上下文；参与连接的会话可用 connection_conventions
               工具随时查到。
             </div>
           </div>
