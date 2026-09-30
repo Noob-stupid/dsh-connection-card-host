@@ -68,6 +68,8 @@ export interface ConnectionCardHostService {
     text: string,
     options?: { replyTo?: string },
   ): SendGate & { message?: ConnectionMessage }
+  /** 清空某条连接的交流记录（连接本身不动）。 */
+  clearMessages(connectionId: string): { ok: boolean; removed: number }
 
   // 会话桥（「A 说话 B 能感知」）
   /** 会话桥能力探测。 */
@@ -118,6 +120,12 @@ export function createStableApi(
     listWhitelistedMethods: (cid) => manager.whitelist.listMethods(cid).map(e => ({ method: e.method, description: e.description, approvedBy: e.approvedBy })),
     listSessions: () => adapter?.listSessions() ?? [],
     listMessages: (cid, options) => manager.messages.list(cid, options ?? {}),
+    clearMessages: (cid) => {
+      const before = manager.messages.list(cid, {}).length
+      manager.messages.clear(cid)
+      manager.persistMessages(cid)
+      return { ok: true, removed: before }
+    },
     sendMessage: (cid, from, kind, text, options) => {
       const conn = manager.getById(cid)
       const result = manager.messages.append(conn, from, kind, text, options ?? {})

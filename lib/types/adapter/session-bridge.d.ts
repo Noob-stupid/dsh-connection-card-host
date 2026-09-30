@@ -40,7 +40,11 @@ export interface SessionActivity {
 export interface DeliverResult {
     ok: boolean;
     /** 实际走通的通道，便于诊断。 */
-    via?: 'sessionController' | 'agents.followup' | 'agents.inject';
+    via?: 'sessionController' | 'agents.steer' | 'agents.followup' | 'agents.inject';
+    /** 实际使用的投递模式：steer=即时插话，queue=排队到下一轮。 */
+    mode?: 'steer' | 'queue';
+    /** 投递时对端是否处于活跃状态（false = 把它冷启动唤醒了）。 */
+    live?: boolean;
     reason?: string;
 }
 /** 投递时写的 source.plugin 标识，用于回环识别。 */

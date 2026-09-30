@@ -59,6 +59,8 @@ export declare const RPC_ENDPOINTS: {
     readonly listMessages: "messages/list";
     /** 以某一端的身份发一条连接消息。 */
     readonly sendMessage: "messages/send";
+    /** 清空某条连接的交流记录（连接本身不动）。 */
+    readonly clearMessages: "messages/clear";
     /**
      * 调试用：直接往某个会话投递一段文本（验证「A 说话 B 能感知」的最后一跳）。
      * 目标会话必须有 live agent，否则返回失败原因。

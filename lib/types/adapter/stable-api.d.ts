@@ -59,6 +59,11 @@ export interface ConnectionCardHostService {
     }): SendGate & {
         message?: ConnectionMessage;
     };
+    /** 清空某条连接的交流记录（连接本身不动）。 */
+    clearMessages(connectionId: string): {
+        ok: boolean;
+        removed: number;
+    };
     /** 会话桥能力探测。 */
     relayCapabilities(): {
         observe: boolean;

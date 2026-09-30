@@ -43,7 +43,11 @@ export interface SessionActivity {
 export interface DeliverResult {
   ok: boolean
   /** 实际走通的通道，便于诊断。 */
-  via?: 'sessionController' | 'agents.followup' | 'agents.inject'
+  via?: 'sessionController' | 'agents.steer' | 'agents.followup' | 'agents.inject'
+  /** 实际使用的投递模式：steer=即时插话，queue=排队到下一轮。 */
+  mode?: 'steer' | 'queue'
+  /** 投递时对端是否处于活跃状态（false = 把它冷启动唤醒了）。 */
+  live?: boolean
   reason?: string
 }
 
@@ -317,6 +321,29 @@ export class SessionBridge {
   async deliver(sessionId: string, text: string, wake = true): Promise<DeliverResult> {
     const content = [{ type: 'text', text }]
 
+    const agents = safeCtxGet<{ get?(id: string): unknown }>(this.ctx, 'agents')
+    const liveAgent = agents?.get?.(sessionId) as { status?: unknown } | undefined
+
+    /**
+     * 投递模式：**自适应**。
+     *
+     * 底层实现（`dsh-api-session-controller/lib/index.js:882`）只有两种：
+     *   mode === 'steer' → agent.steer(msg)     即时插话进正在跑的那一轮
+     *   其他             → agent.followup(msg)  排到下一轮
+     *
+     * 而 `steer` 有硬前提（同文件 :966）：
+     *   `agent.status !== 'running'` 时抛 session/steer-unavailable。
+     *
+     * 所以不能写死任何一个：
+     *   - 对端**正在跑** → steer，消息当场送到（否则要等它跑完，可能几分钟）
+     *   - 对端**空闲**   → followup，下一轮立刻开始，效果本来就等同于即时
+     *
+     * 写死 `queue` 会让"跨会话交流"永远退化成"留言"；写死 `steer` 会在
+     * 对端空闲时直接报错。自适应同时避开两个坑。
+     */
+    const peerRunning = liveAgent?.status === 'running'
+    const mode = peerRunning ? 'steer' : 'queue'
+
     // ① sessionController.prompt（仅 runtime 0.2+）
     //    这是**首选路径**：它内部 resolveAgent 是「活则复用、冷则 resume」，
     //    所以对端没打开时能把它唤醒，而不是投递失败。
@@ -333,19 +360,23 @@ export class SessionBridge {
           {
             sessionId,
             content,
-            mode: wake ? 'queue' : 'steer',
+            mode,
             requestId: `ccr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           },
           abort.signal,
         )
-        return { ok: true, via: 'sessionController' }
+        return {
+          ok: true,
+          via: 'sessionController',
+          mode,
+          live: liveAgent !== undefined,
+        }
       } catch (e) {
         this.auditLog(`sessionController.prompt 失败，回退 agents: ${String(e)}`)
       }
     }
 
-    // ② agents.get → followup / inject（两版本共有）
-    const agents = safeCtxGet<{ get?(id: string): unknown }>(this.ctx, 'agents')
+    // ② agents.get → followup / steer（两版本共有）
     if (!agents?.get) {
       // 区分「服务读不到」和「会话不在内存」——这两种原因的修法完全不同
       return {
@@ -356,9 +387,10 @@ export class SessionBridge {
       }
     }
 
-    const agent = agents.get(sessionId) as
+    const agent = liveAgent as
       | {
           followup?(message: unknown): void
+          steer?(message: unknown): void
           inject?(message: unknown): void
           status?: unknown
         }
@@ -383,12 +415,26 @@ export class SessionBridge {
       source: { kind: PLUGIN_SOURCE_KIND, form: 'relay', summary: '连接消息' },
     }
 
-    if (wake && typeof agent.followup === 'function') {
+    // 对端正在跑 → steer（即时插话）；否则 followup（下一轮立刻开始）
+    if (peerRunning && typeof agent.steer === 'function') {
+      try {
+        this.delivering.add(sessionId)
+        agent.steer(message)
+        this.auditLog(`投递成功（steer 即时插话）→ ${sessionId}`)
+        return { ok: true, via: 'agents.steer', mode: 'steer', live: true }
+      } catch (e) {
+        this.auditLog(`steer 失败，回退 followup: ${String(e)}`)
+      } finally {
+        setTimeout(() => this.delivering.delete(sessionId), 0)
+      }
+    }
+
+    if (typeof agent.followup === 'function') {
       try {
         this.delivering.add(sessionId)
         agent.followup(message)
         this.auditLog(`投递成功（followup）→ ${sessionId}`)
-        return { ok: true, via: 'agents.followup' }
+        return { ok: true, via: 'agents.followup', mode: 'queue', live: true }
       } catch (e) {
         this.auditLog(`followup 失败: ${String(e)}`)
       } finally {

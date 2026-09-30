@@ -178,6 +178,10 @@ function buildEndpoints(
       })
     },
 
+    [RPC_ENDPOINTS.clearMessages]: (p) =>
+      // 清空是破坏性操作，但只影响我们自己的交流记录（连接本身不动）
+      service.clearMessages(str(p, 'connectionId')),
+
     [RPC_ENDPOINTS.sendMessage]: (p) => {
       const raw = p as { from?: unknown; kind?: unknown; text?: unknown; replyTo?: unknown } | null
       const from = raw?.from === 'b' ? 'b' : 'a'
