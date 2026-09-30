@@ -217,9 +217,12 @@ export class SessionBridge {
           // 中间步骤（只有思考块 / 工具调用块，没有正文）是**过程**不是**发言**。
           // 一轮对话里 assistant/message 会触发多次，中继过程毫无意义
           //（用户只会看到 `[reasoning][tool-call]`），所以这里直接跳过。
-          if (textContentOnly(content).trim().length === 0) return
+          const body = textContentOnly(content)
+          if (body.trim().length === 0) return
           role = 'assistant'
-          text = textOfBlocks(content)
+          // 用纯正文（不含 [reasoning]/[tool-call] 占位）——
+          // 判断和内容必须是同一个版本，否则日志里会留下 `[reasoning]正文` 这种残渣
+          text = body
           // 这轮回复若是被中继消息触发的，就处在链上后续跳 —— 交给中继层做跳数判断
           relayTriggered = this.lastUserWasFromPlugin(sessionId)
         } else {
