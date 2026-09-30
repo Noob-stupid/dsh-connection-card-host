@@ -84,13 +84,18 @@ function textContentOnly(content: unknown): string {
 }
 
 /** 判断消息来源是不是我们自己投递的（防止 A→B→A 无限回环）。 */
-function isFromPlugin(source: unknown): boolean {
-  const s = source as { kind?: unknown; plugin?: unknown } | null
-  // 当前形状：producer-owned kind
+function isFromPlugin(source: unknown, deliveryIds?: Set<string>): boolean {
+  const s = source as { kind?: unknown; plugin?: unknown; rpcId?: unknown } | null
+  // ① 当前形状：producer-owned kind
   if (s?.kind === PLUGIN_SOURCE_KIND) return true
-  // 兼容旧形状（V3 的 `{ kind: 'plugin', plugin }` 包装）：
+  // ② 兼容旧形状（V3 的 `{ kind: 'plugin', plugin }` 包装）：
   // 老宿主/老日志里仍是这个形状，认出来才能继续防回环。
-  return s?.kind === 'plugin' && s?.plugin === PLUGIN_SOURCE
+  if (s?.kind === 'plugin' && s?.plugin === PLUGIN_SOURCE) return true
+  // ③ 投递 id 命中我们登记过的集合 —— 框架覆写 source 时的兜底
+  if (typeof s?.rpcId === 'string' && deliveryIds?.has(s.rpcId)) return true
+  // ④ id 前缀兜底：即便登记集合因宿主重启而空了，`ccr-` 也是本插件独有的前缀
+  if (typeof s?.rpcId === 'string' && s.rpcId.startsWith('ccr-')) return true
+  return false
 }
 
 /** 投递时写的 source.plugin 标识，用于回环识别。 */
@@ -129,6 +134,39 @@ export class SessionBridge {
 
   /** 原始会话事件订阅者（不过滤事件类型）。 */
   private rawHandlers = new Set<(sessionId: string, event: unknown) => void>()
+
+  /**
+   * 我们最近投递时生成并登记的 requestId。
+   *
+   * 这是**不依赖 source 形状**的防回环依据：`sessionController.prompt()` 会把
+   * 调用方的 `requestId` 放进它自己造的 `source.rpcId`，所以只要 id 还在集合里，
+   * 哪怕框架改掉 source.kind，我们仍能认出"这条是自己人发的"。
+   * 见 `isFromPlugin()` 的说明与 2026-09-30 回声事故。
+   */
+  private deliveryIds = new Set<string>()
+  /** sessionId → 最近一次投递时刻（用于把过期 id 清出去）。 */
+  private deliveryIdTimes = new Map<string, number>()
+
+  /** 投递 id 保留多久（远超一轮对话的时间，够覆盖排队与冷启动）。 */
+  private static readonly DELIVERY_ID_TTL = 10 * 60_000
+
+  /** 登记一条投递的 id（供防回环识别）。 */
+  private rememberDeliveryId(id: string): void {
+    this.deliveryIds.add(id)
+    this.deliveryIdTimes.set(id, Date.now())
+    this.pruneDeliveryIds()
+  }
+
+  /** 清掉过期 id，避免集合无限增长。 */
+  private pruneDeliveryIds(): void {
+    const cutoff = Date.now() - SessionBridge.DELIVERY_ID_TTL
+    for (const [id, at] of this.deliveryIdTimes) {
+      if (at < cutoff) {
+        this.deliveryIds.delete(id)
+        this.deliveryIdTimes.delete(id)
+      }
+    }
+  }
 
   /**
    * 订阅**全部**会话事件（含 tool/call、step/start 等）。
@@ -238,7 +276,7 @@ export class SessionBridge {
           const msg = event.data as { content?: unknown; source?: unknown } | undefined
           role = 'user'
           text = textOfBlocks(msg?.content)
-          if (isFromPlugin(msg?.source)) {
+          if (isFromPlugin(msg?.source, this.deliveryIds)) {
             // 我们自己投递进去的，不要再中继出去，否则 A→B→A 回环
             return
           }
@@ -311,7 +349,7 @@ export class SessionBridge {
           for (let i = messages.length - 1; i >= 0; i--) {
             const m = messages[i] as { role?: unknown; source?: unknown }
             if (m?.role !== 'user') continue
-            return isFromPlugin(m.source)
+            return isFromPlugin(m.source, this.deliveryIds)
           }
           return false
         }
@@ -325,7 +363,7 @@ export class SessionBridge {
         const e = events[i] as { type?: unknown; data?: unknown }
         if (e?.type !== 'user/message') continue
         const msg = e.data as { source?: unknown } | undefined
-        return isFromPlugin(msg?.source)
+        return isFromPlugin(msg?.source, this.deliveryIds)
       }
       return false
     } catch {
@@ -350,7 +388,14 @@ export class SessionBridge {
     const content = [{ type: 'text', text }]
 
     const agents = safeCtxGet<{ get?(id: string): unknown }>(this.ctx, 'agents')
-    const liveAgent = agents?.get?.(sessionId) as { status?: unknown } | undefined
+    const liveAgent = agents?.get?.(sessionId) as
+      | {
+          followup?(message: unknown): void
+          steer?(message: unknown): void
+          inject?(message: unknown): void
+          status?: unknown
+        }
+      | undefined
 
     /**
      * 投递模式：**自适应**。
@@ -365,16 +410,64 @@ export class SessionBridge {
      * 所以不能写死任何一个：
      *   - 对端**正在跑** → steer，消息当场送到（否则要等它跑完，可能几分钟）
      *   - 对端**空闲**   → followup，下一轮立刻开始，效果本来就等同于即时
-     *
-     * 写死 `queue` 会让"跨会话交流"永远退化成"留言"；写死 `steer` 会在
-     * 对端空闲时直接报错。自适应同时避开两个坑。
      */
     const peerRunning = liveAgent?.status === 'running'
     const mode = peerRunning ? 'steer' : 'queue'
 
-    // ① sessionController.prompt（仅 runtime 0.2+）
-    //    这是**首选路径**：它内部 resolveAgent 是「活则复用、冷则 resume」，
-    //    所以对端没打开时能把它唤醒，而不是投递失败。
+    // 投递 id：**登记下来供防回环识别**（见 isFromPlugin 的说明）。
+    // 这个 id 会被 sessionController 原样放进它自己造的 source.rpcId，
+    // 所以即便它覆写了 source.kind，我们仍能认出这条是自己发的。
+    const deliveryId = `ccr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+    this.rememberDeliveryId(deliveryId)
+
+    // MessageId 是 brand（运行时就是字符串）；source 用 producer-owned kind 标注来源，
+    // 既让对端知道"这来自连接中继"，也让本插件能识别并防回环。
+    // ⚠️ 绝不能写 V3 的 `{ kind: 'plugin', plugin }`：V4 准入会直接拒绝整个会话。
+    const message = {
+      id: deliveryId,
+      role: 'user',
+      content,
+      source: { kind: PLUGIN_SOURCE_KIND, form: 'relay', summary: '连接消息' },
+    }
+
+    // ── 首选：对端**活着**时走 agents 路径 ──
+    //
+    // ⚠️ 顺序很关键。`sessionController.prompt` 会**自己造 source**
+    // （`{ kind: 'user', rpcId }`，见 dsh-api-session-controller/lib/index.js:856-860），
+    // **完全忽略我们传的 source** —— 于是投递进去的消息看起来就是"真实用户输入"，
+    // 本插件的防回环识别与链路判定双双失效，消息会被中继原样转发回去形成回环。
+    //
+    // 所以：**活着走 agents（source 由我们标注）；只有冷会话才用 sessionController**
+    // （它自带 resume，是我们唯一的冷唤醒通道），两条路径都由上面的 deliveryId 兜底。
+    if (liveAgent) {
+      if (peerRunning && typeof liveAgent.steer === 'function') {
+        try {
+          this.delivering.add(sessionId)
+          liveAgent.steer(message)
+          this.auditLog(`投递成功（steer 即时插话）→ ${sessionId}`)
+          return { ok: true, via: 'agents.steer', mode: 'steer', live: true }
+        } catch (e) {
+          this.auditLog(`steer 失败，回退 followup: ${String(e)}`)
+        } finally {
+          setTimeout(() => this.delivering.delete(sessionId), 0)
+        }
+      }
+
+      if (typeof liveAgent.followup === 'function') {
+        try {
+          this.delivering.add(sessionId)
+          liveAgent.followup(message)
+          this.auditLog(`投递成功（followup，source 已标注）→ ${sessionId}`)
+          return { ok: true, via: 'agents.followup', mode: 'queue', live: true }
+        } catch (e) {
+          this.auditLog(`followup 失败: ${String(e)}`)
+        } finally {
+          setTimeout(() => this.delivering.delete(sessionId), 0)
+        }
+      }
+    }
+
+    // ── 兜底：冷会话唤醒（sessionController 自带 resume） ──
     const controllerSource = this.controllerCtx ?? this.ctx
     const controller = safeCtxGet<{
       prompt?(request: unknown, signal?: AbortSignal): unknown
@@ -389,22 +482,18 @@ export class SessionBridge {
             sessionId,
             content,
             mode,
-            requestId: `ccr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            // 这个值会被 prompt 原样放进它造的 source.rpcId —— 防回环就靠它
+            requestId: deliveryId,
           },
           abort.signal,
         )
-        return {
-          ok: true,
-          via: 'sessionController',
-          mode,
-          live: liveAgent !== undefined,
-        }
+        this.auditLog(`投递成功（冷会话唤醒，prompt 会覆写 source 但有 id 兜底）→ ${sessionId}`)
+        return { ok: true, via: 'sessionController', mode, live: false }
       } catch (e) {
-        this.auditLog(`sessionController.prompt 失败，回退 agents: ${String(e)}`)
+        this.auditLog(`sessionController.prompt 失败: ${String(e)}`)
       }
     }
 
-    // ② agents.get → followup / steer（两版本共有）
     if (!agents?.get) {
       // 区分「服务读不到」和「会话不在内存」——这两种原因的修法完全不同
       return {
@@ -415,73 +504,14 @@ export class SessionBridge {
       }
     }
 
-    const agent = liveAgent as
-      | {
-          followup?(message: unknown): void
-          steer?(message: unknown): void
-          inject?(message: unknown): void
-          status?: unknown
-        }
-      | undefined
-
-    if (!agent) {
-      return {
-        ok: false,
-        reason:
-          `会话 ${sessionId} 当前没有 live agent（未打开或已释放），无法投递。` +
-          '对端会话需要处于活跃状态才能感知。',
-      }
+    // 走到这里说明：对端是冷会话（没有 live agent），且 sessionController 也不可用。
+    // agents 路径已在上面优先尝试过（活着的情况），这里只剩失败。
+    return {
+      ok: false,
+      reason:
+        `会话 ${sessionId} 当前没有 live agent（未打开或已释放），` +
+        '且 sessionController 不可用，无法唤醒。',
     }
-
-    // MessageId 是 brand（运行时就是字符串）；source 用 producer-owned kind 标注来源，
-    // 既让对端知道"这来自连接中继"，也让本插件能识别并防回环。
-    // ⚠️ 绝不能写 V3 的 `{ kind: 'plugin', plugin }`：V4 准入会直接拒绝整个会话。
-    const message = {
-      id: `ccr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
-      role: 'user',
-      content,
-      source: { kind: PLUGIN_SOURCE_KIND, form: 'relay', summary: '连接消息' },
-    }
-
-    // 对端正在跑 → steer（即时插话）；否则 followup（下一轮立刻开始）
-    if (peerRunning && typeof agent.steer === 'function') {
-      try {
-        this.delivering.add(sessionId)
-        agent.steer(message)
-        this.auditLog(`投递成功（steer 即时插话）→ ${sessionId}`)
-        return { ok: true, via: 'agents.steer', mode: 'steer', live: true }
-      } catch (e) {
-        this.auditLog(`steer 失败，回退 followup: ${String(e)}`)
-      } finally {
-        setTimeout(() => this.delivering.delete(sessionId), 0)
-      }
-    }
-
-    if (typeof agent.followup === 'function') {
-      try {
-        this.delivering.add(sessionId)
-        agent.followup(message)
-        this.auditLog(`投递成功（followup）→ ${sessionId}`)
-        return { ok: true, via: 'agents.followup', mode: 'queue', live: true }
-      } catch (e) {
-        this.auditLog(`followup 失败: ${String(e)}`)
-      } finally {
-        // 事件是同步发出的，下一帧清掉即可
-        setTimeout(() => this.delivering.delete(sessionId), 0)
-      }
-    }
-
-    if (typeof agent.inject === 'function') {
-      try {
-        agent.inject(message)
-        this.auditLog(`投递成功（inject，不唤醒）→ ${sessionId}`)
-        return { ok: true, via: 'agents.inject' }
-      } catch (e) {
-        return { ok: false, reason: `inject 失败: ${String(e)}` }
-      }
-    }
-
-    return { ok: false, reason: '目标 agent 既没有 followup 也没有 inject，无法投递' }
   }
 
   /** 读取某会话最近的消息历史（诊断/工具用）。 */

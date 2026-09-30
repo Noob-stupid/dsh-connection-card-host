@@ -81,6 +81,23 @@ export declare class SessionBridge {
     /** 原始会话事件订阅者（不过滤事件类型）。 */
     private rawHandlers;
     /**
+     * 我们最近投递时生成并登记的 requestId。
+     *
+     * 这是**不依赖 source 形状**的防回环依据：`sessionController.prompt()` 会把
+     * 调用方的 `requestId` 放进它自己造的 `source.rpcId`，所以只要 id 还在集合里，
+     * 哪怕框架改掉 source.kind，我们仍能认出"这条是自己人发的"。
+     * 见 `isFromPlugin()` 的说明与 2026-09-30 回声事故。
+     */
+    private deliveryIds;
+    /** sessionId → 最近一次投递时刻（用于把过期 id 清出去）。 */
+    private deliveryIdTimes;
+    /** 投递 id 保留多久（远超一轮对话的时间，够覆盖排队与冷启动）。 */
+    private static readonly DELIVERY_ID_TTL;
+    /** 登记一条投递的 id（供防回环识别）。 */
+    private rememberDeliveryId;
+    /** 清掉过期 id，避免集合无限增长。 */
+    private pruneDeliveryIds;
+    /**
      * 订阅**全部**会话事件（含 tool/call、step/start 等）。
      *
      * 与 `observe()` 的区别：那个只放行 user/assistant **消息**（"发言"），
