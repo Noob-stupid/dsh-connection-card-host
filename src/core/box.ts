@@ -30,8 +30,14 @@
 /** 一条约定。 */
 export interface Convention {
   id: string
-  /** 谁声明的：连接的哪一端。 */
-  by: 'a' | 'b'
+  /**
+   * 谁声明的。
+   *
+   * `'a'` / `'b'` 是连接的端点；`'user'` 是**人**（从面板直接写进来的）。
+   * 人是第三方，既不是 A 也不是 B —— 早期版本在面板里硬编码成 'a'，
+   * 于是人写的约定被算在了 A 头上，对端看到会误以为是 A 说的。
+   */
+  by: 'a' | 'b' | 'user'
   /** 分类，便于检索。 */
   topic: string
   /** 约定正文。 */
@@ -75,7 +81,7 @@ export class ConventionBox {
 
   add(
     connectionId: string,
-    by: 'a' | 'b',
+    by: 'a' | 'b' | 'user',
     topic: string,
     text: string,
     supersedes?: string,
@@ -159,9 +165,10 @@ export class ConventionBox {
     for (const [topic, items] of byTopic) {
       lines.push(`\n【${topic}】`)
       for (const c of items) {
-        // ⚠️ by 是**连接的端点**，不是"我/对方" —— 按端点取对应名字
+        // ⚠️ by 是**连接的端点或人**，不是"我/对方" —— 按来源取对应名字
+        const who = c.by === 'a' ? aLabel : c.by === 'b' ? bLabel : '用户（人工添加）'
         lines.push(`- ${c.text}`)
-        lines.push(`  （由 ${c.by === 'a' ? aLabel : bLabel} 声明，id=${c.id}）`)
+        lines.push(`  （由 ${who} 声明，id=${c.id}）`)
       }
     }
     return lines.join('\n')

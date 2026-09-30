@@ -82,7 +82,9 @@ export function AwarenessPanel({
     if (text.length === 0) return
     setBusy(true)
     try {
-      const r = await client.declareConvention(connection.id, 'a', topic.trim() || '一般', text)
+      // by='user'：声明的是**人**，不是 A 也不是 B。
+      // 早先硬编码成 'a'，会让人写的东西被算到 A 头上，对端看到会误判来源。
+      const r = await client.declareConvention(connection.id, 'user', topic.trim() || '一般', text)
       if (r.ok) {
         setDraft('')
         setTopic('')
@@ -201,8 +203,8 @@ export function AwarenessPanel({
               <li key={c.id} className="ccr-box__item">
                 <span className="ccr-box__topic">{c.topic}</span>
                 <span className="ccr-box__text">{c.text}</span>
-                <span className="ccr-box__who" title={c.by === 'a' ? connection.sessionA : connection.sessionB}>
-                  {c.by === 'a' ? labelA : labelB}
+                <span className="ccr-box__who" title={c.by === 'user' ? '你在面板里直接添加的' : c.by === 'a' ? connection.sessionA : connection.sessionB}>
+                  {c.by === 'user' ? '你' : c.by === 'a' ? labelA : labelB}
                 </span>
                 <button
                   type="button"

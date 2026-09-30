@@ -93,7 +93,7 @@ export interface ConnectionCardHostService {
   /** 声明一条约定。supersedes 用于取代旧约定（保留追溯）。 */
   declareConvention(
     connectionId: string,
-    by: 'a' | 'b',
+    by: 'a' | 'b' | 'user',
     topic: string,
     text: string,
     supersedes?: string,

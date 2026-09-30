@@ -83,7 +83,7 @@ export interface ConnectionCardHostService {
     listConventions(connectionId: string, includeSuperseded?: boolean): Convention[];
     searchConventions(connectionId: string, keyword: string): Convention[];
     /** 声明一条约定。supersedes 用于取代旧约定（保留追溯）。 */
-    declareConvention(connectionId: string, by: 'a' | 'b', topic: string, text: string, supersedes?: string): AddResult;
+    declareConvention(connectionId: string, by: 'a' | 'b' | 'user', topic: string, text: string, supersedes?: string): AddResult;
     removeConvention(connectionId: string, id: string): boolean;
     /** 渲染公约盒文本（给模型看）。aLabel/bLabel 必须按连接自己的端点定义传。 */
     renderConventions(connectionId: string, aLabel: string, bLabel: string): string;

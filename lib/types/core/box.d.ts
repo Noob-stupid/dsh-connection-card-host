@@ -29,8 +29,14 @@
 /** 一条约定。 */
 export interface Convention {
     id: string;
-    /** 谁声明的：连接的哪一端。 */
-    by: 'a' | 'b';
+    /**
+     * 谁声明的。
+     *
+     * `'a'` / `'b'` 是连接的端点；`'user'` 是**人**（从面板直接写进来的）。
+     * 人是第三方，既不是 A 也不是 B —— 早期版本在面板里硬编码成 'a'，
+     * 于是人写的约定被算在了 A 头上，对端看到会误以为是 A 说的。
+     */
+    by: 'a' | 'b' | 'user';
     /** 分类，便于检索。 */
     topic: string;
     /** 约定正文。 */
@@ -51,7 +57,7 @@ export declare class ConventionBox {
     /** 导出某条连接的全部约定（用于持久化）。 */
     dump(connectionId: string): Convention[];
     getAll(): Record<string, Convention[]>;
-    add(connectionId: string, by: 'a' | 'b', topic: string, text: string, supersedes?: string): AddResult;
+    add(connectionId: string, by: 'a' | 'b' | 'user', topic: string, text: string, supersedes?: string): AddResult;
     /** 列出约定；默认不含已被取代的。 */
     list(connectionId: string, options?: {
         includeSuperseded?: boolean;

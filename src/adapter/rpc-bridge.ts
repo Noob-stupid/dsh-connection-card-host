@@ -206,7 +206,10 @@ function buildEndpoints(
       ),
     [RPC_ENDPOINTS.declareConvention]: (p) => {
       const raw = p as { by?: unknown; topic?: unknown; text?: unknown; supersedes?: unknown } | null
-      const by = raw?.by === 'b' ? 'b' : 'a'
+      // 面板来的默认是 'user'（人是第三方，不是 A 也不是 B）
+      const byRaw = raw?.by
+      const by: 'a' | 'b' | 'user' =
+        byRaw === 'a' || byRaw === 'b' ? byRaw : 'user'
       const supersedes = typeof raw?.supersedes === 'string' ? raw.supersedes : undefined
       return service.declareConvention(
         str(p, 'connectionId'),

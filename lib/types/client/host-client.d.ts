@@ -27,7 +27,8 @@ export interface WorkView {
 /** 一条共享约定（协作感知 B 层）。 */
 export interface ConventionView {
     id: string;
-    by: 'a' | 'b';
+    /** 谁声明的：连接的端点，或 'user'（人从面板直接写进来的）。 */
+    by: 'a' | 'b' | 'user';
     topic: string;
     text: string;
     createdAt: number;
@@ -102,7 +103,7 @@ export interface ConnectionCardHostClient {
         b: WorkView | null;
     }>;
     listConventions(connectionId: string, all?: boolean): Promise<ConventionView[]>;
-    declareConvention(connectionId: string, by: 'a' | 'b', topic: string, text: string): Promise<{
+    declareConvention(connectionId: string, by: 'a' | 'b' | 'user', topic: string, text: string): Promise<{
         ok: boolean;
         reason?: string;
     }>;
