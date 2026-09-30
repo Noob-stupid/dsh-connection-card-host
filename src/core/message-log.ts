@@ -22,11 +22,24 @@ const MAX_TEXT_LENGTH = 4000
 /** 同一条连接的最小发送间隔（ms），抑制刷屏。 */
 const MIN_SEND_INTERVAL_MS = 200
 
-export interface SendResult {
-  ok: boolean
-  reason?: string
-  message?: ConnectionMessage
-}
+/**
+ * 消息来源：**手动发送** vs **中继自动写入**。
+ *
+ * ## 为什么必须分开计时（2026-09-30 对端会话指出）
+ *
+ * 早先 `lastSendAt` 是**每连接一个时间戳，任何一次写入都刷新它** ——
+ * 而中继自己往连接日志 append 走的是同一个闸门。于是：
+ *
+ *   中继刚记了一条镜像消息（自动，用户无感）
+ *     → 用户 200ms 内手动发送
+ *     → 被拒，文案是「发送过于频繁」
+ *
+ * **用户主观上只按了一次**，报错却指向他。这类"无关的自动行为让用户的动作
+ * 失败、且文案误导"的模式，本项目已经踩过好几次（见 compatibility.md）。
+ *
+ * 分桶之后：中继的写入不再污染手动发送的间隔判定。
+ */
+export type SendOrigin = 'manual' | 'relay'
 
 /** 哪些 kind 需要写权限。read 只能观察，连 say 都不该发。 */
 const WRITE_REQUIRED: Record<MessageKind, boolean> = {
@@ -37,6 +50,14 @@ const WRITE_REQUIRED: Record<MessageKind, boolean> = {
   reply: true,
   // 系统消息由宿主自己发，不走这个闸门
   system: true,
+}
+
+export interface SendResult {
+  ok: boolean
+  reason?: string
+  message?: ConnectionMessage
+  /** 被频控拒绝时，还需等待多少毫秒（调用方据此精确重试，而不是猜"窗口过没过"）。 */
+  retryAfterMs?: number
 }
 
 export class ConnectionMessageLog {
@@ -57,14 +78,21 @@ export class ConnectionMessageLog {
    *   1. 连接必须存在且未断开
    *   2. `say` 需要发送方向权限 ≥ suggest；`ask`/`reply` 需要 = write
    *   3. 文本非空且不超长
-   *   4. 同一连接两次发送之间有最小间隔（抑制刷屏）
+   *   4. 同一连接、**同一来源**两次发送之间有最小间隔（抑制刷屏）
    *
    * @param conn 目标连接
    * @param from 发送端
    * @param kind 消息类型
    * @param text 文本
+   * @param origin 来源（手动 / 中继自动）—— **计时分桶，互不干扰**
    */
-  gateSend(conn: Connection | undefined, from: 'a' | 'b', kind: MessageKind, text: string): { ok: boolean; reason?: string } {
+  gateSend(
+    conn: Connection | undefined,
+    from: 'a' | 'b',
+    kind: MessageKind,
+    text: string,
+    origin: SendOrigin = 'manual',
+  ): { ok: boolean; reason?: string; retryAfterMs?: number } {
     if (!conn) return { ok: false, reason: '连接不存在' }
     if (conn.status === 'broken') return { ok: false, reason: '连接已断开' }
 
@@ -93,10 +121,22 @@ export class ConnectionMessageLog {
       }
     }
 
-    const last = this.lastSendAt.get(conn.id) ?? 0
+    // 频控**分桶**：手动发送与中继自动写入各记一套时间戳。
+    // 否则中继刚记一条镜像，用户紧接着手动发送就会被误判成"发太快" ——
+    // 而用户主观上只按了一次。
+    const bucket = `${conn.id}::${origin}`
+    const last = this.lastSendAt.get(bucket) ?? 0
     const now = Date.now()
-    if (now - last < MIN_SEND_INTERVAL_MS) {
-      return { ok: false, reason: '发送过于频繁' }
+    const elapsed = now - last
+    if (elapsed < MIN_SEND_INTERVAL_MS) {
+      const retryAfterMs = MIN_SEND_INTERVAL_MS - elapsed
+      return {
+        ok: false,
+        // 文案要能自证：说明是哪种来源的间隔、还要等多久。
+        // 只说"发送过于频繁"会把责任推给用户，而实际可能是自动写入挤占的。
+        reason: `发送过于频繁（${origin === 'relay' ? '中继自动写入' : '手动发送'}间隔需 ${MIN_SEND_INTERVAL_MS}ms，还需 ${retryAfterMs}ms）`,
+        retryAfterMs,
+      }
     }
 
     return { ok: true }
@@ -111,10 +151,11 @@ export class ConnectionMessageLog {
     from: 'a' | 'b',
     kind: MessageKind,
     text: string,
-    options: { replyTo?: string; bypassGate?: boolean } = {},
+    options: { replyTo?: string; bypassGate?: boolean; origin?: SendOrigin } = {},
   ): SendResult {
+    const origin = options.origin ?? 'manual'
     if (!options.bypassGate) {
-      const gate = this.gateSend(conn, from, kind, text)
+      const gate = this.gateSend(conn, from, kind, text, origin)
       if (!gate.ok) {
         this.auditLog(`消息被拒（${gate.reason}）: ${conn?.id ?? '?'} ${from} ${kind}`)
         return gate
@@ -138,7 +179,8 @@ export class ConnectionMessageLog {
       list.splice(0, list.length - MAX_MESSAGES_PER_CONNECTION)
     }
     this.messages.set(conn.id, list)
-    this.lastSendAt.set(conn.id, message.createdAt)
+    // 只刷新**本来源**的时间戳（分桶）—— 中继的写入不影响手动发送的间隔判定
+    this.lastSendAt.set(`${conn.id}::${origin}`, message.createdAt)
 
     this.auditLog(`消息 ${conn.id} ${from}→${kind}: ${message.text.slice(0, 80)}`)
 
@@ -174,6 +216,8 @@ export class ConnectionMessageLog {
 
   clear(connectionId: string): void {
     this.messages.delete(connectionId)
-    this.lastSendAt.delete(connectionId)
+    // 两个桶都要清（分来源计时）
+    this.lastSendAt.delete(`${connectionId}::manual`)
+    this.lastSendAt.delete(`${connectionId}::relay`)
   }
 }

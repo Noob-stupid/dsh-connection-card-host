@@ -209,6 +209,10 @@ export class ConnectionRelay {
         from,
         kind,
         `【${label}】${activity.text}`,
+        // ⚠️ 必须标 origin='relay'：频控按来源分桶。
+        // 否则中继自己这条写入会刷新"手动发送"的间隔时间戳，
+        // 用户紧接着只按一次发送就可能被误判成"发送过于频繁"。
+        { origin: 'relay' },
       )
       if (!result.ok) {
         this.auditLog(`中继写入被拒（${result.reason}）: ${conn.id}`)
