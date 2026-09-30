@@ -583,6 +583,22 @@ export class SessionBridge {
      *   urgent → steer     **插话**。插进它**正在跑的那一轮**，当场读到。
      *                      适合：阻塞性问题、"先停手"这类事。
      *
+     * ## 磁盘级判别口径（对端会话从接收侧定出来的，2026-10-01）
+     *
+     * 排查时**不要只看本文件写的审计日志** —— 那是"我们的代码打算做什么"，
+     * 用自己的自我报告验证自己的逻辑是循环论证。要看**框架自己落的事件**：
+     *
+     *   接收端会话日志里 `agent/inbox/spliced` 的 `target` 字段：
+     *     target = "next-step"  →  插话（插进正在跑的那一轮）
+     *     target = "next-turn"  →  排队（下一轮才看到）
+     *
+     *   交叉印证：`next-step` 那条不会起新回合；`next-turn` 那条后面会跟一个
+     *   新的 `turn/start`。
+     *
+     * 对端实测对照（同一条连接、相隔 17 秒）：
+     *   seq=1894 target="next-turn" → 随后 turn/start(turn 22)   ← urgent 但对方空闲，降级
+     *   seq=1878 target="next-step" → 当时正在跑 turn 21          ← urgent 且对方在跑
+     *
      * ## 为什么默认不是 steer（旧行为）
      *
      * 旧实现是 `peerRunning ? steer : queue` —— 只要对端在跑就打断它。
