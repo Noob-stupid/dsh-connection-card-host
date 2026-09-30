@@ -158,20 +158,26 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
     }
   }, [rows, connections])
 
-  // 诊断：轨道到底算出了什么。
-  // 「连着但看不见线」的原因只可能是这几个之一：行没映射上 / 会话不在侧栏 /
-  // 连接数为 0 / 只有一段没画出来。全部上报，免得靠猜。
+  // 诊断：**只在出问题时上报**。
+  //
+  // 早先是无条件每 2 秒报一条，把日志刷爆了。而它已经完成了使命 ——
+  // 连续多条 `segments=2 missing=[无]` 证明「运行回复时连线消失」
+  // （标记属性被卸载时擦掉）那个 bug 确实修好了。
+  // 现在只在「有会话没映射上」或「段数少于连接数」时才报，那才是要查的信号。
   useEffect(() => {
     if (!client) return
+    if (connections.length === 0) return
     const short = (s: string) => s.replace(/^session-/, '').slice(0, 8)
     const needed = Array.from(
       new Set(connections.flatMap((c) => [c.sessionA, c.sessionB])),
     )
     const mappedIds = new Set(rows.map((r) => r.id))
     const missing = needed.filter((id) => !mappedIds.has(id))
+    const segments = rail?.segments.length ?? 0
+    if (missing.length === 0 && segments >= connections.length) return
+
     client.report(
-      `rail conns=${connections.length} rows=${rows.length} ` +
-        `segments=${rail?.segments.length ?? 0} ` +
+      `rail 异常 conns=${connections.length} rows=${rows.length} segments=${segments} ` +
         `missing=[${missing.map(short).join(',') || '无'}] ` +
         `mapped=[${rows.map((r) => short(r.id)).join(',')}]`,
     )
