@@ -84,6 +84,11 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
       if (!root) return
       const canScroll = root.scrollHeight > root.clientHeight + 1
       if (!canScroll) return
+      // ⚠️ 只有"内容超出**且自身滚不动**"才值得报。
+      // 修好之后 `.ccr-page` 是 overflow-y:auto，内容超出属于**正常可滚**状态 ——
+      // 早先漏了这个判断，于是修复生效后诊断反而一直在喊狼来了。
+      const selfOvf = window.getComputedStyle(root).overflowY
+      if (selfOvf === 'auto' || selfOvf === 'scroll') return
       const chain: string[] = []
       let el: HTMLElement | null = root
       for (let i = 0; el && i < 6; i++) {
@@ -95,8 +100,8 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
         el = el.parentElement
       }
       client.report(
-        `panel 溢出 client=${root.clientHeight} scroll=${root.scrollHeight} ` +
-          `selfOvf=${window.getComputedStyle(root).overflowY} :: ${chain.join(' <- ')}`,
+        `panel 滚不动 client=${root.clientHeight} scroll=${root.scrollHeight} ` +
+          `selfOvf=${selfOvf} :: ${chain.join(' <- ')}`,
       )
     }, 1500)
     return () => window.clearTimeout(timer)

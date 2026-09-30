@@ -227,6 +227,9 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
   useEffect(() => {
     if (!client) return
     if (connections.length === 0) return
+    // rows=0 是渲染的**瞬时状态**（重挂载、切换工作区等），报它没有意义 ——
+    // 会喊狼来了的诊断比没有诊断更糟。
+    if (rows.length === 0) return
     const short = (s: string) => s.replace(/^session-/, '').slice(0, 8)
     const needed = Array.from(
       new Set(connections.flatMap((c) => [c.sessionA, c.sessionB])),
