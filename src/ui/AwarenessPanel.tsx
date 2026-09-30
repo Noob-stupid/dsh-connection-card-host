@@ -4,13 +4,17 @@
  * 两块内容，对应两层：
  *
  *   A. 工作状态 —— **自动采集**：两边各自在改什么文件、计划进行到哪一步。
- *      只读，刷新即可。这是「我知道你在干什么」。
+ *      只读。这是「我知道你在干什么」。
  *
  *   B. 公约盒   —— **显式声明**：双方说好了什么（接口、坐标、单位、命名、分工）。
  *      可增可删。这是「我们说好了什么」。
  *
- * 为什么两者并列显示：它们回答的是不同问题，而且**状态会过期、公约不会** ——
- * 混在一起会让人分不清哪条是"此刻如此"、哪条是"一直如此"。
+ * ## 两块默认收起
+ *
+ * 用户反馈两块都摊开「看着面板太杂了，根本不想仔细看」。
+ * 所以默认折叠 —— 但**标题行始终显示一行摘要**（谁在干什么 / 有几条约定、
+ * 都是什么主题），不展开也能拿到要点，展开才看细节。
+ * 展开状态存进视图偏好，跨会话保持。
  */
 import { useCallback, useEffect, useState } from 'react'
 import type {
@@ -18,6 +22,7 @@ import type {
   ConventionView,
   WorkView,
 } from '../client/host-client.js'
+import type { ViewPrefsStore } from '../client/view-prefs.js'
 import type { Connection } from '../types/index.js'
 
 interface AwarenessPanelProps {
@@ -25,6 +30,7 @@ interface AwarenessPanelProps {
   connection: Connection
   labelA: string
   labelB: string
+  prefs: ViewPrefsStore
   onNotice: (msg: string) => void
 }
 
@@ -39,11 +45,44 @@ function ago(ts: number): string {
   return `${Math.round(s / 3600)} 小时前`
 }
 
+function shortPath(p: string): string {
+  return p.replace(/\\/g, '/').split('/').slice(-2).join('/')
+}
+
+/** 收起状态下的一行摘要：谁在干什么。 */
+function workDigest(
+  work: { a: WorkView | null; b: WorkView | null },
+  labelA: string,
+  labelB: string,
+): string {
+  const parts: string[] = []
+  for (const [label, st] of [
+    [labelA, work.a],
+    [labelB, work.b],
+  ] as const) {
+    if (st && st.updatedAt > 0) {
+      const stale = Date.now() - st.updatedAt > STALE_MS
+      parts.push(`${label} ${st.lastAction || '空闲'}${stale ? '（久未更新）' : ''}`)
+    } else {
+      parts.push(`${label} 未采集`)
+    }
+  }
+  return parts.join(' · ')
+}
+
+/** 收起状态下的一行摘要：有几条约定、都是什么主题。 */
+function boxDigest(conventions: ConventionView[]): string {
+  if (conventions.length === 0) return '还没有约定'
+  const topics = Array.from(new Set(conventions.map((c) => c.topic))).slice(0, 4)
+  return `${conventions.length} 条 · ${topics.join('、')}`
+}
+
 export function AwarenessPanel({
   client,
   connection,
   labelA,
   labelB,
+  prefs,
   onNotice,
 }: AwarenessPanelProps) {
   const [work, setWork] = useState<{ a: WorkView | null; b: WorkView | null }>({
@@ -54,6 +93,27 @@ export function AwarenessPanel({
   const [draft, setDraft] = useState('')
   const [topic, setTopic] = useState('')
   const [busy, setBusy] = useState(false)
+
+  // 展开状态来自共享偏好（默认都收起）
+  const [open, setOpen] = useState(() => ({
+    work: prefs.get().workOpen,
+    box: prefs.get().boxOpen,
+  }))
+  useEffect(
+    () =>
+      prefs.subscribe(() => {
+        const p = prefs.get()
+        setOpen({ work: p.workOpen, box: p.boxOpen })
+      }),
+    [prefs],
+  )
+  const toggle = useCallback(
+    (which: 'work' | 'box') => {
+      const p = prefs.get()
+      prefs.set(which === 'work' ? { workOpen: !p.workOpen } : { boxOpen: !p.boxOpen })
+    },
+    [prefs],
+  )
 
   const load = useCallback(async () => {
     if (!client) return
@@ -69,12 +129,13 @@ export function AwarenessPanel({
     }
   }, [client, connection.id])
 
-  // 工作状态是**实时**的，所以要轮询；3 秒足够跟手，又不会打爆宿主
+  // 工作状态是实时的，要轮询；收起时降到 8 秒（摘要也要新鲜，但不必那么勤）
   useEffect(() => {
     void load()
-    const timer = window.setInterval(() => void load(), 3000)
+    const period = open.work ? 3000 : 8000
+    const timer = window.setInterval(() => void load(), period)
     return () => window.clearInterval(timer)
-  }, [load])
+  }, [load, open.work])
 
   const declare = useCallback(async () => {
     if (!client) return
@@ -113,146 +174,182 @@ export function AwarenessPanel({
     [client, connection.id, load, onNotice],
   )
 
+  // 有"正在干活"的迹象时给标题加个小点，收起状态下也能一眼看出对方在忙
+  const someoneActive = [work.a, work.b].some(
+    (s) => s && s.updatedAt > 0 && Date.now() - s.updatedAt < STALE_MS,
+  )
+
   return (
     <>
-      {/* ═══ A. 工作状态（自动采集，只读） ═══ */}
-      <div className="ccr-field">
-        <div className="ccr-field__label">
-          对方在做什么
-          <span className="ccr-field__auto" title="由会话事件自动采集，对方不需要专门告诉你">
-            自动
+      {/* ═══ A. 工作状态 ═══ */}
+      <section className={`ccr-fold${open.work ? ' ccr-fold--open' : ''}`}>
+        <button type="button" className="ccr-fold__head" onClick={() => toggle('work')}>
+          <span className="ccr-fold__chevron">{open.work ? '▾' : '▸'}</span>
+          <span className="ccr-fold__title">对方在做什么</span>
+          {someoneActive && <span className="ccr-fold__live" title="对方正在活动" />}
+          <span className="ccr-fold__digest" title={workDigest(work, labelA, labelB)}>
+            {workDigest(work, labelA, labelB)}
           </span>
-        </div>
+        </button>
 
-        <div className="ccr-work">
-          {([['a', labelA, work.a], ['b', labelB, work.b]] as const).map(
-            ([side, name, state]) => (
-              <div key={side} className="ccr-work__row">
-                <div className="ccr-work__head">
-                  <span className="ccr-work__name" title={side === 'a' ? connection.sessionA : connection.sessionB}>
-                    {name}
-                  </span>
-                  {state && state.updatedAt > 0 ? (
-                    <span
-                      className={`ccr-work__age${Date.now() - state.updatedAt > STALE_MS ? ' ccr-work__age--stale' : ''}`}
-                    >
-                      {ago(state.updatedAt)}
+        {open.work && (
+          <div className="ccr-fold__body">
+            <div className="ccr-work">
+              {(
+                [
+                  ['a', labelA, work.a, connection.sessionA],
+                  ['b', labelB, work.b, connection.sessionB],
+                ] as const
+              ).map(([side, name, state, fullId]) => (
+                <div key={side} className="ccr-work__row">
+                  <div className="ccr-work__head">
+                    <span className="ccr-work__name" title={fullId}>
+                      {name}
                     </span>
+                    {state && state.updatedAt > 0 ? (
+                      <span
+                        className={`ccr-work__age${
+                          Date.now() - state.updatedAt > STALE_MS ? ' ccr-work__age--stale' : ''
+                        }`}
+                      >
+                        {ago(state.updatedAt)}
+                      </span>
+                    ) : (
+                      <span className="ccr-work__age">未采集</span>
+                    )}
+                  </div>
+
+                  {state && state.updatedAt > 0 ? (
+                    <>
+                      <div className="ccr-work__action">{state.lastAction || '空闲'}</div>
+                      {state.todos.length > 0 && (
+                        <ul className="ccr-work__todos">
+                          {state.todos.map((t, i) => (
+                            <li
+                              key={i}
+                              className={`ccr-work__todo ccr-work__todo--${t.status}`}
+                              title={t.content}
+                            >
+                              {t.status === 'completed'
+                                ? '✓'
+                                : t.status === 'in_progress'
+                                  ? '▶'
+                                  : '·'}{' '}
+                              {t.content}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {state.files.length > 0 && (
+                        <div className="ccr-work__files" title={state.files.join('\n')}>
+                          {state.files.slice(0, 4).map((f) => (
+                            <span key={f} className="ccr-work__file">
+                              {shortPath(f)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {state.turn > 0 && (
+                        <div className="ccr-work__progress">
+                          第 {state.turn} 轮 · 第 {state.step} 步
+                        </div>
+                      )}
+                    </>
                   ) : (
-                    <span className="ccr-work__age">未采集</span>
+                    <div className="ccr-work__action ccr-work__action--empty">
+                      还没采集到 —— 对方开始干活后这里会自动出现
+                    </div>
                   )}
                 </div>
-
-                {state && state.updatedAt > 0 ? (
-                  <>
-                    <div className="ccr-work__action">{state.lastAction || '空闲'}</div>
-                    {state.todos.length > 0 && (
-                      <ul className="ccr-work__todos">
-                        {state.todos.map((t, i) => (
-                          <li
-                            key={i}
-                            className={`ccr-work__todo ccr-work__todo--${t.status}`}
-                            title={t.content}
-                          >
-                            {t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '▶' : '·'}{' '}
-                            {t.content}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {state.files.length > 0 && (
-                      <div className="ccr-work__files" title={state.files.join('\n')}>
-                        {state.files.slice(0, 4).map((f) => (
-                          <span key={f} className="ccr-work__file">
-                            {f.replace(/\\/g, '/').split('/').slice(-2).join('/')}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {state.turn > 0 && (
-                      <div className="ccr-work__progress">
-                        第 {state.turn} 轮 · 第 {state.step} 步
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="ccr-work__action ccr-work__action--empty">
-                    还没采集到 —— 对方开始干活后这里会自动出现
-                  </div>
-                )}
-              </div>
-            ),
-          )}
-        </div>
-      </div>
-
-      {/* ═══ B. 公约盒（显式声明，持久） ═══ */}
-      <div className="ccr-field">
-        <div className="ccr-field__label">
-          共享约定
-          <span className="ccr-field__count">{conventions.length}</span>
-        </div>
-
-        {conventions.length === 0 ? (
-          <div className="ccr-box__empty">
-            还没有约定。放「对方不知道就会做错的东西」——接口、坐标、单位、命名、分工边界。
+              ))}
+            </div>
           </div>
-        ) : (
-          <ul className="ccr-box">
-            {conventions.map((c) => (
-              <li key={c.id} className="ccr-box__item">
-                <span className="ccr-box__topic">{c.topic}</span>
-                <span className="ccr-box__text">{c.text}</span>
-                <span className="ccr-box__who" title={c.by === 'user' ? '你在面板里直接添加的' : c.by === 'a' ? connection.sessionA : connection.sessionB}>
-                  {c.by === 'user' ? '你' : c.by === 'a' ? labelA : labelB}
-                </span>
-                <button
-                  type="button"
-                  className="ccr-box__del"
-                  title="删除这条约定"
-                  onClick={() => void remove(c.id)}
-                >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
         )}
+      </section>
 
-        <div className="ccr-box__add">
-          <input
-            className="ccr-input ccr-input--topic"
-            placeholder="分类"
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-          />
-          <input
-            className="ccr-input"
-            placeholder="约定内容（对方不知道就会做错的事）"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                void declare()
-              }
-            }}
-          />
-          <button
-            type="button"
-            className="ccr-btn"
-            disabled={busy || draft.trim().length === 0}
-            onClick={() => void declare()}
-          >
-            放入
-          </button>
-        </div>
+      {/* ═══ B. 公约盒 ═══ */}
+      <section className={`ccr-fold${open.box ? ' ccr-fold--open' : ''}`}>
+        <button type="button" className="ccr-fold__head" onClick={() => toggle('box')}>
+          <span className="ccr-fold__chevron">{open.box ? '▾' : '▸'}</span>
+          <span className="ccr-fold__title">共享约定</span>
+          <span className="ccr-fold__digest" title={boxDigest(conventions)}>
+            {boxDigest(conventions)}
+          </span>
+        </button>
 
-        <div className="ccr-field__hint">
-          约定**只存不发**，不占对方上下文；参与连接的会话可用 connection_conventions
-          工具随时查到。
-        </div>
-      </div>
+        {open.box && (
+          <div className="ccr-fold__body">
+            {conventions.length === 0 ? (
+              <div className="ccr-box__empty">
+                还没有约定。放「对方不知道就会做错的东西」——接口、坐标、单位、命名、分工边界。
+              </div>
+            ) : (
+              <ul className="ccr-box">
+                {conventions.map((c) => (
+                  <li key={c.id} className="ccr-box__item">
+                    <span className="ccr-box__topic">{c.topic}</span>
+                    <span className="ccr-box__text">{c.text}</span>
+                    <span
+                      className="ccr-box__who"
+                      title={
+                        c.by === 'user'
+                          ? '你在面板里直接添加的'
+                          : c.by === 'a'
+                            ? connection.sessionA
+                            : connection.sessionB
+                      }
+                    >
+                      {c.by === 'user' ? '你' : c.by === 'a' ? labelA : labelB}
+                    </span>
+                    <button
+                      type="button"
+                      className="ccr-box__del"
+                      title="删除这条约定"
+                      onClick={() => void remove(c.id)}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="ccr-box__add">
+              <input
+                className="ccr-input ccr-input--topic"
+                placeholder="分类"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+              />
+              <input
+                className="ccr-input"
+                placeholder="约定内容（对方不知道就会做错的事）"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    void declare()
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="ccr-btn"
+                disabled={busy || draft.trim().length === 0}
+                onClick={() => void declare()}
+              >
+                放入
+              </button>
+            </div>
+
+            <div className="ccr-field__hint">
+              约定**只存不发**，不占对方上下文；参与连接的会话可用 connection_conventions
+              工具随时查到。
+            </div>
+          </div>
+        )}
+      </section>
     </>
   )
 }

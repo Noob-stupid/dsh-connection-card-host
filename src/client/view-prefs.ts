@@ -10,12 +10,23 @@
 export interface ViewPrefs {
   /** 是否在会话列表上显示连接线路。关掉只影响观感，不影响连接本身。 */
   railVisible: boolean
+  /**
+   * 协作感知两块的展开状态。
+   *
+   * 默认**收起**：两块都摊开会让连接面板显得很杂（用户原话
+   * 「看着面板太杂了，根本不想仔细看」）。收起时标题行仍显示一行摘要，
+   * 所以不展开也能看到要点。
+   */
+  workOpen: boolean
+  boxOpen: boolean
 }
 
 const STORAGE_KEY = 'dsh-connection-card-host/view-prefs'
 
 const DEFAULT_PREFS: ViewPrefs = {
   railVisible: true,
+  workOpen: false,
+  boxOpen: false,
 }
 
 function load(): ViewPrefs {
@@ -23,9 +34,12 @@ function load(): ViewPrefs {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...DEFAULT_PREFS }
     const parsed = JSON.parse(raw) as Partial<ViewPrefs>
+    const bool = (v: unknown, fallback: boolean): boolean =>
+      typeof v === 'boolean' ? v : fallback
     return {
-      railVisible:
-        typeof parsed.railVisible === 'boolean' ? parsed.railVisible : DEFAULT_PREFS.railVisible,
+      railVisible: bool(parsed.railVisible, DEFAULT_PREFS.railVisible),
+      workOpen: bool(parsed.workOpen, DEFAULT_PREFS.workOpen),
+      boxOpen: bool(parsed.boxOpen, DEFAULT_PREFS.boxOpen),
     }
   } catch {
     return { ...DEFAULT_PREFS }

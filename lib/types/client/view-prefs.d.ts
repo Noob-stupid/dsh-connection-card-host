@@ -9,6 +9,15 @@
 export interface ViewPrefs {
     /** 是否在会话列表上显示连接线路。关掉只影响观感，不影响连接本身。 */
     railVisible: boolean;
+    /**
+     * 协作感知两块的展开状态。
+     *
+     * 默认**收起**：两块都摊开会让连接面板显得很杂（用户原话
+     * 「看着面板太杂了，根本不想仔细看」）。收起时标题行仍显示一行摘要，
+     * 所以不展开也能看到要点。
+     */
+    workOpen: boolean;
+    boxOpen: boolean;
 }
 export interface ViewPrefsStore {
     get(): ViewPrefs;

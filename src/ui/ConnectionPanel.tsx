@@ -526,6 +526,7 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
                       connection={conn}
                       labelA={labelOf(conn.sessionA)}
                       labelB={labelOf(conn.sessionB)}
+                      prefs={prefs}
                       onNotice={flash}
                     />
 
