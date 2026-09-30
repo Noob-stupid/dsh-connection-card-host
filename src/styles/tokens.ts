@@ -541,6 +541,32 @@ export const CONNECTION_CARD_CSS = `
 
 .ccr-perm-row .ccr-seg { flex: none; }
 
+/* ═══ 转发中警告（权限高于只读时常驻） ═══
+   理由：用户抬权限时以为"这是让对方能干活"，实际是"两边说的话开始互相灌"。
+   2026-09-30 因此连着两次被意外打扰，所以这个状态必须显眼。 */
+.ccr-forward-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 9px 11px;
+  font-size: 12px;
+  line-height: 1.55;
+  border-radius: 7px;
+  background: rgba(249, 115, 22, 0.13);
+  border: 1px solid rgba(249, 115, 22, 0.35);
+}
+
+.ccr-forward-warn__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #F97316;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.2);
+}
+
 /* ═══ 卡片安装（装到我们自己的目录） ═══ */
 .ccr-install {
   margin-top: 8px;

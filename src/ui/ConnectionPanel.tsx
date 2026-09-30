@@ -66,6 +66,17 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
   const [prefsState, setPrefsState] = useState(() => prefs.get())
   useEffect(() => prefs.subscribe(() => setPrefsState(prefs.get())), [prefs])
 
+  /**
+   * 正在转发消息的连接（任一方向权限 > 只读）。
+   *
+   * 只读 = 不转发任何消息（感知仍可用：工作状态与公约盒都是拉取式的，与权限无关）。
+   * 一旦高于只读，两边的消息开始互相灌 —— 这个状态必须是**不可能被忘记**的，
+   * 所以会在连接列表上方常驻一条警告。
+   */
+  const forwardingConnections = connections.filter(
+    (c) => c.permission.aToB !== 'read' || c.permission.bToA !== 'read',
+  )
+
   const setPick = useCallback((index: number, value: string) => {
     setPicks((prev) => prev.map((v, i) => (i === index ? value : v)))
   }, [])
@@ -396,6 +407,24 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
           <div className="ccr-empty">还没有连接。选两个会话建立一条，或直接用拖拽。</div>
         )}
 
+        {/*
+          只要有任何一条连接在转发消息，就在最显眼处警告一次。
+          理由：用户手动抬权限时以为"这是让对方能干活"，实际效果是"两边说的话开始互相灌"
+          —— 2026-09-30 用户连着两次因此被意外打扰（一次是他自己的指令被转发，
+          一次是助手的汇报被转发）。这个状态必须是**不可能被忘记**的。
+        */}
+        {ready && forwardingConnections.length > 0 && (
+          <div className="ccr-forward-warn">
+            <span className="ccr-forward-warn__dot" />
+            <span>
+              有 <strong>{forwardingConnections.length}</strong> 条连接正在
+              <strong>互相转发消息</strong>
+              —— 你在任一端说的话都会送进另一端，并**让对方被唤醒去回应**。
+              不需要时把它调回「只读」。
+            </span>
+          </div>
+        )}
+
         <div className="ccr-list">
           {connections.map((conn) => {
             const health = conn.health ?? 'green'
@@ -471,7 +500,9 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
                       ))}
 
                     <div className="ccr-field">
-                      <div className="ccr-field__label">权限（两个方向可分别设置）</div>
+                      <div className="ccr-field__label">
+                        消息转发权限（两个方向可分别设置）
+                      </div>
 
                       {(
                         [
@@ -519,8 +550,12 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
                       ))}
 
                       <div className="ccr-field__hint">
-                        提高权限需要**被授权的一方**确认，面板上会出现待确认；
-                        降低权限立即生效。两个方向互不影响，可以做成一端可读写、另一端只读。
+                        <strong>这个开关控制的是「消息要不要互相转发」，不是「对方能不能干活」</strong>
+                        —— 对方任何时候都能自己做事，与这里无关。两个方向互不影响，
+                        可以做成一端可写入、另一端只读。
+                      </div>
+                      <div className="ccr-field__hint">
+                        提高权限需要**被授权的一方**确认，面板上会出现待确认；降低权限立即生效。
                       </div>
                     </div>
 
