@@ -217,6 +217,8 @@ function buildEndpoints(
           : null,
       }
     },
+    [RPC_ENDPOINTS.relayDiagnostics]: () => service.relayDiagnostics(),
+
     [RPC_ENDPOINTS.listConventions]: (p) =>
       service.listConventions(
         str(p, 'connectionId'),

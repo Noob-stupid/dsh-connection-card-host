@@ -51,6 +51,20 @@ export interface ConnectionCardHostService {
     };
     /** 已安装卡片的根目录（面板显示给用户看，让"装到哪儿了"是透明的）。 */
     cardsRoot(): string;
+    /**
+     * 中继运行诊断（**可查询，不靠翻日志**）。
+     *
+     * 目前暴露"被挡下的非真人来源计数"。存在的理由：日志会被清空/滚动，
+     * 只写一次的信号一旦滚掉就永久消失；放进可查询的状态面才可靠 ——
+     * 这也顺带补上"状态靠翻日志猜"这个协作感知缺口。
+     */
+    relayDiagnostics(): {
+        skipped: {
+            sessionId: string;
+            kind: string;
+            count: number;
+        }[];
+    };
     /** 待确认的权限升级请求（面板据此显示「待确认 + 同意/拒绝」）。 */
     listPendingUpgrades(connectionId?: string): {
         id: string;

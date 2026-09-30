@@ -93,6 +93,10 @@ export function AwarenessPanel({
   const [draft, setDraft] = useState('')
   const [topic, setTopic] = useState('')
   const [busy, setBusy] = useState(false)
+  /** 中继诊断：被挡下的非真人来源计数（可查询，不怕日志滚动）。 */
+  const [diagnostics, setDiagnostics] = useState<
+    { sessionId: string; kind: string; count: number }[]
+  >([])
 
   // 展开状态来自共享偏好（默认都收起）
   const [open, setOpen] = useState(() => ({
@@ -124,6 +128,11 @@ export function AwarenessPanel({
       ])
       setWork(w)
       setConventions(c)
+      // 诊断另算：它失败不该影响主内容
+      client
+        .relayDiagnostics()
+        .then((d) => setDiagnostics(d.skipped))
+        .catch(() => {})
     } catch {
       /* 轮询失败静默，下一轮再试 */
     }
@@ -177,6 +186,17 @@ export function AwarenessPanel({
   // 有"正在干活"的迹象时给标题加个小点，收起状态下也能一眼看出对方在忙
   const someoneActive = [work.a, work.b].some(
     (s) => s && s.updatedAt > 0 && Date.now() - s.updatedAt < STALE_MS,
+  )
+
+  /**
+   * 中继诊断：被挡下的非真人来源。
+   *
+   * 放这里而不是只写日志，是因为**日志会被清空/滚动** —— 只写一次的信号
+   * 一旦滚掉就永久消失。可查询的东西不怕滚动。
+   * （这条建议来自对端会话，同时补上"状态靠翻日志猜"这个缺口。）
+   */
+  const skipped = diagnostics.filter(
+    (d) => d.sessionId === connection.sessionA || d.sessionId === connection.sessionB,
   )
 
   return (
@@ -263,6 +283,17 @@ export function AwarenessPanel({
                 </div>
               ))}
             </div>
+
+            {/*
+              中继诊断：只在有东西被挡下时才显示（平时不占地方）。
+              说明"这条通道只走真人发言"，以及有多少宿主通知被拦在门外。
+            */}
+            {skipped.length > 0 && (
+              <div className="ccr-work__diag" title="跨会话通道只放行真人发言；宿主通知（任务完成、模型切换等）一律挡下">
+                已挡下非发言来源：
+                {skipped.map((d) => ` ${d.kind}×${d.count}`).join(' · ')}
+              </div>
+            )}
           </div>
         )}
       </section>

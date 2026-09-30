@@ -111,6 +111,11 @@ export interface ConnectionCardHostClient {
   uninstallCard(cardId: string): Promise<{ ok: boolean; reason?: string }>
   /** 已安装卡片的根目录（面板显示用）。 */
   cardsRoot(): Promise<string>
+  /**
+   * 中继运行诊断。**可查询，不靠翻日志** —— 日志会被清空/滚动，
+   * 只写一次的信号一旦滚掉就永久消失。
+   */
+  relayDiagnostics(): Promise<{ skipped: { sessionId: string; kind: string; count: number }[] }>
   listCardTemplates(connectionId?: string): Promise<CardTemplateView[]>
   renderCardPanel(instanceId: string): Promise<string | null>
   /** 待确认的权限升级请求。 */
@@ -200,6 +205,7 @@ export function createHostClient(rpc: RpcCaller): ConnectionCardHostClient {
     installCard: (spec) => invoke(RPC_ENDPOINTS.installCard, { spec }),
     uninstallCard: (cardId) => invoke(RPC_ENDPOINTS.uninstallCard, { cardId }),
     cardsRoot: () => invoke(RPC_ENDPOINTS.cardsRoot),
+    relayDiagnostics: () => invoke(RPC_ENDPOINTS.relayDiagnostics),
     listCardTemplates: (connectionId) =>
       invoke(RPC_ENDPOINTS.listCardTemplates, connectionId ? { connectionId } : {}),
     renderCardPanel: (instanceId) => invoke(RPC_ENDPOINTS.renderCardPanel, { instanceId }),

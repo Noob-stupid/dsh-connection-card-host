@@ -109,6 +109,17 @@ export interface ConnectionCardHostClient {
     }>;
     /** 已安装卡片的根目录（面板显示用）。 */
     cardsRoot(): Promise<string>;
+    /**
+     * 中继运行诊断。**可查询，不靠翻日志** —— 日志会被清空/滚动，
+     * 只写一次的信号一旦滚掉就永久消失。
+     */
+    relayDiagnostics(): Promise<{
+        skipped: {
+            sessionId: string;
+            kind: string;
+            count: number;
+        }[];
+    }>;
     listCardTemplates(connectionId?: string): Promise<CardTemplateView[]>;
     renderCardPanel(instanceId: string): Promise<string | null>;
     /** 待确认的权限升级请求。 */

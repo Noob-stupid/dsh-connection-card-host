@@ -100,16 +100,34 @@ export declare class SessionBridge {
     /**
      * 记一笔"因来源非真人而跳过观察"。
      *
-     * 每个会话、每种 kind **只记一次** —— 宿主通知可能很密（某个会话里
-     * model-selection 23 条、tool-jobs 5 条），逐条记会把日志刷爆，
-     * 而我们要的只是"**出现过**"这个信息。
+     * ## 为什么要留痕
      *
-     * 留痕的价值：本 bug 家族已咬过两次（`signal` 漏传、`source` 被覆写），
+     * 本 bug 家族已咬过两次（`signal` 漏传、`source` 被覆写），
      * 共同点是"看着有、实际永远不生效、UI 和日志都看不出"。
      * 有了这行，框架改 kind 或加新来源时会**自己浮出来**。
+     *
+     * ## 为什么不能只靠日志（对端会话指出的坑）
+     *
+     * 日志**会被清空、会滚动**。如果只写一次、写完就再不提，
+     * 那条信号一旦被滚掉就**永久消失** —— 同一实例生命周期内不会补写。
+     * 所以这里同时维护**可查询的计数**（`skippedSummary()`），
+     * 由 awareness 状态面暴露出去：**可查询的东西不怕日志滚动**。
+     *
+     * 这也顺带补上一个协作感知缺口 —— 状态不该靠翻日志猜。
      */
     private noteSkippedKind;
-    private skippedKinds;
+    /**
+     * 被挡下的观察计数（可查询，不怕日志滚动）。
+     *
+     * @returns 每条 `{ sessionId, kind, count }`，按次数降序。
+     */
+    skippedSummary(): {
+        sessionId: string;
+        kind: string;
+        count: number;
+    }[];
+    /** sessionId::kind → 被挡次数。 */
+    private skippedCounts;
     /**
      * 订阅**全部**会话事件（含 tool/call、step/start 等）。
      *

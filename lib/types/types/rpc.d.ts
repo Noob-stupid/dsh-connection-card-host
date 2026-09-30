@@ -78,6 +78,8 @@ export declare const RPC_ENDPOINTS: {
     readonly cardsRoot: "cards/root";
     /** 某条连接两端的工作状态快照。 */
     readonly connectionWork: "awareness/work";
+    /** 中继运行诊断（被挡下的非真人来源计数）—— 可查询，不靠翻日志。 */
+    readonly relayDiagnostics: "awareness/diagnostics";
     /** 列出某条连接的共享约定。 */
     readonly listConventions: "conventions/list";
     /** 声明一条约定（用户在面板里手填）。 */
