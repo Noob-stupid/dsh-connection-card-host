@@ -95,7 +95,13 @@ export function AwarenessPanel({
   const [busy, setBusy] = useState(false)
   /** 中继诊断：被挡下的非真人来源计数（可查询，不怕日志滚动）。 */
   const [diagnostics, setDiagnostics] = useState<
-    { sessionId: string; kind: string; count: number }[]
+    {
+      sessionId: string
+      kind: string
+      count: number
+      lastSeenAt: number
+      lastDropped: string
+    }[]
   >([])
 
   // 展开状态来自共享偏好（默认都收起）
@@ -286,12 +292,27 @@ export function AwarenessPanel({
 
             {/*
               中继诊断：只在有东西被挡下时才显示（平时不占地方）。
-              说明"这条通道只走真人发言"，以及有多少宿主通知被拦在门外。
+              带内容预览，因为**计数只说"挡了多少"，说不出"挡的是什么"** ——
+              万一框架给真人消息换了个 kind，光看正常计数发现不了误挡。
             */}
             {skipped.length > 0 && (
-              <div className="ccr-work__diag" title="跨会话通道只放行真人发言；宿主通知（任务完成、模型切换等）一律挡下">
-                已挡下非发言来源：
-                {skipped.map((d) => ` ${d.kind}×${d.count}`).join(' · ')}
+              <div className="ccr-work__diag">
+                <div
+                  className="ccr-work__diag-head"
+                  title="跨会话通道只放行真人发言；宿主通知（任务完成、模型切换等）一律挡下"
+                >
+                  已挡下非发言来源：
+                  {skipped.map((d) => ` ${d.kind}×${d.count}`).join(' · ')}
+                </div>
+                {skipped.slice(0, 2).map((d) => (
+                  <div key={`${d.sessionId}:${d.kind}`} className="ccr-work__diag-item">
+                    <span className="ccr-work__diag-kind">{d.kind}</span>
+                    <span className="ccr-work__diag-preview" title={d.lastDropped}>
+                      {d.lastDropped || '(无内容)'}
+                    </span>
+                    <span className="ccr-work__diag-age">{ago(d.lastSeenAt)}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>

@@ -119,14 +119,26 @@ export declare class SessionBridge {
     /**
      * 被挡下的观察计数（可查询，不怕日志滚动）。
      *
-     * @returns 每条 `{ sessionId, kind, count }`，按次数降序。
+     * 带 `lastSeenAt` 与全局 `total`：这样"**还在发生吗**"和"**上次什么时候**"
+     * 都能直接从端点看出来，彻底不用回日志 —— 对端会话的建议，也正是
+     * 「状态靠翻日志猜」这个缺口的正解。
+     *
+     * ⚠️ 度量口径：计数只在通知**落成 `user/message`** 那一刻加，
+     * 而路径是 `tool-jobs 通知 → agent/inbox/spliced → user/message`，
+     * 中间隔着一次 splice —— 所以从"任务完成"到"计数可见"有**十秒级滞后**。
+     * 拿它做验收时窗口要留够（我们俩都曾因为查早了而看到空态）。
      */
     skippedSummary(): {
-        sessionId: string;
-        kind: string;
-        count: number;
-    }[];
-    /** sessionId::kind → 被挡次数。 */
+        entries: {
+            sessionId: string;
+            kind: string;
+            count: number;
+            lastSeenAt: number;
+            lastDropped: string;
+        }[];
+        total: number;
+    };
+    /** sessionId::kind → 被挡次数、最近时刻、最后一条内容预览。 */
     private skippedCounts;
     /**
      * 订阅**全部**会话事件（含 tool/call、step/start 等）。

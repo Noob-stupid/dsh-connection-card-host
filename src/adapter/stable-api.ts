@@ -67,7 +67,14 @@ export interface ConnectionCardHostService {
    * 这也顺带补上"状态靠翻日志猜"这个协作感知缺口。
    */
   relayDiagnostics(): {
-    skipped: { sessionId: string; kind: string; count: number }[]
+    skipped: {
+      sessionId: string
+      kind: string
+      count: number
+      lastSeenAt: number
+      lastDropped: string
+    }[]
+    total: number
   }
 
   /** 待确认的权限升级请求（面板据此显示「待确认 + 同意/拒绝」）。 */
@@ -182,9 +189,10 @@ export function createStableApi(
       return r
     },
     cardsRoot: () => cardHost?.installedCardsRoot() ?? '',
-    relayDiagnostics: () => ({
-      skipped: bridge?.skippedSummary() ?? [],
-    }),
+    relayDiagnostics: () => {
+      const s = bridge?.skippedSummary() ?? { entries: [], total: 0 }
+      return { skipped: s.entries, total: s.total }
+    },
     listCardTemplates: (cid) => cardHost!.listTemplates(cid),
     renderCardPanel: (iid) => cardHost!.renderCardPanel(iid),
     listPendingUpgrades: (cid) =>

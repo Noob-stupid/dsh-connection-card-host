@@ -118,7 +118,10 @@ export interface ConnectionCardHostClient {
             sessionId: string;
             kind: string;
             count: number;
+            lastSeenAt: number;
+            lastDropped: string;
         }[];
+        total: number;
     }>;
     listCardTemplates(connectionId?: string): Promise<CardTemplateView[]>;
     renderCardPanel(instanceId: string): Promise<string | null>;

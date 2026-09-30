@@ -63,7 +63,10 @@ export interface ConnectionCardHostService {
             sessionId: string;
             kind: string;
             count: number;
+            lastSeenAt: number;
+            lastDropped: string;
         }[];
+        total: number;
     };
     /** 待确认的权限升级请求（面板据此显示「待确认 + 同意/拒绝」）。 */
     listPendingUpgrades(connectionId?: string): {
