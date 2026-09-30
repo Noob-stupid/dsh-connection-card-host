@@ -28,6 +28,14 @@ export interface SessionActivity {
     seq: number;
     /** 这条消息的来源是不是本插件投递的（防回环用）。 */
     fromPlugin: boolean;
+    /**
+     * 这轮回复是否由本插件投递的消息触发 —— 即它处在中继链的后续跳上。
+     *
+     * 为什么需要单独一个标志：助手消息的 `source.kind` 是 `model`，不是 plugin，
+     * 所以光看 source 挡不住「收到中继消息后自动回复、回复又被中继出去」的无限乒乓。
+     * 判据是**该会话最近一条 user 消息是不是我们投递的**。
+     */
+    relayTriggered: boolean;
 }
 export interface DeliverResult {
     ok: boolean;
@@ -54,6 +62,20 @@ export declare class SessionBridge {
     private auditLog;
     /** 记录本插件投递过的 sessionId，投递瞬间到达的 session/event 据此忽略。 */
     private delivering;
+    /**
+     * 能读到 `sessionController` 的上下文。
+     *
+     * 为什么要单独存一个 ctx：cordis 是 Proxy，**没在 inject 里声明的服务读不到**。
+     * `sessionController` 只在 runtime 0.2+ 有，不能放进静态 inject 数组
+     * （那会让插件在旧版本上直接不加载），只能用 `ctx.inject([...], cb)` 拿一个
+     * 已声明该服务的 scope，再从这里做查找。
+     *
+     * 它值钱的地方：`sessionController.prompt()` 是「**活则复用、冷则 resume**」——
+     * 对端没打开时能把它**唤醒**，而不是投递失败。
+     */
+    private controllerCtx;
+    /** 接入一个声明了 sessionController 的上下文（冷会话唤醒通道）。 */
+    attachControllerContext(ctx: Context): void;
     constructor(ctx: Context, auditLog?: (msg: string) => void);
     /** 能力探测：投递通道是否可用。 */
     capabilities(): {
@@ -68,6 +90,16 @@ export declare class SessionBridge {
      * @returns 停止观察
      */
     observe(handler: (activity: SessionActivity) => void): () => void;
+    /**
+     * 该会话**最近一条 user 消息**是不是本插件投递的。
+     *
+     * 用来判断"这一轮助手回复是不是中继链的后续跳" —— 助手消息自身的 source
+     * 永远是 model，看不出它是不是被中继消息触发的，只能回溯它回应的是谁。
+     *
+     * 判据可靠的原因：投递的 user 消息会先被 append 进会话日志，agent 才会开始跑这一轮；
+     * 所以 assistant/message 事件到达时，那条 user 消息一定已经在了。
+     */
+    private lastUserWasFromPlugin;
     /**
      * 把一段文本投递给某个会话，使其 agent 能感知。
      *

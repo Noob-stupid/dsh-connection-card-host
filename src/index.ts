@@ -140,6 +140,20 @@ export function apply(ctx: HostContext, _config?: Record<string, unknown>): void
       'connection-card-host: session relay',
     )
 
+    // 冷会话唤醒通道：`sessionController` 只在 runtime 0.2+ 有，
+    // 放进静态 inject 会让插件在旧版本上直接不加载，所以用可选的 ctx.inject。
+    //
+    // 拿到它之后，投递给「未打开的对端会话」会自动 resume 该会话 ——
+    // 即「A 说话 → B 被唤醒上线 → B 处理」，而不是投递失败。
+    // （cordis 是 Proxy：没声明过的服务读不到，所以这一步是必需的，不是优化。）
+    ctx.inject(['sessionController'], (scope) => {
+      bridge.attachControllerContext(scope)
+      const caps2 = bridge.capabilities()
+      debug(`relay 能力（接入后）: via=[${caps2.via.join(', ')}]`)
+      auditLog(`relay 能力（接入后）: via=[${caps2.via.join(', ')}]`)
+      for (const note of caps2.notes) auditLog(`relay 提示: ${note}`)
+    })
+
     // 稳定 API
     const service = createStableApi(manager, eventBus, cardHost, adapter, bridge)
     // 必须走 ctx.provide（不是直接赋值）：cordis 服务由 fiber 持有生命周期，

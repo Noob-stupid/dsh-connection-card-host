@@ -37,6 +37,10 @@ export declare class ConnectionRelay {
     private off;
     /** connectionId → 时间窗内的转发时间戳。 */
     private relayTimes;
+    /** connectionId → 当前中继链已走的跳数（真实用户发言时归零）。 */
+    private hops;
+    /** sessionId → 最近一次投递给它的时刻，用于判断后续跳归属。 */
+    private deliveredAt;
     constructor(manager: ConnectionManager, bridge: SessionBridge, auditLog: (msg: string) => void, options?: RelayOptions);
     start(): void;
     stop(): void;

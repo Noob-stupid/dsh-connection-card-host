@@ -33,6 +33,28 @@ const RELAY_WINDOW_MS = 10_000
 const MIN_LEVEL_FOR_SAY = 'suggest'
 
 /**
+ * 中继链的最大跳数。
+ *
+ * ## 为什么必须有
+ *
+ * agent 收到 user 消息就会自动回复，而**助手回复也会被中继** ——
+ * 它的 `source.kind` 是 `model`，不是 plugin，光看 source 挡不住。没有上限就是无限乒乓：
+ *
+ *   A 回复 → 投递 B → B 自动回复 → 投递 A → A 自动回复 → …
+ *
+ * 频控（12 条/10 秒）只能限速、**停不下来**，所以必须用跳数硬截断：
+ *   1 = 只允许 A 说的传给 B（B 的回复不外传）
+ *   2 = 允许一个来回 A→B→A，之后停（默认）
+ *
+ * 计数是**每连接**的，且在「真实用户亲自发言」时重置 ——
+ * 用户每说一句就重新获得一整条链的额度。
+ */
+const MAX_RELAY_HOPS = 2
+
+/** 投递记忆：判断后续跳属于哪条链、链走了多远。 */
+const RELAY_MEMO_MS = 5 * 60_000
+
+/**
  * 是否把中继内容**注入**对端会话。
  *
  * ## 为什么这里需要一个开关
@@ -66,6 +88,10 @@ export class ConnectionRelay {
   private off: (() => void) | undefined
   /** connectionId → 时间窗内的转发时间戳。 */
   private relayTimes = new Map<string, number[]>()
+  /** connectionId → 当前中继链已走的跳数（真实用户发言时归零）。 */
+  private hops = new Map<string, number>()
+  /** sessionId → 最近一次投递给它的时刻，用于判断后续跳归属。 */
+  private deliveredAt = new Map<string, number>()
 
   constructor(
     manager: ConnectionManager,
@@ -115,6 +141,27 @@ export class ConnectionRelay {
       const direction = from === 'a' ? 'aToB' : 'bToA'
       const level = conn.permission[direction]
 
+      // ── 跳数控制：防止「A 回复→B 自动回复→投递 A→…」的无限乒乓 ──
+      // 助手回复的 source 是 model 不是 plugin，光看 source 挡不住，必须计数。
+      // 真实用户亲自发言 → 链归零，这一跳算第 1 跳；
+      // 由中继消息触发的回复 → 链上后续跳，累加。
+      const isChainReply = activity.role === 'assistant' && activity.relayTriggered
+      const justDeliveredTo =
+        (this.deliveredAt.get(activity.sessionId) ?? 0) > Date.now() - RELAY_MEMO_MS
+      let hop: number
+      if (isChainReply && justDeliveredTo) {
+        hop = (this.hops.get(conn.id) ?? 0) + 1
+      } else {
+        hop = 1
+        this.hops.set(conn.id, 0)
+      }
+      if (hop > MAX_RELAY_HOPS) {
+        this.auditLog(
+          `中继停止（已达 ${MAX_RELAY_HOPS} 跳上限，避免无限乒乓）: ${conn.id}`,
+        )
+        continue
+      }
+
       // 权限闸门：读权限不外传（连接仅用于挂载观察，不做交流）
       if (permValue(level) < permValue(MIN_LEVEL_FOR_SAY)) {
         this.auditLog(
@@ -130,7 +177,13 @@ export class ConnectionRelay {
       }
 
       // 写入连接交流记录（两端共享，面板能看到）
-      const kind = activity.role === 'assistant' ? 'reply' : 'say'
+      //
+      // ⚠️ 一律用 `say`：中继转发的是**发言**，不是"请求对方执行动作"。
+      // 之前按角色分 kind（user→say、assistant→reply），而 reply 在
+      // messages 的闸门里要求 write 权限 —— 结果 relay 闸门（suggest）放行了，
+      // 写日志时又被拒，两个阈值打架，中继永远写不进去。
+      // `ask`/`reply` 留给卡片/工具显式发起的结构化请求（那才需要 write）。
+      const kind = 'say' as const
       const label = activity.role === 'assistant' ? '对方助手' : '对方用户'
       const result = this.manager.messages.append(
         conn,
@@ -158,8 +211,11 @@ export class ConnectionRelay {
         true,
       )
       if (delivered.ok) {
+        // 记录链进度与投递时刻：后续跳据此判断归属与是否越界
+        this.hops.set(conn.id, hop)
+        this.deliveredAt.set(peerSessionId, Date.now())
         this.auditLog(
-          `中继 ${conn.id} ${from}→${from === 'a' ? 'b' : 'a'} via=${delivered.via}: ${activity.text.slice(0, 60)}`,
+          `中继 ${conn.id} ${from}→${from === 'a' ? 'b' : 'a'} hop=${hop} via=${delivered.via}: ${activity.text.slice(0, 60)}`,
         )
       } else {
         this.auditLog(`中继投递失败（对端感知不到）: ${delivered.reason}`)
