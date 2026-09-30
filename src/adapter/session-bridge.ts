@@ -40,12 +40,25 @@ export interface SessionActivity {
   relayTriggered: boolean
 }
 
+/**
+ * 投递紧急度 —— **由调用方按情况判断**（助手自己决定，不要求用户选）。
+ *
+ *   quiet   只告知：放进上下文不唤醒。进展同步、背景信息。
+ *   normal  排队（默认）：对方处理完手头的事就看到。一般任务与请求。
+ *   urgent  插话：插进对方**正在跑的那一轮**。阻塞问题、"先停手"。
+ *
+ * 之所以由调用方判断而不是系统写死：**只有发起方知道这件事急不急**。
+ * 旧实现是"只要对端在跑就打断"（等价于每条消息都是最高优先级），
+ * 而大部分消息并不急 —— 打断的代价（对端中断当前思路）只该在真急时付。
+ */
+export type DeliverUrgency = 'quiet' | 'normal' | 'urgent'
+
 export interface DeliverResult {
   ok: boolean
   /** 实际走通的通道，便于诊断。 */
   via?: 'sessionController' | 'agents.steer' | 'agents.followup' | 'agents.inject'
-  /** 实际使用的投递模式：steer=即时插话，queue=排队到下一轮。 */
-  mode?: 'steer' | 'queue'
+  /** 实际使用的投递模式：steer=即时插话，queue=排队到下一轮，inject=只放进上下文。 */
+  mode?: 'steer' | 'queue' | 'inject'
   /** 投递时对端是否处于活跃状态（false = 把它冷启动唤醒了）。 */
   live?: boolean
   reason?: string
@@ -533,10 +546,17 @@ export class SessionBridge {
    *   mirror  —— 自动同步的进展/汇报。**信息，不是任务**，不必动手。
    *   handoff —— 明确派活/交接。**需要处理**。
    */
+  /**
+   * 投递紧急度 —— **由调用方按情况判断**（助手自己决定，不要求用户选）。
+   *
+   *   quiet   只告知：放进上下文不唤醒。适合进展同步、背景信息。
+   *   normal  排队（默认）：对方处理完手头的事就看到。适合一般任务与请求。
+   *   urgent  插话：插进对方正在跑的那一轮。适合阻塞问题、"先停手"。
+   */
   async deliver(
     sessionId: string,
     text: string,
-    wake = true,
+    urgency: DeliverUrgency = 'normal',
     form: 'mirror' | 'handoff' = 'handoff',
   ): Promise<DeliverResult> {
     const content = [{ type: 'text', text }]
@@ -552,21 +572,38 @@ export class SessionBridge {
       | undefined
 
     /**
-     * 投递模式：**自适应**。
+     * 投递模式由**紧急度**决定 —— 而不是"总是尽量打断"。
      *
-     * 底层实现（`dsh-api-session-controller/lib/index.js:882`）只有两种：
-     *   mode === 'steer' → agent.steer(msg)     即时插话进正在跑的那一轮
-     *   其他             → agent.followup(msg)  排到下一轮
+     * ## 三档（对应三种底层机制）
      *
-     * 而 `steer` 有硬前提（同文件 :966）：
-     *   `agent.status !== 'running'` 时抛 session/steer-unavailable。
+     *   quiet  → inject    只放进上下文，**不唤醒**。对端下次跑时自然看到。
+     *                      适合：进展同步、背景信息 —— 不需要它现在做什么。
+     *   normal → followup  **排队**。进收件箱，它处理完手头的事就看到。
+     *                      适合：一般任务与请求（默认）。
+     *   urgent → steer     **插话**。插进它**正在跑的那一轮**，当场读到。
+     *                      适合：阻塞性问题、"先停手"这类事。
      *
-     * 所以不能写死任何一个：
-     *   - 对端**正在跑** → steer，消息当场送到（否则要等它跑完，可能几分钟）
-     *   - 对端**空闲**   → followup，下一轮立刻开始，效果本来就等同于即时
+     * ## 为什么默认不是 steer（旧行为）
+     *
+     * 旧实现是 `peerRunning ? steer : queue` —— 只要对端在跑就打断它。
+     * 那等于**每条消息都是最高优先级**，而大部分消息并不急。
+     * 打断的代价是对端要中断当前思路，这个成本只该在真急的时候付。
+     *
+     * ## steer 的硬前提与降级
+     *
+     * `dsh-api-session-controller/lib/index.js:966`：`agent.status !== 'running'`
+     * 时抛 session/steer-unavailable。所以 urgent 但对端空闲 → **降级为排队**
+     * （它下一轮立刻开始，效果本来就等同于即时），不报错。
      */
     const peerRunning = liveAgent?.status === 'running'
-    const mode = peerRunning ? 'steer' : 'queue'
+    const mode: 'inject' | 'queue' | 'steer' =
+      urgency === 'quiet'
+        ? 'inject'
+        : urgency === 'urgent'
+          ? peerRunning
+            ? 'steer'
+            : 'queue'
+          : 'queue'
 
     // 投递 id：**登记下来供防回环识别**（见 isFromPlugin 的说明）。
     // 这个 id 会被 sessionController 原样放进它自己造的 source.rpcId，
@@ -598,7 +635,21 @@ export class SessionBridge {
     // 所以：**活着走 agents（source 由我们标注）；只有冷会话才用 sessionController**
     // （它自带 resume，是我们唯一的冷唤醒通道），两条路径都由上面的 deliveryId 兜底。
     if (liveAgent) {
-      if (peerRunning && typeof liveAgent.steer === 'function') {
+      // ── quiet：只放进上下文，**不唤醒** ──
+      if (mode === 'inject' && typeof liveAgent.inject === 'function') {
+        try {
+          this.delivering.add(sessionId)
+          liveAgent.inject(message)
+          this.auditLog(`投递成功（inject 不唤醒，对方下次跑时看到）→ ${sessionId}`)
+          return { ok: true, via: 'agents.inject', mode: 'inject', live: true }
+        } catch (e) {
+          this.auditLog(`inject 失败，回退 followup: ${String(e)}`)
+        } finally {
+          setTimeout(() => this.delivering.delete(sessionId), 0)
+        }
+      }
+
+      if (mode === 'steer' && typeof liveAgent.steer === 'function') {
         try {
           this.delivering.add(sessionId)
           liveAgent.steer(message)

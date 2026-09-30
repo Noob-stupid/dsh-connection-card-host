@@ -37,12 +37,24 @@ export interface SessionActivity {
      */
     relayTriggered: boolean;
 }
+/**
+ * 投递紧急度 —— **由调用方按情况判断**（助手自己决定，不要求用户选）。
+ *
+ *   quiet   只告知：放进上下文不唤醒。进展同步、背景信息。
+ *   normal  排队（默认）：对方处理完手头的事就看到。一般任务与请求。
+ *   urgent  插话：插进对方**正在跑的那一轮**。阻塞问题、"先停手"。
+ *
+ * 之所以由调用方判断而不是系统写死：**只有发起方知道这件事急不急**。
+ * 旧实现是"只要对端在跑就打断"（等价于每条消息都是最高优先级），
+ * 而大部分消息并不急 —— 打断的代价（对端中断当前思路）只该在真急时付。
+ */
+export type DeliverUrgency = 'quiet' | 'normal' | 'urgent';
 export interface DeliverResult {
     ok: boolean;
     /** 实际走通的通道，便于诊断。 */
     via?: 'sessionController' | 'agents.steer' | 'agents.followup' | 'agents.inject';
-    /** 实际使用的投递模式：steer=即时插话，queue=排队到下一轮。 */
-    mode?: 'steer' | 'queue';
+    /** 实际使用的投递模式：steer=即时插话，queue=排队到下一轮，inject=只放进上下文。 */
+    mode?: 'steer' | 'queue' | 'inject';
     /** 投递时对端是否处于活跃状态（false = 把它冷启动唤醒了）。 */
     live?: boolean;
     reason?: string;
@@ -204,7 +216,14 @@ export declare class SessionBridge {
      *   mirror  —— 自动同步的进展/汇报。**信息，不是任务**，不必动手。
      *   handoff —— 明确派活/交接。**需要处理**。
      */
-    deliver(sessionId: string, text: string, wake?: boolean, form?: 'mirror' | 'handoff'): Promise<DeliverResult>;
+    /**
+     * 投递紧急度 —— **由调用方按情况判断**（助手自己决定，不要求用户选）。
+     *
+     *   quiet   只告知：放进上下文不唤醒。适合进展同步、背景信息。
+     *   normal  排队（默认）：对方处理完手头的事就看到。适合一般任务与请求。
+     *   urgent  插话：插进对方正在跑的那一轮。适合阻塞问题、"先停手"。
+     */
+    deliver(sessionId: string, text: string, urgency?: DeliverUrgency, form?: 'mirror' | 'handoff'): Promise<DeliverResult>;
     /** 读取某会话最近的消息历史（诊断/工具用）。 */
     readRecent(sessionId: string, limit?: number): {
         role: string;

@@ -279,7 +279,9 @@ export class ConnectionRelay {
         // 前缀必须让**接收方一眼看出这是信息不是任务** —— 对端会话曾把镜像
         // 过来的汇报当成"用户对我的指令"去做（见 deliver() 的 form 说明）。
         `[对方进展 · 自动同步，不是派给你的活] ${activity.text}`,
-        true,
+        // 自动同步一律走「排队」：它是信息不是急事，不该打断对端（也不该不唤醒 ——
+        // 那样它就永远看不到了）。
+        'normal',
         'mirror',
       )
       if (delivered.ok) {

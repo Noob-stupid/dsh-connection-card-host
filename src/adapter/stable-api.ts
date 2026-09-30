@@ -7,7 +7,7 @@ import type { ConnectionManager } from '../core/connection-manager.js'
 import type { ConnectionEventBus } from '../core/event-bus.js'
 import type { CardHost, CardTemplateInfo } from '../card-host/loader.js'
 import type { DSHAdapter, KnownSession } from './dsh-adapter.js'
-import type { SessionBridge } from './session-bridge.js'
+import type { SessionBridge, DeliverUrgency } from './session-bridge.js'
 import type { WorkState, WorkStateTracker } from '../core/work-state.js'
 import type { AddResult, Convention, ConventionBox } from '../core/box.js'
 import { installCard, uninstallCard, type InstallResult } from '../card-host/installer.js'
@@ -114,8 +114,17 @@ export interface ConnectionCardHostService {
     from: 'a' | 'b',
     kind: MessageKind,
     text: string,
-    options?: { replyTo?: string },
-  ): SendGate & { message?: ConnectionMessage }
+    options?: {
+      replyTo?: string
+      urgency?: DeliverUrgency
+    },
+  ): Promise<{
+    ok: boolean
+    message?: ConnectionMessage
+    /** 是否**真的投到了对端会话**（false 时看 reason）。 */
+    delivered?: boolean
+    reason?: string
+  }>
   /** 清空某条连接的交流记录（连接本身不动）。 */
   clearMessages(connectionId: string): { ok: boolean; removed: number }
 
@@ -149,7 +158,7 @@ export interface ConnectionCardHostService {
   deliverToSession(
     sessionId: string,
     text: string,
-    wake?: boolean,
+    urgency?: DeliverUrgency,
     form?: 'mirror' | 'handoff',
   ): Promise<{ ok: boolean; via?: string; reason?: string }>
   /** 读取某会话最近的消息（诊断用）。 */
@@ -234,13 +243,44 @@ export function createStableApi(
       manager.persistMessages(cid)
       return { ok: true, removed: before }
     },
-    sendMessage: (cid, from, kind, text, options) => {
+    /**
+     * 发一条消息 —— **记录 + 真的投到对端会话**。
+     *
+     * ⚠️ 早先这里**只写进连接的消息日志**（给面板/卡片看），**不投递** ——
+     * 于是"传话"实际上从来没有真的到达过对端（唯一能到的是中继的自动转发，
+     * 而那已经在 2026-10-01 默认关闭）。所以这个函数必须自己负责投递。
+     *
+     * 投递目标 = 发送端的**对端**（from='a' → 投给 B）。
+     * text 是调用方明确给的 —— **这条路径没有任何途径读到会话内容**，
+     * 所以它不可能带上"镜像"那类东西。
+     */
+    sendMessage: async (cid, from, kind, text, options) => {
       const conn = manager.getById(cid)
       const result = manager.messages.append(conn, from, kind, text, options ?? {})
-      if (result.ok) manager.persistMessages(cid)
-      return result.ok
-        ? { ok: true, ...(result.message ? { message: result.message } : {}) }
-        : { ok: false, reason: result.reason }
+      if (!result.ok) return { ok: false, reason: result.reason }
+      manager.persistMessages(cid)
+
+      // ── 真的投到对端会话 ──
+      const target = from === 'a' ? conn?.sessionB : conn?.sessionA
+      if (bridge && target) {
+        const urgency = options?.urgency ?? 'normal'
+        const d = await bridge.deliver(
+          target,
+          // 前缀让对端一眼看出"这是一条发给我的消息"（与自动同步区分）
+          `[对方消息 · ${kind === 'ask' ? '请求' : kind === 'reply' ? '回复' : '发言'}] ${text}`,
+          urgency,
+          'handoff',
+        )
+        if (!d.ok) {
+          return { ok: true, message: result.message, delivered: false, reason: d.reason }
+        }
+      }
+
+      return {
+        ok: true,
+        ...(result.message ? { message: result.message } : {}),
+        delivered: true,
+      }
     },
     relayCapabilities: () =>
       bridge?.capabilities() ?? {
@@ -276,9 +316,9 @@ export function createStableApi(
     },
     renderConventions: (cid, aLabel, bLabel) =>
       box?.render(cid, aLabel, bLabel) ?? '公约盒未装配',
-    deliverToSession: async (sessionId, text, wake = true, form = 'handoff') => {
+    deliverToSession: async (sessionId, text, urgency = 'normal', form = 'handoff') => {
       if (!bridge) return { ok: false, reason: '会话桥未装配' }
-      const r = await bridge.deliver(sessionId, text, wake, form)
+      const r = await bridge.deliver(sessionId, text, urgency, form)
       return r.ok ? { ok: true, ...(r.via ? { via: r.via } : {}) } : { ok: false, reason: r.reason }
     },
     readSessionRecent: (sessionId, limit) => bridge?.readRecent(sessionId, limit ?? 20) ?? [],

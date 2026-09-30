@@ -246,14 +246,24 @@ function buildEndpoints(
       service.renderConventions(str(p, 'connectionId'), str(p, 'aLabel'), str(p, 'bLabel')),
 
     [RPC_ENDPOINTS.sendMessage]: (p) => {
-      const raw = p as { from?: unknown; kind?: unknown; text?: unknown; replyTo?: unknown } | null
+      const raw = p as {
+        from?: unknown
+        kind?: unknown
+        text?: unknown
+        replyTo?: unknown
+        urgency?: unknown
+      } | null
       const from = raw?.from === 'b' ? 'b' : 'a'
       const kindRaw = raw?.kind
       const kind =
         kindRaw === 'ask' || kindRaw === 'reply' || kindRaw === 'system' ? kindRaw : 'say'
       const replyTo = typeof raw?.replyTo === 'string' ? raw.replyTo : undefined
+      // 紧急度决定投递方式（排队/插话/只告知），默认排队。
+      const urgency =
+        raw?.urgency === 'quiet' || raw?.urgency === 'urgent' ? raw.urgency : 'normal'
       return service.sendMessage(str(p, 'connectionId'), from, kind, str(p, 'text'), {
         ...(replyTo ? { replyTo } : {}),
+        urgency,
       })
     },
 
@@ -261,12 +271,13 @@ function buildEndpoints(
 
     // 调试：直接往某个会话投递，验证「A 说话 B 能感知」的最后一跳
     [RPC_ENDPOINTS.debugDeliver]: async (p) => {
-      const raw = p as { wake?: unknown; form?: unknown } | null
-      const wake = raw?.wake !== false
+      const raw = p as { urgency?: unknown; form?: unknown } | null
       // form 决定接收端怎么判断这条消息：mirror=信息，handoff=派活。
       // 默认 handoff —— 显式调用这个端点的人，本意就是"要对方处理"。
       const form = raw?.form === 'mirror' ? 'mirror' : 'handoff'
-      return service.deliverToSession(str(p, 'sessionId'), str(p, 'text'), wake, form)
+      const urgency =
+        raw?.urgency === 'quiet' || raw?.urgency === 'urgent' ? raw.urgency : 'normal'
+      return service.deliverToSession(str(p, 'sessionId'), str(p, 'text'), urgency, form)
     },
 
     [RPC_ENDPOINTS.listWhitelist]: (p) =>

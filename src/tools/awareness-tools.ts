@@ -126,6 +126,111 @@ export function registerAwarenessTools(
   const { service, auditLog } = deps
   const disposers: (() => void)[] = []
 
+  // ── 0. 给对端发消息（真的投递） ──
+  //
+  // 用户的原话定义了这个工具的形态：
+  //   > 到时候可能是用户一句开工，然后你就让连接对话全动起来，做他们自己的，
+  //   > 可互相感知，不需要用户再去一个个看了然后确认
+  // 所以紧急度**由助手按情况自己判断**，不要求用户选。
+  disposers.push(
+    tools.register(
+      defineTool({
+        auditLog,
+        name: 'connection_send',
+        description:
+          '给连接另一端的会话发一条消息（真的投递到它的会话，它下一轮就能看到）。\n' +
+          '\n' +
+          '**紧急度由你按情况判断** —— 三档的实际差别：\n' +
+          '  quiet  只告知：放进对方上下文但**不唤醒**它。进展同步、背景信息、\n' +
+          '         "知道了就行"的事。对方下次干活时自然看到，不被打断。\n' +
+          '  normal 排队（默认）：对方处理完手头的事就看到。一般任务与请求。\n' +
+          '  urgent 插话：**插进对方正在跑的那一轮**，当场读到。只在确实需要它\n' +
+          '         **立刻**改变行为时用（阻塞问题、叫停、发现它正在做错的事）。\n' +
+          '         对方空闲时会自动降级为排队，不会失败。\n' +
+          '\n' +
+          '判断原则：**打断是有代价的**（对方要中断当前思路）。大部分消息不急 ——\n' +
+          '默认用 normal，只有真急才 urgent。\n' +
+          '\n' +
+          '注意：这条路径**只发你给的这段文字**，不会带上你所在会话的任何内容。',
+        parameters: {
+          type: 'object',
+          properties: {
+            text: { type: 'string', description: '要发给对方的内容' },
+            urgency: {
+              type: 'string',
+              enum: ['quiet', 'normal', 'urgent'],
+              description: '紧急度。不定则按 normal（排队）。',
+            },
+            kind: {
+              type: 'string',
+              enum: ['say', 'ask', 'reply'],
+              description:
+                'say=发言/同步（需「可建议」权限）；ask=请求对方做事、reply=回复（都需「可写入」权限）。',
+            },
+            connectionId: {
+              type: 'string',
+              description: '可选：指定连接（本会话参与多条时用）。省略则用唯一那条。',
+            },
+          },
+          required: ['text'],
+          additionalProperties: false,
+        },
+        run: async (args, exec) => {
+          const selfId = callerSessionId(exec)
+          if (!selfId) return '发不出去：认不出当前会话（工具没拿到 exec.agent）。'
+
+          const views = peerViews(service, selfId)
+          const only = typeof args.connectionId === 'string' ? args.connectionId : ''
+          const picked = only
+            ? views.filter((v) => v.connectionId === only || v.connectionId.startsWith(only))
+            : views
+          if (picked.length === 0) {
+            return only
+              ? `没找到连接 ${only}（本会话参与 ${views.length} 条）。`
+              : '本会话当前没有参与任何连接，发不出去。'
+          }
+          if (picked.length > 1) {
+            return (
+              `本会话参与了 ${picked.length} 条连接，请用 connectionId 指定要发给谁：\n` +
+              picked.map((v) => `  ${v.connectionId}  → ${v.peerLabel}`).join('\n')
+            )
+          }
+
+          const view = picked[0]!
+          const urgency = String(args.urgency ?? 'normal')
+          const kind = String(args.kind ?? 'say')
+          const text = String(args.text ?? '').trim()
+          if (!text) return '内容为空，没发。'
+
+          // from 用「我在连接的哪一端」决定 —— 权限是按方向算的
+          const conn = service.getConnectionById(view.connectionId)
+          const from: 'a' | 'b' = conn?.sessionA === selfId ? 'a' : 'b'
+
+          const r = await service.sendMessage(view.connectionId, from, kind as never, text, {
+            urgency: urgency as never,
+          })
+
+          if (!r.ok) {
+            // ⚠️ 拒绝原因必须原样带出去（含"还需 Xms""需要写权限"这类自证信息），
+            // 否则调用方只能猜。
+            return `没发出去：${r.reason ?? '未知原因'}`
+          }
+          if (r.delivered === false) {
+            return `已记录，但**没能投到对方会话**：${r.reason ?? '未知原因'}`
+          }
+
+          const how =
+            urgency === 'quiet'
+              ? '只告知（不唤醒，对方下次干活时看到）'
+              : urgency === 'urgent'
+                ? '插话（对方在跑就当场读到，空闲则排队）'
+                : '排队（对方处理完手头的事就看到）'
+          return `已发给 ${view.peerLabel} · ${how}`
+        },
+      }),
+    ),
+  )
+
   // ── 1. 看对方在干什么 ──
   disposers.push(
     tools.register(

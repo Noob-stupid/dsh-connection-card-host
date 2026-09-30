@@ -2,12 +2,12 @@
  * Stable API — 对外暴露的稳定接口层。
  * 浏览器端和卡片通过此接口与宿主交互，隔离内部实现变化。
  */
-import type { Connection, PermissionLevel, CardInstance, ConnectionMessage, MessageKind, SendGate, CardScope } from '../types/index.js';
+import type { Connection, PermissionLevel, CardInstance, ConnectionMessage, MessageKind, CardScope } from '../types/index.js';
 import type { ConnectionManager } from '../core/connection-manager.js';
 import type { ConnectionEventBus } from '../core/event-bus.js';
 import type { CardHost, CardTemplateInfo } from '../card-host/loader.js';
 import type { DSHAdapter, KnownSession } from './dsh-adapter.js';
-import type { SessionBridge } from './session-bridge.js';
+import type { SessionBridge, DeliverUrgency } from './session-bridge.js';
 import type { WorkState, WorkStateTracker } from '../core/work-state.js';
 import type { AddResult, Convention, ConventionBox } from '../core/box.js';
 import { type InstallResult } from '../card-host/installer.js';
@@ -106,9 +106,14 @@ export interface ConnectionCardHostService {
     }): ConnectionMessage[];
     sendMessage(connectionId: string, from: 'a' | 'b', kind: MessageKind, text: string, options?: {
         replyTo?: string;
-    }): SendGate & {
+        urgency?: DeliverUrgency;
+    }): Promise<{
+        ok: boolean;
         message?: ConnectionMessage;
-    };
+        /** 是否**真的投到了对端会话**（false 时看 reason）。 */
+        delivered?: boolean;
+        reason?: string;
+    }>;
     /** 清空某条连接的交流记录（连接本身不动）。 */
     clearMessages(connectionId: string): {
         ok: boolean;
@@ -138,7 +143,7 @@ export interface ConnectionCardHostService {
         notes: string[];
     };
     /** 直接往某个会话投递文本（目标必须有 live agent）。 */
-    deliverToSession(sessionId: string, text: string, wake?: boolean, form?: 'mirror' | 'handoff'): Promise<{
+    deliverToSession(sessionId: string, text: string, urgency?: DeliverUrgency, form?: 'mirror' | 'handoff'): Promise<{
         ok: boolean;
         via?: string;
         reason?: string;
