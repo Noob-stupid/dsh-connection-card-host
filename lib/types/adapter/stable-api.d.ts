@@ -10,7 +10,8 @@ import type { DSHAdapter, KnownSession } from './dsh-adapter.js';
 import type { SessionBridge } from './session-bridge.js';
 import type { WorkState, WorkStateTracker } from '../core/work-state.js';
 import type { AddResult, Convention, ConventionBox } from '../core/box.js';
-export type { KnownSession, CardTemplateInfo, WorkState, Convention, AddResult };
+import { type InstallResult } from '../card-host/installer.js';
+export type { KnownSession, CardTemplateInfo, WorkState, Convention, AddResult, InstallResult };
 /** 协作感知两层的依赖（由 index.ts 装配后注入）。 */
 export interface AwarenessDeps {
     workState: WorkStateTracker;
@@ -38,6 +39,18 @@ export interface ConnectionCardHostService {
     listCardTemplates(connectionId?: string): CardTemplateInfo[];
     /** 渲染卡片面板 HTML（宿主侧跑 renderPanel/mountPanel，取回 HTML）。 */
     renderCardPanel(instanceId: string): Promise<string | null>;
+    /**
+     * 安装一张卡片。spec 支持：本地目录 / 本地 tgz / npm 包名 / HTTP tgz 地址。
+     * 装到 `$DSH_HOME/connection-cards/cards/<id>/`，不跑 pnpm、不动 profile。
+     */
+    installCard(spec: string): Promise<InstallResult>;
+    /** 卸载一张已安装的卡片（只删我们目录下的）。 */
+    uninstallCard(cardId: string): {
+        ok: boolean;
+        reason?: string;
+    };
+    /** 已安装卡片的根目录（面板显示给用户看，让"装到哪儿了"是透明的）。 */
+    cardsRoot(): string;
     /** 待确认的权限升级请求（面板据此显示「待确认 + 同意/拒绝」）。 */
     listPendingUpgrades(connectionId?: string): {
         id: string;
@@ -108,4 +121,4 @@ export interface ConnectionCardHostService {
         text: string;
     }[];
 }
-export declare function createStableApi(manager: ConnectionManager, eventBus: ConnectionEventBus, cardHost?: CardHost, adapter?: DSHAdapter, bridge?: SessionBridge, awareness?: AwarenessDeps): ConnectionCardHostService;
+export declare function createStableApi(manager: ConnectionManager, eventBus: ConnectionEventBus, cardHost?: CardHost, adapter?: DSHAdapter, bridge?: SessionBridge, awareness?: AwarenessDeps, auditLog?: (msg: string) => void): ConnectionCardHostService;

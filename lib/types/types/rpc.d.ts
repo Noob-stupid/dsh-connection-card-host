@@ -70,6 +70,12 @@ export declare const RPC_ENDPOINTS: {
     readonly relayCapabilities: "relay/capabilities";
     /** 改已装载卡片的可见范围（两端 / 仅 A / 仅 B）。 */
     readonly setCardScope: "cards/set-scope";
+    /** 安装一张卡片（本地目录 / tgz / npm 包名 / HTTP tgz）。 */
+    readonly installCard: "cards/install";
+    /** 卸载一张已安装的卡片。 */
+    readonly uninstallCard: "cards/uninstall";
+    /** 已安装卡片的根目录（面板显示，让"装到哪儿"透明）。 */
+    readonly cardsRoot: "cards/root";
     /** 某条连接两端的工作状态快照。 */
     readonly connectionWork: "awareness/work";
     /** 列出某条连接的共享约定。 */

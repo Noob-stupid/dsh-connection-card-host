@@ -28,6 +28,17 @@ export declare class CardRegistry {
     private instances;
     private modules;
     registerTemplate(template: CardTemplate): void;
+    /**
+     * 只在「已安装」来源里清空模板，内置的保留。
+     *
+     * 用于重扫前剔除**已经消失**的卡片（卸载、目录被手工删掉）。
+     * 不做这件事的话，scanTemplates 只增不减 —— 卸载掉的卡片会一直挂在
+     * 列表里直到宿主重启，用户点了会得到一个"模板未找到"。
+     *
+     * 只清 installed：内置卡片随插件发布，不可能"在磁盘上消失"，
+     * 清掉再重扫纯属浪费（而且内置根目录万一临时读不到就全没了）。
+     */
+    clearInstalledTemplates(): void;
     getTemplate(templateId: string): CardTemplate | undefined;
     listTemplates(): CardTemplate[];
     registerInstance(instance: CardInstance): void;

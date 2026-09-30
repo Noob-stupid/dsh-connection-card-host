@@ -20,8 +20,21 @@ export interface PersistedData {
 
 const CURRENT_VERSION = 1
 
-function getBaseDir(): string {
-  const dshHome = process.env.DSH_HOME || join(process.env.HOME || process.env.USERPROFILE || '.', '.dsh')
+/**
+ * $DSH_HOME 的解析（与 Persistence 用同一套逻辑）。
+ *
+ * 导出出去是为了让别处也能算出"我们的目录" —— 卡片安装目录必须和
+ * connections.json 在同一个 $DSH_HOME 下，不能各算各的。
+ */
+export function dshHomeDir(): string {
+  return (
+    process.env.DSH_HOME ||
+    join(process.env.HOME || process.env.USERPROFILE || '.', '.dsh')
+  )
+}
+
+export function getBaseDir(): string {
+  const dshHome = dshHomeDir()
   return join(dshHome, 'connection-cards')
 }
 

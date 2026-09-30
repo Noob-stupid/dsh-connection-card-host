@@ -10,8 +10,9 @@ import type { DSHAdapter, KnownSession } from './dsh-adapter.js'
 import type { SessionBridge } from './session-bridge.js'
 import type { WorkState, WorkStateTracker } from '../core/work-state.js'
 import type { AddResult, Convention, ConventionBox } from '../core/box.js'
+import { installCard, uninstallCard, type InstallResult } from '../card-host/installer.js'
 
-export type { KnownSession, CardTemplateInfo, WorkState, Convention, AddResult }
+export type { KnownSession, CardTemplateInfo, WorkState, Convention, AddResult, InstallResult }
 
 /** 协作感知两层的依赖（由 index.ts 装配后注入）。 */
 export interface AwarenessDeps {
@@ -46,6 +47,17 @@ export interface ConnectionCardHostService {
   listCardTemplates(connectionId?: string): CardTemplateInfo[]
   /** 渲染卡片面板 HTML（宿主侧跑 renderPanel/mountPanel，取回 HTML）。 */
   renderCardPanel(instanceId: string): Promise<string | null>
+
+  // ── 面板内安装（装到我们自己的目录，完全不碰 profile） ──
+  /**
+   * 安装一张卡片。spec 支持：本地目录 / 本地 tgz / npm 包名 / HTTP tgz 地址。
+   * 装到 `$DSH_HOME/connection-cards/cards/<id>/`，不跑 pnpm、不动 profile。
+   */
+  installCard(spec: string): Promise<InstallResult>
+  /** 卸载一张已安装的卡片（只删我们目录下的）。 */
+  uninstallCard(cardId: string): { ok: boolean; reason?: string }
+  /** 已安装卡片的根目录（面板显示给用户看，让"装到哪儿了"是透明的）。 */
+  cardsRoot(): string
 
   /** 待确认的权限升级请求（面板据此显示「待确认 + 同意/拒绝」）。 */
   listPendingUpgrades(connectionId?: string): {
@@ -120,9 +132,11 @@ export function createStableApi(
   adapter?: DSHAdapter,
   bridge?: SessionBridge,
   awareness?: AwarenessDeps,
+  auditLog?: (msg: string) => void,
 ): ConnectionCardHostService {
   const track = awareness?.workState
   const box = awareness?.box
+  const audit = auditLog ?? ((m: string) => console.log('[ConnectionCardHost]', m))
   /** 声明约定后立刻落盘（公约必须跨重启保留）。 */
   const persistBox = (cid: string): void => manager.persistConventions(cid)
 
@@ -143,6 +157,20 @@ export function createStableApi(
     unloadCard: (iid) => cardHost!.unloadCard(iid),
     reloadCard: (iid) => cardHost!.reloadCard(iid),
     setCardScope: (iid, scope) => cardHost!.setCardScope(iid, scope),
+    installCard: async (spec) => {
+      if (!cardHost) return { ok: false, reason: '卡片宿主未装配' }
+      const result = await installCard(spec, cardHost.installedCardsRoot(), audit)
+      // 装完立刻重扫，卡片马上出现在列表里
+      if (result.ok) cardHost.scanTemplates(true)
+      return result
+    },
+    uninstallCard: (cardId) => {
+      if (!cardHost) return { ok: false, reason: '卡片宿主未装配' }
+      const r = uninstallCard(cardId, cardHost.installedCardsRoot())
+      if (r.ok) cardHost.scanTemplates(true)
+      return r
+    },
+    cardsRoot: () => cardHost?.installedCardsRoot() ?? '',
     listCardTemplates: (cid) => cardHost!.listTemplates(cid),
     renderCardPanel: (iid) => cardHost!.renderCardPanel(iid),
     listPendingUpgrades: (cid) =>

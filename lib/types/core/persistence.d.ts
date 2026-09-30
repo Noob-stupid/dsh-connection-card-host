@@ -10,6 +10,14 @@ export interface PersistedData {
     conventions: Record<string, Convention[]>;
     settings: Record<string, unknown>;
 }
+/**
+ * $DSH_HOME 的解析（与 Persistence 用同一套逻辑）。
+ *
+ * 导出出去是为了让别处也能算出"我们的目录" —— 卡片安装目录必须和
+ * connections.json 在同一个 $DSH_HOME 下，不能各算各的。
+ */
+export declare function dshHomeDir(): string;
+export declare function getBaseDir(): string;
 export declare class Persistence {
     private data;
     private dataPath;

@@ -573,6 +573,28 @@ export const CONNECTION_CARD_CSS = `
 
 .ccr-perm-row .ccr-seg { flex: none; }
 
+/* ═══ 卡片安装（装到我们自己的目录） ═══ */
+.ccr-install {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--dsw-alias-border-l2, rgba(128, 128, 128, 0.25));
+}
+
+.ccr-install__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ccr-install__row .ccr-input { flex: 1 1 auto; min-width: 0; }
+
+/* 目录路径可能很长，允许折行且用等宽字体，避免看成一串糊字 */
+.ccr-install code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  word-break: break-all;
+}
+
 /* ═══ 卡片可见范围（两端 / 仅 A / 仅 B） ═══ */
 .ccr-scope-pick {
   display: flex;

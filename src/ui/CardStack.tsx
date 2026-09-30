@@ -46,6 +46,11 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
   const [picking, setPicking] = useState(false)
   /** 加卡时选的可见范围（只作用于"下一次添加"）。 */
   const [scope, setScope] = useState<CardScope>('both')
+  /** 安装：来源输入、进行中标志、回执/错误文本、已安装卡片根目录。 */
+  const [spec, setSpec] = useState('')
+  const [installing, setInstalling] = useState(false)
+  const [installMsg, setInstallMsg] = useState<string | null>(null)
+  const [root, setRoot] = useState('')
 
   const cards = connection.cards
   // 依赖用长度与 id 串，避免每次渲染都重新拉取
@@ -78,6 +83,15 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
     void load()
   }, [load])
 
+  // 已安装卡片的根目录：显示给用户看，让"装到哪儿了"是透明的
+  useEffect(() => {
+    if (!client) return
+    void client
+      .cardsRoot()
+      .then((r) => setRoot(r))
+      .catch(() => {})
+  }, [client])
+
   const add = useCallback(
     async (templateId: string) => {
       if (!client) return
@@ -96,8 +110,31 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
     [client, connection.id, scope, load, onChanged],
   )
 
-  /** 改一张已装载卡片的可见范围。 */
-  const changeScope = useCallback(
+  /** 装一张卡片到我们自己的目录，然后重扫模板。 */
+  const doInstall = useCallback(async () => {
+    if (!client) return
+    const s = spec.trim()
+    if (s.length === 0) return
+    setInstalling(true)
+    setInstallMsg(null)
+    try {
+      const r = await client.installCard(s)
+      if (r.ok) {
+        setInstallMsg(`已安装：${r.name ?? r.cardId}${r.version ? ` v${r.version}` : ''}`)
+        setSpec('')
+        // 重扫后新卡片会出现在上面的可选列表里
+        await load()
+      } else {
+        setInstallMsg(`安装失败：${r.reason ?? '未知原因'}`)
+      }
+    } catch (e) {
+      setInstallMsg(e instanceof Error ? e.message : String(e))
+    } finally {
+      setInstalling(false)
+    }
+  }, [client, spec, load])
+
+  /** 改一张已装载卡片的可见范围。 */  const changeScope = useCallback(
     async (instanceId: string, next: CardScope) => {
       if (!client) return
       setBusy(instanceId)
@@ -195,8 +232,7 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
             <div className="ccr-panel__empty">
               {templates.length === 0 ? '没有发现任何卡片模板' : '所有卡片都已添加'}
             </div>
-          )}
-          {available.map((t) => (
+          )}          {available.map((t) => (
             <button
               key={t.templateId}
               type="button"
@@ -213,6 +249,45 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
               </span>
             </button>
           ))}
+        </div>
+      )}
+
+      {/*
+       * 安装卡片：装到**我们自己的目录**，不碰 profile。
+       * 用户给的理由很实在 —— 不会被 DSH 更新破坏，也不会破坏 DSH。
+       */}
+      {picking && (
+        <div className="ccr-install">
+          <div className="ccr-install__row">
+            <input
+              className="ccr-input"
+              placeholder="包名 / 仓库 tgz 地址 / 本地目录路径"
+              value={spec}
+              onChange={(e) => setSpec(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  void doInstall()
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="ccr-btn"
+              disabled={installing || spec.trim().length === 0}
+              onClick={() => void doInstall()}
+            >
+              {installing ? '安装中…' : '安装'}
+            </button>
+          </div>
+          <div className="ccr-field__hint">
+            {installMsg ?? (
+              <>
+                支持 npm 包名、tgz 地址、本地目录。装到 <code>{root || '…'}</code>，
+                **不写入 DSH 的 profile**，所以不会影响 DSH 本身、也不会被它的更新破坏。
+              </>
+            )}
+          </div>
         </div>
       )}
 

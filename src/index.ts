@@ -172,10 +172,15 @@ export function apply(ctx: HostContext, _config?: Record<string, unknown>): void
     })
 
     // 稳定 API
-    const service = createStableApi(manager, eventBus, cardHost, adapter, bridge, {
-      workState,
-      box,
-    })
+    const service = createStableApi(
+      manager,
+      eventBus,
+      cardHost,
+      adapter,
+      bridge,
+      { workState, box },
+      auditLog,
+    )
 
     // 协作感知工具（拉取式：模型按需查，不占常驻上下文）
     const toolsService = safeCtxGet<{ register(definition: unknown): () => void }>(ctx, 'tools')

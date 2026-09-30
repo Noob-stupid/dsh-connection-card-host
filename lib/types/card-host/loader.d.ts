@@ -44,6 +44,8 @@ export declare class CardHost {
      */
     private builtinRoot;
     private installedRoot;
+    /** 已安装卡片的根目录（安装器要往这里落盘）。 */
+    installedCardsRoot(): string;
     /** 扫描两个根目录下的卡片包（幂等）。 */
     scanTemplates(force?: boolean): void;
     private scanRoot;

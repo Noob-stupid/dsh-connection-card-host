@@ -24,8 +24,16 @@ export interface WorkView {
     /** 宿主渲染好的摘要文本（面板直接用）。 */
     summary: string;
 }
-/** 一条共享约定（协作感知 B 层）。 */
-export interface ConventionView {
+/** 安装结果（面板据此给回执）。 */
+export interface InstallResultView {
+    ok: boolean;
+    cardId?: string;
+    dir?: string;
+    name?: string;
+    version?: string;
+    reason?: string;
+}
+/** 一条共享约定（协作感知 B 层）。 */ export interface ConventionView {
     id: string;
     /** 谁声明的：连接的端点，或 'user'（人从面板直接写进来的）。 */
     by: 'a' | 'b' | 'user';
@@ -92,6 +100,15 @@ export interface ConnectionCardHostClient {
     setCardScope(instanceId: string, scope: CardScope): Promise<{
         ok: boolean;
     }>;
+    /** 安装一张卡片：本地目录 / 本地 tgz / npm 包名 / HTTP tgz 地址。 */
+    installCard(spec: string): Promise<InstallResultView>;
+    /** 卸载一张已安装的卡片（只删我们目录下的）。 */
+    uninstallCard(cardId: string): Promise<{
+        ok: boolean;
+        reason?: string;
+    }>;
+    /** 已安装卡片的根目录（面板显示用）。 */
+    cardsRoot(): Promise<string>;
     listCardTemplates(connectionId?: string): Promise<CardTemplateView[]>;
     renderCardPanel(instanceId: string): Promise<string | null>;
     /** 待确认的权限升级请求。 */

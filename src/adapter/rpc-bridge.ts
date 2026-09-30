@@ -126,6 +126,10 @@ function buildEndpoints(
       ok: service.setCardScope(str(p, 'instanceId'), cardScopeOf(p) ?? 'both'),
     }),
 
+    [RPC_ENDPOINTS.installCard]: (p) => service.installCard(str(p, 'spec')),
+    [RPC_ENDPOINTS.uninstallCard]: (p) => service.uninstallCard(str(p, 'cardId')),
+    [RPC_ENDPOINTS.cardsRoot]: () => service.cardsRoot(),
+
     [RPC_ENDPOINTS.unloadCard]: async (p) => {
       await service.unloadCard(str(p, 'instanceId'))
       return null

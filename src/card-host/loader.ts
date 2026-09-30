@@ -14,6 +14,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { dshHomeDir } from '../core/persistence.js'
 import { fileURLToPath } from 'node:url'
 import type { CardInstance, CardManifest, CardAPI, CardScope } from '../types/index.js'
 import type { ConnectionManager } from '../core/connection-manager.js'
@@ -89,13 +90,24 @@ export class CardHost {
 
   private installedRoot(): string {
     if (this.options.installedRoot) return this.options.installedRoot
-    return join(process.cwd(), 'cards')
+    // ⚠️ 兜底值**绝不能是 process.cwd()** —— 那样卡片会装到宿主进程的当前目录下，
+    // 而进程 cwd 取决于用户从哪儿启动 DSH，既不可预测也不是"我们的目录"。
+    // 正常路径由 index.ts 传 `$DSH_HOME/connection-cards/cards`。
+    return join(dshHomeDir(), 'connection-cards', 'cards')
+  }
+
+  /** 已安装卡片的根目录（安装器要往这里落盘）。 */
+  installedCardsRoot(): string {
+    return this.installedRoot()
   }
 
   /** 扫描两个根目录下的卡片包（幂等）。 */
   scanTemplates(force = false): void {
     if (this.scanned && !force) return
     this.scanned = true
+    // 强制重扫 = 磁盘可能变了（刚装/刚卸）→ 先剔除消失的已安装卡片，
+    // 否则只会增不会减，卸载掉的卡片一直挂在列表里。
+    if (force) this.registry.clearInstalledTemplates()
     this.scanRoot(this.builtinRoot(), 'builtin')
     this.scanRoot(this.installedRoot(), 'installed')
   }

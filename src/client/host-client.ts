@@ -25,8 +25,17 @@ export interface WorkView {
   summary: string
 }
 
-/** 一条共享约定（协作感知 B 层）。 */
-export interface ConventionView {
+/** 安装结果（面板据此给回执）。 */
+export interface InstallResultView {
+  ok: boolean
+  cardId?: string
+  dir?: string
+  name?: string
+  version?: string
+  reason?: string
+}
+
+/** 一条共享约定（协作感知 B 层）。 */export interface ConventionView {
   id: string
   /** 谁声明的：连接的端点，或 'user'（人从面板直接写进来的）。 */
   by: 'a' | 'b' | 'user'
@@ -94,6 +103,14 @@ export interface ConnectionCardHostClient {
   reloadCard(instanceId: string): Promise<void>
   /** 改已装载卡片的可见范围。返回 false = 模板钉死了范围或实例不存在。 */
   setCardScope(instanceId: string, scope: CardScope): Promise<{ ok: boolean }>
+
+  // ── 面板内安装 ──
+  /** 安装一张卡片：本地目录 / 本地 tgz / npm 包名 / HTTP tgz 地址。 */
+  installCard(spec: string): Promise<InstallResultView>
+  /** 卸载一张已安装的卡片（只删我们目录下的）。 */
+  uninstallCard(cardId: string): Promise<{ ok: boolean; reason?: string }>
+  /** 已安装卡片的根目录（面板显示用）。 */
+  cardsRoot(): Promise<string>
   listCardTemplates(connectionId?: string): Promise<CardTemplateView[]>
   renderCardPanel(instanceId: string): Promise<string | null>
   /** 待确认的权限升级请求。 */
@@ -180,6 +197,9 @@ export function createHostClient(rpc: RpcCaller): ConnectionCardHostClient {
     reloadCard: (instanceId) => invoke(RPC_ENDPOINTS.reloadCard, { instanceId }),
     setCardScope: (instanceId, scope) =>
       invoke(RPC_ENDPOINTS.setCardScope, { instanceId, scope }),
+    installCard: (spec) => invoke(RPC_ENDPOINTS.installCard, { spec }),
+    uninstallCard: (cardId) => invoke(RPC_ENDPOINTS.uninstallCard, { cardId }),
+    cardsRoot: () => invoke(RPC_ENDPOINTS.cardsRoot),
     listCardTemplates: (connectionId) =>
       invoke(RPC_ENDPOINTS.listCardTemplates, connectionId ? { connectionId } : {}),
     renderCardPanel: (instanceId) => invoke(RPC_ENDPOINTS.renderCardPanel, { instanceId }),
