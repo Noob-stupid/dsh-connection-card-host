@@ -4,7 +4,7 @@
  * 这是浏览器访问宿主的唯一途径：`ctx.connection.rpc.call(channel, endpoint, payload)`。
  * 每个方法返回 Promise，失败时抛 Error（而不是静默返 null）。
  */
-import type { Connection, CardInstance, PermissionLevel } from '../types/index.js'
+import type { Connection, CardInstance, CardScope, PermissionLevel } from '../types/index.js'
 import { RPC_CHANNEL, RPC_ENDPOINTS, type RpcResult } from '../types/rpc.js'
 import { safeCtxGet } from '../safe-ctx.js'
 
@@ -70,6 +70,8 @@ export interface CardTemplateView {
   requires: { read: string[]; write: string[] }
   events: string[]
   hasPanel: boolean
+  /** 模板自己钉死的可见范围（有则用户不可改）。 */
+  scope?: CardScope
   loadedCount: number
 }
 
@@ -87,9 +89,11 @@ export interface ConnectionCardHostClient {
   ): Promise<string | null>
   acceptPermissionUpgrade(requestId: string, acceptorId: string): Promise<boolean>
   rejectPermissionUpgrade(requestId: string, rejectorId: string): Promise<void>
-  loadCard(templateId: string, connectionId: string): Promise<RemoteCardInstance>
+  loadCard(templateId: string, connectionId: string, scope?: CardScope): Promise<RemoteCardInstance>
   unloadCard(instanceId: string): Promise<void>
   reloadCard(instanceId: string): Promise<void>
+  /** 改已装载卡片的可见范围。返回 false = 模板钉死了范围或实例不存在。 */
+  setCardScope(instanceId: string, scope: CardScope): Promise<{ ok: boolean }>
   listCardTemplates(connectionId?: string): Promise<CardTemplateView[]>
   renderCardPanel(instanceId: string): Promise<string | null>
   /** 待确认的权限升级请求。 */
@@ -170,10 +174,12 @@ export function createHostClient(rpc: RpcCaller): ConnectionCardHostClient {
       invoke(RPC_ENDPOINTS.acceptPermissionUpgrade, { requestId, acceptorId }),
     rejectPermissionUpgrade: (requestId, rejectorId) =>
       invoke(RPC_ENDPOINTS.rejectPermissionUpgrade, { requestId, rejectorId }),
-    loadCard: (templateId, connectionId) =>
-      invoke(RPC_ENDPOINTS.loadCard, { templateId, connectionId }),
+    loadCard: (templateId, connectionId, scope) =>
+      invoke(RPC_ENDPOINTS.loadCard, { templateId, connectionId, ...(scope ? { scope } : {}) }),
     unloadCard: (instanceId) => invoke(RPC_ENDPOINTS.unloadCard, { instanceId }),
     reloadCard: (instanceId) => invoke(RPC_ENDPOINTS.reloadCard, { instanceId }),
+    setCardScope: (instanceId, scope) =>
+      invoke(RPC_ENDPOINTS.setCardScope, { instanceId, scope }),
     listCardTemplates: (connectionId) =>
       invoke(RPC_ENDPOINTS.listCardTemplates, connectionId ? { connectionId } : {}),
     renderCardPanel: (instanceId) => invoke(RPC_ENDPOINTS.renderCardPanel, { instanceId }),

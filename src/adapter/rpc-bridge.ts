@@ -20,7 +20,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionCardHostService } from './stable-api.js'
-import type { PermissionLevel } from '../types/index.js'
+import type { PermissionLevel, CardScope } from '../types/index.js'
 import { RPC_CHANNEL, RPC_ENDPOINTS, type RpcResult } from '../types/rpc.js'
 import { safeCtxGet } from '../safe-ctx.js'
 
@@ -50,6 +50,16 @@ function direction(payload: unknown): 'aToB' | 'bToA' {
     throw new Error(`参数 direction 非法: ${value}`)
   }
   return value
+}
+
+/**
+ * 取出并校验卡片的可见范围。
+ * 非法值当作"没传"（回退到模板声明或默认 'both'），不抛错 ——
+ * 这个参数是可选的，用户界面传了脏值不该让整个装载失败。
+ */
+function cardScopeOf(payload: unknown): CardScope | undefined {
+  const raw = (payload as { scope?: unknown } | null | undefined)?.scope
+  return raw === 'a' || raw === 'b' || raw === 'both' ? raw : undefined
 }
 
 function level(payload: unknown): PermissionLevel {
@@ -110,7 +120,11 @@ function buildEndpoints(
     },
 
     [RPC_ENDPOINTS.loadCard]: (p) =>
-      service.loadCard(str(p, 'templateId'), str(p, 'connectionId')),
+      service.loadCard(str(p, 'templateId'), str(p, 'connectionId'), cardScopeOf(p)),
+
+    [RPC_ENDPOINTS.setCardScope]: (p) => ({
+      ok: service.setCardScope(str(p, 'instanceId'), cardScopeOf(p) ?? 'both'),
+    }),
 
     [RPC_ENDPOINTS.unloadCard]: async (p) => {
       await service.unloadCard(str(p, 'instanceId'))

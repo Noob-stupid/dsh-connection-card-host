@@ -21,6 +21,8 @@ export interface CardTemplateInfo {
     events: string[];
     /** 是否提供面板 UI。 */
     hasPanel: boolean;
+    /** 模板自己钉死的可见范围（有则用户不可改）。 */
+    scope?: CardScope;
     /** 已加到当前连接的实例数（由调用方填充）。 */
     loadedCount: number;
 }
@@ -57,6 +59,16 @@ export declare class CardHost {
     loadCard(templateId: string, connectionId: string, requestedScope?: CardScope): Promise<CardInstance>;
     unloadCard(instanceId: string): Promise<void>;
     reloadCard(instanceId: string): Promise<void>;
+    /**
+     * 改一张**已装载卡片**的可见范围（两端 / 仅 A / 仅 B）。
+     *
+     * 为什么不复用 loadCard：那个每次都建**新实例**（新 UUID），
+     * 拿来改范围会变成"卸一张又装一张"，instanceId 变了、state 丢了。
+     *
+     * 这里同时要**重建 CardAPI** —— 因为 API 是按 scope 过滤事件方向的，
+     * 只改 instance.scope 而不换 API，卡片收到的仍会是旧方向的推送。
+     */
+    setCardScope(instanceId: string, scope: CardScope): boolean;
     getCardApi(instanceId: string): CardAPI | undefined;
     /**
      * 渲染卡片面板 HTML。

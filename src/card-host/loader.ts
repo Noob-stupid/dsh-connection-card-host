@@ -42,6 +42,8 @@ export interface CardTemplateInfo {
   events: string[]
   /** 是否提供面板 UI。 */
   hasPanel: boolean
+  /** 模板自己钉死的可见范围（有则用户不可改）。 */
+  scope?: CardScope
   /** 已加到当前连接的实例数（由调用方填充）。 */
   loadedCount: number
 }
@@ -164,6 +166,8 @@ export class CardHost {
         },
         events: Array.isArray(t.manifest.events) ? t.manifest.events : [],
         hasPanel: Boolean(t.manifest.ui?.panel) || true,
+        // 模板若自己钉死了范围，界面要显示出来并禁用选择器
+        ...(t.manifest.scope ? { scope: t.manifest.scope } : {}),
         loadedCount: conn
           ? conn.cards.filter((c) => c.templateId === t.templateId).length
           : 0,
@@ -251,6 +255,46 @@ export class CardHost {
     this.registry.removeModule(templateId)
     await this.unloadCard(instanceId)
     await this.loadCard(templateId, connectionId)
+  }
+
+  /**
+   * 改一张**已装载卡片**的可见范围（两端 / 仅 A / 仅 B）。
+   *
+   * 为什么不复用 loadCard：那个每次都建**新实例**（新 UUID），
+   * 拿来改范围会变成"卸一张又装一张"，instanceId 变了、state 丢了。
+   *
+   * 这里同时要**重建 CardAPI** —— 因为 API 是按 scope 过滤事件方向的，
+   * 只改 instance.scope 而不换 API，卡片收到的仍会是旧方向的推送。
+   */
+  setCardScope(instanceId: string, scope: CardScope): boolean {
+    const instance = this.registry.getInstance(instanceId)
+    if (!instance) return false
+    if (instance.scope === scope) return true
+
+    const template = this.registry.getTemplate(instance.templateId)
+    // 模板自己钉死了范围的，不允许用户改（否则与清单声明矛盾）
+    if (template?.manifest.scope) return false
+
+    instance.scope = scope
+
+    const mod = this.registry.getModule(instance.templateId)
+    if (mod) {
+      const api = createCardApi({
+        instance,
+        eventBus: this.eventBus,
+        adapter: this.adapter,
+        messageLog: this.messageLog,
+        manager: this.manager,
+      })
+      this.apiByInstance.set(instanceId, api)
+    }
+
+    const conn = this.manager.getById(instance.connectionId)
+    if (conn) {
+      conn.updatedAt = Date.now()
+      this.manager.persistConnection(conn.id)
+    }
+    return true
   }
 
   getCardApi(instanceId: string): CardAPI | undefined {

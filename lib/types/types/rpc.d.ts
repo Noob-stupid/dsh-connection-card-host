@@ -68,6 +68,8 @@ export declare const RPC_ENDPOINTS: {
     readonly debugDeliver: "debug/deliver";
     /** 会话桥的能力探测结果。 */
     readonly relayCapabilities: "relay/capabilities";
+    /** 改已装载卡片的可见范围（两端 / 仅 A / 仅 B）。 */
+    readonly setCardScope: "cards/set-scope";
     /** 某条连接两端的工作状态快照。 */
     readonly connectionWork: "awareness/work";
     /** 列出某条连接的共享约定。 */

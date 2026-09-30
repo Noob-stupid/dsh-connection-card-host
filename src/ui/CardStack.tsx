@@ -9,7 +9,7 @@
  * （apply 要订阅事件、注册工具），宿主没有 DOM，用 dom-shim 取 innerHTML。
  */
 import { useCallback, useEffect, useState } from 'react'
-import type { Connection } from '../types/index.js'
+import type { Connection, CardScope } from '../types/index.js'
 import type { ConnectionCardHostClient, CardTemplateView } from '../client/host-client.js'
 
 interface CardStackProps {
@@ -25,12 +25,27 @@ const HEALTH_COLOR: Record<string, string> = {
   red: '#EF4444',
 }
 
+/**
+ * 卡片可见范围。
+ *
+ * 「两端通用」= 这条连接上的两端都能收到它的事件、都能看到它的面板；
+ * 「仅 A / 仅 B」= 只挂在某一端（另一端连它的存在都感知不到）。
+ * 这正是用户要的「卡片是两端共享的，或者可以只给一端」。
+ */
+const SCOPE_CHOICES: { value: CardScope; label: string; hint: string }[] = [
+  { value: 'both', label: '两端', hint: '连接的两端都能收到这张卡片的事件与面板' },
+  { value: 'a', label: '仅 A', hint: '只挂在 A 端（B 端感知不到这张卡片）' },
+  { value: 'b', label: '仅 B', hint: '只挂在 B 端（A 端感知不到这张卡片）' },
+]
+
 export function CardStack({ connection, client, onChanged }: CardStackProps) {
   const [templates, setTemplates] = useState<CardTemplateView[]>([])
   const [panels, setPanels] = useState<Record<string, string | null>>({})
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
+  /** 加卡时选的可见范围（只作用于"下一次添加"）。 */
+  const [scope, setScope] = useState<CardScope>('both')
 
   const cards = connection.cards
   // 依赖用长度与 id 串，避免每次渲染都重新拉取
@@ -68,7 +83,7 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
       if (!client) return
       setBusy(templateId)
       try {
-        await client.loadCard(templateId, connection.id)
+        await client.loadCard(templateId, connection.id, scope)
         setPicking(false)
         await load()
         onChanged?.()
@@ -78,7 +93,24 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
         setBusy(null)
       }
     },
-    [client, connection.id, load, onChanged],
+    [client, connection.id, scope, load, onChanged],
+  )
+
+  /** 改一张已装载卡片的可见范围。 */
+  const changeScope = useCallback(
+    async (instanceId: string, next: CardScope) => {
+      if (!client) return
+      setBusy(instanceId)
+      try {
+        await client.setCardScope(instanceId, next)
+        await load()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+      } finally {
+        setBusy(null)
+      }
+    },
+    [client, load],
   )
 
   const remove = useCallback(
@@ -138,6 +170,27 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
 
       {picking && (
         <div className="ccr-cards__picker">
+          {/*
+           * 加卡之前先选范围。默认「两端通用」。
+           * 这张卡片只在选中的那一端收到事件与面板（由 CardAPI 按 scope 过滤）。
+           */}
+          <div className="ccr-scope-pick">
+            <span className="ccr-scope-pick__label">加到</span>
+            <div className="ccr-seg ccr-seg--small">
+              {SCOPE_CHOICES.map((s) => (
+                <button
+                  key={s.value}
+                  type="button"
+                  className={`ccr-seg__item${scope === s.value ? ' ccr-seg__item--active' : ''}`}
+                  title={s.hint}
+                  onClick={() => setScope(s.value)}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {available.length === 0 && (
             <div className="ccr-panel__empty">
               {templates.length === 0 ? '没有发现任何卡片模板' : '所有卡片都已添加'}
@@ -155,6 +208,8 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
               <span className="ccr-card-option__meta">
                 {t.source === 'builtin' ? '内置' : '已安装'} · v{t.version}
                 {t.events.length > 0 && ` · ${t.events.length} 事件`}
+                {/* 模板自己钉死了范围的话，用户选什么都会被覆盖 —— 提前说清 */}
+                {t.scope && ` · 固定仅${t.scope === 'a' ? 'A' : 'B'}端`}
               </span>
             </button>
           ))}
@@ -176,6 +231,30 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
                 style={{ background: HEALTH_COLOR[connection.health] ?? '#10B981' }}
               />
               <span className="ccr-card__name">{template?.name ?? card.templateId}</span>
+              {/*
+               * 范围直接显示成可点的分段控件，而不是只读标签 ——
+               * 改范围是常事（先两端试，定了再收紧到单端）。
+               */}
+              {template?.scope ? (
+                <span className="ccr-card__scope-fixed" title="模板固定了这一端，不可更改">
+                  仅{template.scope === 'a' ? 'A' : 'B'}端
+                </span>
+              ) : (
+                <div className="ccr-seg ccr-seg--small ccr-card__scope">
+                  {SCOPE_CHOICES.map((s) => (
+                    <button
+                      key={s.value}
+                      type="button"
+                      className={`ccr-seg__item${(card.scope ?? 'both') === s.value ? ' ccr-seg__item--active' : ''}`}
+                      disabled={busy === card.instanceId}
+                      title={s.hint}
+                      onClick={() => void changeScope(card.instanceId, s.value)}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <span className="ccr-card__meta">{card.templateId}</span>
               <button
                 type="button"

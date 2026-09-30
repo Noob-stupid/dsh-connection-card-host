@@ -2,7 +2,7 @@
  * Stable API — 对外暴露的稳定接口层。
  * 浏览器端和卡片通过此接口与宿主交互，隔离内部实现变化。
  */
-import type { Connection, PermissionLevel, CardInstance, ConnectionMessage, MessageKind, SendGate } from '../types/index.js'
+import type { Connection, PermissionLevel, CardInstance, ConnectionMessage, MessageKind, SendGate, CardScope } from '../types/index.js'
 import type { ConnectionManager } from '../core/connection-manager.js'
 import type { ConnectionEventBus } from '../core/event-bus.js'
 import type { CardHost, CardTemplateInfo } from '../card-host/loader.js'
@@ -37,9 +37,11 @@ export interface ConnectionCardHostService {
   emitConnectionEvent(connectionId: string, event: string, data: unknown): void
 
   // 卡片管理
-  loadCard(templateId: string, connectionId: string): Promise<CardInstance>
+  loadCard(templateId: string, connectionId: string, scope?: CardScope): Promise<CardInstance>
   unloadCard(instanceId: string): Promise<void>
   reloadCard(instanceId: string): Promise<void>
+  /** 改已装载卡片的可见范围（两端 / 仅 A / 仅 B）。返回 false = 模板钉死了或实例不存在。 */
+  setCardScope(instanceId: string, scope: CardScope): boolean
   /** 可用卡片模板（含在当前连接上已装载的数量）。 */
   listCardTemplates(connectionId?: string): CardTemplateInfo[]
   /** 渲染卡片面板 HTML（宿主侧跑 renderPanel/mountPanel，取回 HTML）。 */
@@ -137,9 +139,10 @@ export function createStableApi(
     onConnectionEvent: (event, handler) => manager.on(event, handler),
     subscribeConnectionEvent: (cid, event, handler) => eventBus.subscribe(cid, event, handler),
     emitConnectionEvent: (cid, event, data) => eventBus.emit(cid, event, data),
-    loadCard: (tid, cid) => cardHost!.loadCard(tid, cid),
+    loadCard: (tid, cid, scope) => cardHost!.loadCard(tid, cid, scope),
     unloadCard: (iid) => cardHost!.unloadCard(iid),
     reloadCard: (iid) => cardHost!.reloadCard(iid),
+    setCardScope: (iid, scope) => cardHost!.setCardScope(iid, scope),
     listCardTemplates: (cid) => cardHost!.listTemplates(cid),
     renderCardPanel: (iid) => cardHost!.renderCardPanel(iid),
     listPendingUpgrades: (cid) =>

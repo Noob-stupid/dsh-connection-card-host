@@ -4,7 +4,7 @@
  * 这是浏览器访问宿主的唯一途径：`ctx.connection.rpc.call(channel, endpoint, payload)`。
  * 每个方法返回 Promise，失败时抛 Error（而不是静默返 null）。
  */
-import type { Connection, CardInstance, PermissionLevel } from '../types/index.js';
+import type { Connection, CardInstance, CardScope, PermissionLevel } from '../types/index.js';
 import { type RpcResult } from '../types/rpc.js';
 /** 浏览器半收到的 Connection 视图（与宿主类型同构）。 */
 export type RemoteConnection = Connection;
@@ -68,6 +68,8 @@ export interface CardTemplateView {
     };
     events: string[];
     hasPanel: boolean;
+    /** 模板自己钉死的可见范围（有则用户不可改）。 */
+    scope?: CardScope;
     loadedCount: number;
 }
 export interface ConnectionCardHostClient {
@@ -83,9 +85,13 @@ export interface ConnectionCardHostClient {
     requestPermissionUpgrade(id: string, direction: 'aToB' | 'bToA', level: PermissionLevel): Promise<string | null>;
     acceptPermissionUpgrade(requestId: string, acceptorId: string): Promise<boolean>;
     rejectPermissionUpgrade(requestId: string, rejectorId: string): Promise<void>;
-    loadCard(templateId: string, connectionId: string): Promise<RemoteCardInstance>;
+    loadCard(templateId: string, connectionId: string, scope?: CardScope): Promise<RemoteCardInstance>;
     unloadCard(instanceId: string): Promise<void>;
     reloadCard(instanceId: string): Promise<void>;
+    /** 改已装载卡片的可见范围。返回 false = 模板钉死了范围或实例不存在。 */
+    setCardScope(instanceId: string, scope: CardScope): Promise<{
+        ok: boolean;
+    }>;
     listCardTemplates(connectionId?: string): Promise<CardTemplateView[]>;
     renderCardPanel(instanceId: string): Promise<string | null>;
     /** 待确认的权限升级请求。 */
