@@ -150,9 +150,49 @@ export function mountPanel(element, api) {
 
 ## 分发来源
 
-- **内置**：随宿主插件发布，位于 `cards/` 目录（monitor-card、self-heal-card、goal-relay-card）
-- **npm registry**：用户输入包名安装（`npm install <card-name>`）
-- **自定义 URL**：用户输入 `.tgz` 地址（下载解压到 `$DSH_HOME/connection-cards/<card-id>/`）
+### 安装位置：`$DSH_HOME/connection-cards/cards/<card-id>/`
+
+**只装在这里，不碰 DSH 的 profile** —— 不跑 pnpm、不改 `dsh.profile.bundles`。
+
+理由（用户原话）：
+
+> 下载到我们自己的目录里、在里面用 —— **这样不会破坏 DSH 的更新，
+> 也不会被 DSH 的更新破坏**。
+
+走 profile 安装会让我们和 DSH 共享依赖树、版本约束与准入检查，一旦 DSH 升级
+或依赖冲突，**故障面会波及整个 DSH**。自己的目录则完全隔离，而且不受模块解析链
+限制（路径自己算，绝对路径 `import()` 即可）。
+
+### 面板内安装支持四种来源
+
+| 来源 | 例子 | 实现 |
+|:---|:---|:---|
+| 本地目录 | `D:\my-cards\monitor-card` | 直接拷贝 |
+| 本地 tgz | `D:\downloads\monitor-card-1.0.0.tgz` | 系统 `tar` 解压 |
+| npm 包名 | `monitor-card` / `@scope/monitor-card` | 拉 registry **tarball**（一次 HTTPS GET） |
+| HTTP tgz | `https://example.com/card.tgz` | 下载后解压 |
+
+**npm 那条不引 pnpm** —— 为装一张卡片把包管理器拖进来不值得，
+而且 pnpm 会改写 profile，那就破坏隔离性了。
+
+### 安装时校验（先校验来源，再动目标目录）
+
+拒绝以下情况，**且绝不删旧目录**（覆盖安装要先删旧的，所以这个次序是关键）：
+
+- 没有 `package.json`
+- `package.json` 不是合法 JSON
+- **没有 `dshCard` 字段**（这不是一张卡片包）
+- **入口文件不存在**（`dshCard.entry` → `main` → `index.js` 逐级回退）
+
+失败原因会原样回给面板，用户看得到"为什么没装上"。
+
+### 内置
+
+随宿主插件发布，位于本包的 `cards/` 目录（monitor-card、self-heal-card、goal-relay-card）。
+
+**内置与已安装是两类来源**（`source: 'builtin' | 'installed'`）：强制重扫时
+只清 `installed` —— 内置卡片不可能"在磁盘上消失"，清掉再重扫纯属浪费，
+而且内置根目录万一临时读不到就会全没了。
 
 ## 安全约束
 
@@ -186,7 +226,10 @@ export function mountPanel(element, api) {
 | 面板渲染 | `renderCardPanel()` / RPC `cards/panel` | 见下方「面板渲染」 |
 | 重启重放 | `restoreAll()`（宿主 apply 时自动调用） | 连接从 `connections.json` 恢复，但卡片 `apply()` 不会自动重跑 —— 不重放卡片就是「哑」的（事件订阅、工具注册全丢） |
 | 崩溃隔离 | `sandbox.ts` | 卡片 import/apply 抛异常不会拖垮宿主 |
-| 面板 UI | 连接面板 → 展开连接 → 卡片区 | 列出可用模板一键添加；已装载的可「重载」「移除」 |
+| **安装** | `installCard()` / RPC `cards/install` | 本地目录 / tgz / npm 包名 / HTTP 地址 → 装到我们自己的目录；先校验来源再动目标 |
+| **卸载卡片包** | `uninstallCard()` / RPC `cards/uninstall` | 连同模板注册与模块缓存一起清掉 |
+| **可见范围** | `setCardScope()` / RPC `cards/set-scope` | 两端 / 仅 A / 仅 B；装载时可选，装载后可改 |
+| 面板 UI | 连接面板 → 展开连接 → 卡片区 | 列出可用模板一键添加；已装载的可改范围、「重载」「移除」；底部可安装新卡片 |
 
 ### 面板渲染：为什么在宿主侧跑
 
@@ -213,9 +256,7 @@ export function renderPanel(api) {
 
 | 能力 | 状态 |
 |---|---|
-| npm registry 安装 | 未实现。目前只能把卡片目录放到 `$DSH_HOME/connection-cards/cards/<id>/` |
-| 自定义 URL 安装 | 未实现 |
-| 卡片面板的浏览器侧执行 | 未实现（见上方局限） |
+| 卡片面板的浏览器侧执行 | 未实现（见上方局限：面板 HTML 在宿主侧渲染后注入） |
 | `requestRemote` | **空壳**：宿主没有 `ctx.remote`，永远返回 `not_available`。白名单校验与审计日志已就绪，缺的是真正能打到对端会话的执行通道 |
 | `repairPreset` | stub，未接真实修复逻辑 |
 

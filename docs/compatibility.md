@@ -2,14 +2,37 @@
 
 ## DSH 兼容性
 
-| 组件 | 兼容范围 | 说明 |
-|:---|:---|:---|
-| `dshEngines.framework` | `>=0.1.1-rc.2 <0.2.0` | 主框架版本，决定槽位 API 和事件系统 |
-| `@deepseek-ai/cordis` | `>=4.0.1 <4.1.0` | Cordis loader 运行时（对应 framework 0.1.x） |
-| `@deepseek-ai/dsh-client-ui-slots` | `>=0.1.1-rc.2 <0.2.0` | 浏览器端槽位注入 API |
-| `@deepseek-ai/dsh-client-runtime` | `>=0.1.1-rc.2 <0.2.0` | 浏览器端运行时 |
+### 真正的门控是 `peerDependencies`，不是 `dshEngines`
 
-**验证方式**: 启动时调用 `adapter.init()` 检查 `VersionCheckResult.supported`。不支持时进入降级模式。
+运行时（0.2.0-rc.2）的 `evaluatePluginCompatibility`（`@dsh-app-boot/lib/index.js:286-314`）
+**只挑两类 peer** 来对照运行时版本：
+
+- 恰好是 `@deepseek-ai/dsh`
+- 或以 `@deepseek-ai/dsh-` 开头
+
+**`engines.dsh` 与 `dsh.manifestVersion` 运行时零处读取**
+（README 原话：*"These checks use peer declarations, not `engines.dsh`"*）。
+本项目早期用的 `dshEngines.framework` 字段**没有任何代码读它** —— 已移除。
+
+| 组件 | 兼容范围 | 谁在读 |
+|:---|:---|:---|
+| `@deepseek-ai/dsh` | `>=0.2.0-rc.1 <0.3.0` | **DSH 的兼容门控**（对照运行时版本） |
+| `@deepseek-ai/dsh-client-ui-slots` | `>=0.2.0-rc.1 <0.3.0` | 同上 + 浏览器端槽位注入 API |
+| `@deepseek-ai/dsh-client-runtime` | `>=0.2.0-rc.1 <0.3.0` | 同上 + 浏览器端运行时 |
+| `@deepseek-ai/cordis` | `>=4.0.1 <4.1.0` | **仅包管理器解析用**（前缀不匹配，DSH 不检查） |
+
+> ⚠️ 早期版本写的是 `>=0.1.1-rc.2 <0.2.0`。它在 0.2.0-rc.2 上"碰巧能用"——
+> semver 里预发布版排在正式版之前，所以 `0.2.0-rc.2 < 0.2.0` 成立。
+> 这种**隐式通过**很危险：它看起来像门控，实际测的是别的包，
+> 且一旦 DSH 发布 0.2.0 正式版就会被拒。现已改成显式标注真实支持范围。
+
+**两道防线，各管各的**：
+
+1. **安装/加载期** —— DSH 的 peer 门控（上面这张表），不满足则拒绝加载
+2. **运行期** —— 本插件自己的 `checkVersion()`（`src/adapter/version-guard.ts`），
+   拿不到版本时 **fail-open**，改由**能力探测**决定（例如 `ctx.sessionController`
+   是否存在、`ctx.connection.rpc` 是否可用）。宁可放行后降级，
+   也不要因版本探测失败就整体禁用。
 
 ### 会话消息来源契约（V4 · 必读）
 
