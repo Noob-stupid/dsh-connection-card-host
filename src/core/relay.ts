@@ -158,7 +158,24 @@ export class ConnectionRelay {
     this.off = this.bridge.observe((activity) => {
       void this.onActivity(activity)
     })
-    this.auditLog('中继已启动')
+    this.auditLog(
+      `中继已启动（自动转发：助手=${this.options.relayAssistant ? '开' : '关'} ` +
+        `用户=${this.options.relayUser ? '开' : '关'}）`,
+    )
+  }
+
+  /**
+   * 当前的中继配置（面板据此判断"到底有没有在自动转发"）。
+   *
+   * 为什么需要：面板的警告条早先是按**权限档位**判断的，但自动转发在
+   * 2026-10-01 已默认关闭 —— 两者解耦了。只看权限会让 UI 喊狼来了
+   *（显示"正在互相转发消息"而实际什么都没转发）。
+   */
+  config(): { relayAssistant: boolean; relayUser: boolean } {
+    return {
+      relayAssistant: this.options.relayAssistant === true,
+      relayUser: this.options.relayUser === true,
+    }
   }
 
   stop(): void {

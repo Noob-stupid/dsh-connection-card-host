@@ -124,6 +124,8 @@ export interface ConnectionCardHostClient {
       lastDropped: string
     }[]
     total: number
+    /** 中继是否真的在自动转发（面板警告条据此判断，不能看权限档位）。 */
+    relayConfig: { relayAssistant: boolean; relayUser: boolean }
   }>
   listCardTemplates(connectionId?: string): Promise<CardTemplateView[]>
   renderCardPanel(instanceId: string): Promise<string | null>

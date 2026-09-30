@@ -67,6 +67,17 @@ export interface ConnectionCardHostService {
             lastDropped: string;
         }[];
         total: number;
+        /**
+         * 中继**是否真的在自动转发**。
+         *
+         * 面板的警告条必须依据这个、而不是权限档位 —— 两者在 2026-10-01 之后
+         * 已经解耦：自动转发默认关闭，权限只影响**显式发送**能发哪类消息。
+         * 只看权限会让 UI 喊狼来了（"正在互相转发"而实际什么也没转发）。
+         */
+        relayConfig: {
+            relayAssistant: boolean;
+            relayUser: boolean;
+        };
     };
     /** 待确认的权限升级请求（面板据此显示「待确认 + 同意/拒绝」）。 */
     listPendingUpgrades(connectionId?: string): {
@@ -138,4 +149,9 @@ export interface ConnectionCardHostService {
         text: string;
     }[];
 }
-export declare function createStableApi(manager: ConnectionManager, eventBus: ConnectionEventBus, cardHost?: CardHost, adapter?: DSHAdapter, bridge?: SessionBridge, awareness?: AwarenessDeps, auditLog?: (msg: string) => void): ConnectionCardHostService;
+export declare function createStableApi(manager: ConnectionManager, eventBus: ConnectionEventBus, cardHost?: CardHost, adapter?: DSHAdapter, bridge?: SessionBridge, awareness?: AwarenessDeps, auditLog?: (msg: string) => void, relay?: {
+    config(): {
+        relayAssistant: boolean;
+        relayUser: boolean;
+    };
+}): ConnectionCardHostService;

@@ -67,15 +67,30 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
   useEffect(() => prefs.subscribe(() => setPrefsState(prefs.get())), [prefs])
 
   /**
-   * 正在转发消息的连接（任一方向权限 > 只读）。
+   * 中继**是否真的在自动转发**。
    *
-   * 只读 = 不转发任何消息（感知仍可用：工作状态与公约盒都是拉取式的，与权限无关）。
-   * 一旦高于只读，两边的消息开始互相灌 —— 这个状态必须是**不可能被忘记**的，
-   * 所以会在连接列表上方常驻一条警告。
+   * ⚠️ 不能用权限档位判断 —— 两者在 2026-10-01 之后已解耦：
+   * 自动转发默认关闭，权限只影响**显式发送**能发哪类消息。
+   * 只看权限会让警告条喊狼来了（显示"正在互相转发"而实际什么都没转发）。
    */
-  const forwardingConnections = connections.filter(
-    (c) => c.permission.aToB !== 'read' || c.permission.bToA !== 'read',
-  )
+  const [relayOn, setRelayOn] = useState(false)
+  useEffect(() => {
+    if (!client) return
+    let alive = true
+    const check = () =>
+      client
+        .relayDiagnostics()
+        .then((d) => {
+          if (alive) setRelayOn(d.relayConfig.relayAssistant || d.relayConfig.relayUser)
+        })
+        .catch(() => {})
+    void check()
+    const timer = window.setInterval(check, 5000)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+    }
+  }, [client])
 
   const setPick = useCallback((index: number, value: string) => {
     setPicks((prev) => prev.map((v, i) => (i === index ? value : v)))
@@ -408,19 +423,17 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
         )}
 
         {/*
-          只要有任何一条连接在转发消息，就在最显眼处警告一次。
-          理由：用户手动抬权限时以为"这是让对方能干活"，实际效果是"两边说的话开始互相灌"
-          —— 2026-09-30 用户连着两次因此被意外打扰（一次是他自己的指令被转发，
-          一次是助手的汇报被转发）。这个状态必须是**不可能被忘记**的。
+          只在中继**真的在自动转发**时才警告。
+          判据是 relayAssistant/relayUser 的实际值，不是权限档位 ——
+          自动转发默认已关闭，用权限判断会喊狼来了。
         */}
-        {ready && forwardingConnections.length > 0 && (
+        {ready && relayOn && (
           <div className="ccr-forward-warn">
             <span className="ccr-forward-warn__dot" />
             <span>
-              有 <strong>{forwardingConnections.length}</strong> 条连接正在
-              <strong>互相转发消息</strong>
+              中继正在<strong>自动转发会话消息</strong>
               —— 你在任一端说的话都会送进另一端，并<strong>让对方被唤醒去回应</strong>。
-              不需要时把它调回「只读」。
+              这是非默认行为，通常应该关掉。
             </span>
           </div>
         )}
@@ -550,12 +563,13 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
                       ))}
 
                       <div className="ccr-field__hint">
-                        <strong>这个开关控制的是「消息要不要互相转发」，不是「对方能不能干活」</strong>
+                        <strong>这个开关控制的是「允许发哪类消息」，不是「对方能不能干活」</strong>
                         —— 对方任何时候都能自己做事，与这里无关。两个方向互不影响，
                         可以做成一端可写入、另一端只读。
                       </div>
                       <div className="ccr-field__hint">
-                        提高权限需要<strong>被授权的一方</strong>确认，面板上会出现待确认；降低权限立即生效。
+                        只读<strong>不影响感知</strong>：工作状态与公约盒都是对端主动查询的，
+                        与权限无关。降低权限立即生效；提高权限需要被授权的一方确认。
                       </div>
                     </div>
 

@@ -60,6 +60,17 @@ export declare class ConnectionRelay {
     private deliveredAt;
     constructor(manager: ConnectionManager, bridge: SessionBridge, auditLog: (msg: string) => void, options?: RelayOptions);
     start(): void;
+    /**
+     * 当前的中继配置（面板据此判断"到底有没有在自动转发"）。
+     *
+     * 为什么需要：面板的警告条早先是按**权限档位**判断的，但自动转发在
+     * 2026-10-01 已默认关闭 —— 两者解耦了。只看权限会让 UI 喊狼来了
+     *（显示"正在互相转发消息"而实际什么都没转发）。
+     */
+    config(): {
+        relayAssistant: boolean;
+        relayUser: boolean;
+    };
     stop(): void;
     /** 一条会话活动 → 可能触发多条连接的中继。 */
     private onActivity;

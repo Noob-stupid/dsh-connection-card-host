@@ -180,6 +180,7 @@ export function apply(ctx: HostContext, _config?: Record<string, unknown>): void
       bridge,
       { workState, box },
       auditLog,
+      relay,
     )
 
     // 协作感知工具（拉取式：模型按需查，不占常驻上下文）
