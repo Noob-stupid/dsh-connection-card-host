@@ -24,9 +24,26 @@
 import type { ConnectionManager } from '../core/connection-manager.js';
 import type { SessionBridge } from '../adapter/session-bridge.js';
 export interface RelayOptions {
-    /** 是否把助手的输出也转发（默认 true）。 */
+    /** 是否把助手的输出转发给对端（默认 true）。这是「A 说话 B 感知」的本体。 */
     relayAssistant?: boolean;
-    /** 是否把用户输入也转发（默认 true）。 */
+    /**
+     * 是否把**用户输入**也转发（默认 **false**）。
+     *
+     * ## 为什么默认关 —— 这是修正一个设计错误
+     *
+     * 用户在会话里打的字，是**对那个会话说的**，不是"A 在跟 B 说话"。
+     * 转发出去的话，对端收到的是一个 `user/message` —— **在它看来那就是
+     * "用户给我的指令"**，于是它开始做只交给另一边的活。
+     *
+     * 用户举的例子最清楚：
+     *   A 做水面、B 做船。用户给 A 下"优化水面" → **B 凭什么跟着做？**
+     *
+     * 正确语义：**该转发的是会话助手自己的输出**（它的结论、它说的话），
+     * 那才叫"A 说话 B 感知"。用户对 A 下指令 ≠ A 对 B 说话。
+     *
+     * 要在两端之间传话应走**显式通道**（面板发送框、或让助手调工具），
+     * 而不是把某个会话里的用户输入悄悄镜像过去。
+     */
     relayUser?: boolean;
 }
 export declare class ConnectionRelay {

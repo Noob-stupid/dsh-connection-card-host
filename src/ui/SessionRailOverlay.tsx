@@ -40,6 +40,39 @@ const PERMISSION_COLOR: Record<PermissionLevel, string> = {
   write: '#F97316',
 }
 
+/**
+ * 会话列表的可见矩形（= 它最近的可滚动祖先的可视区）。
+ *
+ * ## 为什么需要它
+ *
+ * 轨道是 `position: fixed`，线段坐标取自会话行的 `getBoundingClientRect()`。
+ * 但**行滚出列表可视区后，它的 rect 依然存在**（只是被祖先的 overflow 裁掉了
+ * 显示）。于是线会被画到列表之外 —— 用户滚动时看到连线浮在最上层、
+ * 压在导航区和「工作区」标题上。
+ *
+ * 可滚动祖先的 rect 就是行的**可见边界**。把线段裁进去，线就绝不会越界。
+ *
+ * 顺带的要求：JS 里读不到"元素当前被裁成什么样"，所以只能自己往上找
+ * 滚动祖先。找不到（列表没滚动条）时返回 null，调用方按不裁剪处理。
+ */
+function sessionListRect(): { top: number; bottom: number } | null {
+  // 拿任一行往上走；行本身就是树项
+  const row = document.querySelector('[role="treeitem"]')
+  if (!row) return null
+
+  let el: HTMLElement | null = row.parentElement
+  while (el && el !== document.body) {
+    const cs = window.getComputedStyle(el)
+    const oy = cs.overflowY
+    if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) {
+      const r = el.getBoundingClientRect()
+      return { top: r.top, bottom: r.bottom }
+    }
+    el = el.parentElement
+  }
+  return null
+}
+
 export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverlayProps) {
   const { connections } = useConnections(client)
   const { snapshot } = useSessionList(sessions)
@@ -116,6 +149,19 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
     const layout = allocateLanes(connections, sessionOrder)
     const rowById = new Map(rows.map((r) => [r.id, r]))
 
+    /**
+     * 裁剪矩形：会话列表的**滚动容器**可视区。
+     *
+     * 为什么必须有：轨道是 `position: fixed`，坐标取自行的
+     * `getBoundingClientRect()` —— 而**行滚出列表可视区后它的 rect 依然存在**。
+     * 于是线会被画到列表外面：用户滚动时看到连线"浮在最上层"，
+     * 压在导航区/工作区标题上（2026-09-30 用户报告）。
+     *
+     * 滚动容器的 rect 就是行的**可见边界**：行滚出去，它的 rect 就在这个矩形外。
+     * 把线段裁进它，线就永远不会画到列表之外。
+     */
+    const clip = sessionListRect()
+
     // 画在会话行上：贴着行的右边缘往左排 lane
     const baseX = Math.max(...rows.map((r) => r.right)) - ROW_RIGHT_INSET
 
@@ -127,8 +173,22 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
       const b = rowById.get(conn.sessionB)
       if (!a || !b) continue
 
-      const y1 = (a.top + a.bottom) / 2
-      const y2 = (b.top + b.bottom) / 2
+      const rawY1 = (a.top + a.bottom) / 2
+      const rawY2 = (b.top + b.bottom) / 2
+
+      // 裁到列表可视区（保留原始上下方向，只收窄区间）
+      let yTop = Math.min(rawY1, rawY2)
+      let yBot = Math.max(rawY1, rawY2)
+      if (clip) {
+        yTop = Math.max(yTop, clip.top)
+        yBot = Math.min(yBot, clip.bottom)
+        // 裁没了就整段丢弃 —— 这正是不该画到列表外的那些
+        if (yBot - yTop < 1) continue
+      }
+      const upward = rawY1 <= rawY2
+      const y1 = upward ? yTop : yBot
+      const y2 = upward ? yBot : yTop
+
       const x = baseX - assignment.laneIndex * LANE_WIDTH
       const level = conn.permission.aToB
 
@@ -138,8 +198,8 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
         x,
         y1,
         y2,
-        top: Math.min(y1, y2),
-        bottom: Math.max(y1, y2),
+        top: yTop,
+        bottom: yBot,
         color: PERMISSION_COLOR[level] ?? '#9CA3AF',
         broken: conn.status === 'broken',
       })
