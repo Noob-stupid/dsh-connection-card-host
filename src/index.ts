@@ -13,6 +13,9 @@ import { ConnectionEventBus } from './core/event-bus.js'
 import { Persistence } from './core/persistence.js'
 import { DSHAdapter } from './adapter/dsh-adapter.js'
 import { createStableApi, type ConnectionCardHostService } from './adapter/stable-api.js'
+import { ConventionBox } from './core/box.js'
+import { WorkStateTracker } from './core/work-state.js'
+import { registerAwarenessTools } from './tools/awareness-tools.js'
 import { registerRpcBridge } from './adapter/rpc-bridge.js'
 import { CardHost } from './card-host/loader.js'
 import { SessionBridge } from './adapter/session-bridge.js'
@@ -124,6 +127,20 @@ export function apply(ctx: HostContext, _config?: Record<string, unknown>): void
     // 必须在 createStableApi 之前建好（稳定 API 要把桥暴露给 RPC）。
     const bridge = new SessionBridge(ctx, auditLog)
     const relay = new ConnectionRelay(manager, bridge, auditLog)
+
+    // 协作感知的两层底座：
+    //   WorkStateTracker —— 采集「在干什么」（自动，易变）
+    //   ConventionBox    —— 共享「说好了什么」（显式，持久）
+    // 二者都**只存不发**，由使用方按需拉取（工具查询 / 面板），不占对方上下文。
+    const workState = new WorkStateTracker(auditLog)
+    const box = new ConventionBox()
+    manager.attachBox(box)
+
+    // 工具事件、步骤推进都在原始流里 —— observe() 只放行发言，会把它们丢掉
+    ctx.effect(
+      () => bridge.observeRaw((sessionId, event) => workState.ingest(sessionId, event)),
+      'connection-card-host: work-state collector',
+    )
     const caps = bridge.capabilities()
     debug(`relay: observe=${caps.observe} deliver=${caps.deliver} via=[${caps.via.join(', ')}]`)
     auditLog(`relay 能力: observe=${caps.observe} deliver=${caps.deliver} via=[${caps.via.join(', ')}]`)
@@ -155,7 +172,23 @@ export function apply(ctx: HostContext, _config?: Record<string, unknown>): void
     })
 
     // 稳定 API
-    const service = createStableApi(manager, eventBus, cardHost, adapter, bridge)
+    const service = createStableApi(manager, eventBus, cardHost, adapter, bridge, {
+      workState,
+      box,
+    })
+
+    // 协作感知工具（拉取式：模型按需查，不占常驻上下文）
+    const toolsService = safeCtxGet<{ register(definition: unknown): () => void }>(ctx, 'tools')
+    if (toolsService?.register) {
+      const disposeTools = registerAwarenessTools(toolsService, { service, auditLog })
+      ctx.effect(
+        () => () => disposeTools(),
+        'connection-card-host: awareness tools',
+      )
+      debug('apply: 感知工具已注册（connection_peer_work / connection_conventions / connection_declare）')
+    } else {
+      debug('apply: ctx.tools 不可用，跳过感知工具注册')
+    }
     // 必须走 ctx.provide（不是直接赋值）：cordis 服务由 fiber 持有生命周期，
     // 直接 `ctx.connectionCardHost = ...` 会抛 cannot set ... without provide。
     // 热重载时旧 fiber 可能尚未释放同名服务，此时视为已就绪即可（幂等）。

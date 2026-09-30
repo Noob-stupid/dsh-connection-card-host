@@ -5,6 +5,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Connection, CardInstance, ConnectionMessage } from '../types/index.js'
+import type { Convention } from './box.js'
 
 export interface PersistedData {
   version: number
@@ -12,6 +13,8 @@ export interface PersistedData {
   cardInstances: CardInstance[]
   /** 每条连接的交流记录（connectionId → 消息数组）。 */
   messages: Record<string, ConnectionMessage[]>
+  /** 每条连接的共享约定（connectionId → 公约数组）。 */
+  conventions: Record<string, Convention[]>
   settings: Record<string, unknown>
 }
 
@@ -36,6 +39,7 @@ function emptyData(): PersistedData {
     connections: [],
     cardInstances: [],
     messages: {},
+    conventions: {},
     settings: {},
   }
 }
@@ -76,11 +80,19 @@ export class Persistence {
       }
     }
 
+    const conventions: Record<string, Convention[]> = {}
+    if (p.conventions && typeof p.conventions === 'object') {
+      for (const [key, value] of Object.entries(p.conventions)) {
+        if (Array.isArray(value)) conventions[key] = value as Convention[]
+      }
+    }
+
     return {
       version: CURRENT_VERSION,
       connections: Array.isArray(p.connections) ? p.connections : [],
       cardInstances: Array.isArray(p.cardInstances) ? p.cardInstances : [],
       messages,
+      conventions,
       settings: p.settings && typeof p.settings === 'object' ? p.settings : {},
     }
   }
@@ -176,5 +188,19 @@ export class Persistence {
   /** 所有连接的交流记录（启动时灌入 messageLog）。 */
   getAllMessages(): Record<string, ConnectionMessage[]> {
     return this.data.messages
+  }
+
+  getConventions(connectionId: string): Convention[] {
+    return this.data.conventions[connectionId] ?? []
+  }
+
+  setConventions(connectionId: string, list: Convention[]): void {
+    if (list.length === 0) delete this.data.conventions[connectionId]
+    else this.data.conventions[connectionId] = list
+    this.save()
+  }
+
+  getAllConventions(): Record<string, Convention[]> {
+    return this.data.conventions
   }
 }

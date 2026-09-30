@@ -1,10 +1,13 @@
 import type { Connection, CardInstance, ConnectionMessage } from '../types/index.js';
+import type { Convention } from './box.js';
 export interface PersistedData {
     version: number;
     connections: Connection[];
     cardInstances: CardInstance[];
     /** 每条连接的交流记录（connectionId → 消息数组）。 */
     messages: Record<string, ConnectionMessage[]>;
+    /** 每条连接的共享约定（connectionId → 公约数组）。 */
+    conventions: Record<string, Convention[]>;
     settings: Record<string, unknown>;
 }
 export declare class Persistence {
@@ -38,4 +41,7 @@ export declare class Persistence {
     setMessages(connectionId: string, messages: ConnectionMessage[]): void;
     /** 所有连接的交流记录（启动时灌入 messageLog）。 */
     getAllMessages(): Record<string, ConnectionMessage[]>;
+    getConventions(connectionId: string): Convention[];
+    setConventions(connectionId: string, list: Convention[]): void;
+    getAllConventions(): Record<string, Convention[]>;
 }

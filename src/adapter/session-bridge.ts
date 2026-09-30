@@ -127,6 +127,23 @@ export class SessionBridge {
    */
   private controllerCtx: Context | null = null
 
+  /** 原始会话事件订阅者（不过滤事件类型）。 */
+  private rawHandlers = new Set<(sessionId: string, event: unknown) => void>()
+
+  /**
+   * 订阅**全部**会话事件（含 tool/call、step/start 等）。
+   *
+   * 与 `observe()` 的区别：那个只放行 user/assistant **消息**（"发言"），
+   * 这个放行一切（"工作状态"的原料：在调什么工具、动哪个文件、走到第几步）。
+   * 两条流互不影响。
+   */
+  observeRaw(handler: (sessionId: string, event: unknown) => void): () => void {
+    this.rawHandlers.add(handler)
+    return () => {
+      this.rawHandlers.delete(handler)
+    }
+  }
+
   /** 接入一个声明了 sessionController 的上下文（冷会话唤醒通道）。 */
   attachControllerContext(ctx: Context): void {
     this.controllerCtx = ctx
@@ -200,6 +217,17 @@ export class SessionBridge {
 
         const sessionId = session.id
         const seq = typeof event.seq === 'number' ? event.seq : 0
+
+        // 原始事件通道：工具调用、步骤推进这类"工作状态"原料都在这里。
+        // 下面那段只放行 user/assistant 消息（那是"发言"），工具事件会被丢掉，
+        // 所以单独给 WorkStateTracker 一条不过滤的流。
+        for (const handler of this.rawHandlers) {
+          try {
+            handler(sessionId, event)
+          } catch (e) {
+            this.auditLog(`原始事件处理器抛错: ${String(e)}`)
+          }
+        }
 
         let role: 'user' | 'assistant' | null = null
         let text = ''

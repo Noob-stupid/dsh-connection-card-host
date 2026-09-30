@@ -3,6 +3,7 @@ import { Persistence } from './persistence.js';
 import { ConnectionEventBus } from './event-bus.js';
 import { PermissionUpgradeManager, RemoteMethodWhitelist } from './permission.js';
 import { ConnectionMessageLog } from './message-log.js';
+import type { ConventionBox } from './box.js';
 type EventHandler = (conn: Connection) => void;
 export declare class ConnectionManager {
     private connections;
@@ -13,6 +14,14 @@ export declare class ConnectionManager {
     readonly whitelist: RemoteMethodWhitelist;
     /** 连接两端的规范交流记录（「交流配合」的底座）。 */
     readonly messages: ConnectionMessageLog;
+    /** 公约盒（连接级共享约定）。由 index.ts 在构造后挂上并负责持久化。 */
+    private box;
+    /** 挂上公约盒，并把已持久化的约定载回来。 */
+    attachBox(box: ConventionBox): void;
+    /** 取公约盒（未挂上时返回 null，调用方需处理）。 */
+    conventions(): ConventionBox | null;
+    /** 把某连接的约定落盘。 */
+    persistConventions(connectionId: string): void;
     constructor(persistence: Persistence, eventBus: ConnectionEventBus);
     /** 把某连接的交流记录落盘。 */
     persistMessages(connectionId: string): void;

@@ -8,7 +8,14 @@ import type { ConnectionEventBus } from '../core/event-bus.js';
 import type { CardHost, CardTemplateInfo } from '../card-host/loader.js';
 import type { DSHAdapter, KnownSession } from './dsh-adapter.js';
 import type { SessionBridge } from './session-bridge.js';
-export type { KnownSession, CardTemplateInfo };
+import type { WorkState, WorkStateTracker } from '../core/work-state.js';
+import type { AddResult, Convention, ConventionBox } from '../core/box.js';
+export type { KnownSession, CardTemplateInfo, WorkState, Convention, AddResult };
+/** 协作感知两层的依赖（由 index.ts 装配后注入）。 */
+export interface AwarenessDeps {
+    workState: WorkStateTracker;
+    box: ConventionBox;
+}
 export interface ConnectionCardHostService {
     createConnection(sessionA: string, sessionB: string): Connection;
     disconnect(id: string): void;
@@ -64,6 +71,22 @@ export interface ConnectionCardHostService {
         ok: boolean;
         removed: number;
     };
+    /** 某会话当前在干什么（采集自工具事件）。未采集到时返回 null。 */
+    peerWork(sessionId: string, label: string): string | null;
+    /** 某会话的工作状态原始快照（面板用）。 */
+    workSnapshot(sessionId: string): WorkState | undefined;
+    /** 本连接两端的工作状态对照文本。 */
+    connectionWork(connectionId: string): {
+        a: WorkState | undefined;
+        b: WorkState | undefined;
+    };
+    listConventions(connectionId: string, includeSuperseded?: boolean): Convention[];
+    searchConventions(connectionId: string, keyword: string): Convention[];
+    /** 声明一条约定。supersedes 用于取代旧约定（保留追溯）。 */
+    declareConvention(connectionId: string, by: 'a' | 'b', topic: string, text: string, supersedes?: string): AddResult;
+    removeConvention(connectionId: string, id: string): boolean;
+    /** 渲染公约盒文本（给模型看）。aLabel/bLabel 必须按连接自己的端点定义传。 */
+    renderConventions(connectionId: string, aLabel: string, bLabel: string): string;
     /** 会话桥能力探测。 */
     relayCapabilities(): {
         observe: boolean;
@@ -83,4 +106,4 @@ export interface ConnectionCardHostService {
         text: string;
     }[];
 }
-export declare function createStableApi(manager: ConnectionManager, eventBus: ConnectionEventBus, cardHost?: CardHost, adapter?: DSHAdapter, bridge?: SessionBridge): ConnectionCardHostService;
+export declare function createStableApi(manager: ConnectionManager, eventBus: ConnectionEventBus, cardHost?: CardHost, adapter?: DSHAdapter, bridge?: SessionBridge, awareness?: AwarenessDeps): ConnectionCardHostService;

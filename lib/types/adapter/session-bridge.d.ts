@@ -78,6 +78,16 @@ export declare class SessionBridge {
      * 对端没打开时能把它**唤醒**，而不是投递失败。
      */
     private controllerCtx;
+    /** 原始会话事件订阅者（不过滤事件类型）。 */
+    private rawHandlers;
+    /**
+     * 订阅**全部**会话事件（含 tool/call、step/start 等）。
+     *
+     * 与 `observe()` 的区别：那个只放行 user/assistant **消息**（"发言"），
+     * 这个放行一切（"工作状态"的原料：在调什么工具、动哪个文件、走到第几步）。
+     * 两条流互不影响。
+     */
+    observeRaw(handler: (sessionId: string, event: unknown) => void): () => void;
     /** 接入一个声明了 sessionController 的上下文（冷会话唤醒通道）。 */
     attachControllerContext(ctx: Context): void;
     constructor(ctx: Context, auditLog?: (msg: string) => void);

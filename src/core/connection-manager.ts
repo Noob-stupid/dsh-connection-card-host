@@ -10,6 +10,7 @@ import { Persistence } from './persistence.js'
 import { ConnectionEventBus } from './event-bus.js'
 import { PermissionUpgradeManager, RemoteMethodWhitelist } from './permission.js'
 import { ConnectionMessageLog } from './message-log.js'
+import type { ConventionBox } from './box.js'
 
 type EventHandler = (conn: Connection) => void
 
@@ -22,6 +23,29 @@ export class ConnectionManager {
   readonly whitelist: RemoteMethodWhitelist
   /** 连接两端的规范交流记录（「交流配合」的底座）。 */
   readonly messages: ConnectionMessageLog
+
+  /** 公约盒（连接级共享约定）。由 index.ts 在构造后挂上并负责持久化。 */
+  private box: ConventionBox | null = null
+
+  /** 挂上公约盒，并把已持久化的约定载回来。 */
+  attachBox(box: ConventionBox): void {
+    this.box = box
+    const all = this.persistence.getAllConventions()
+    for (const [connectionId, list] of Object.entries(all)) {
+      if (list.length > 0) box.hydrate(connectionId, list)
+    }
+  }
+
+  /** 取公约盒（未挂上时返回 null，调用方需处理）。 */
+  conventions(): ConventionBox | null {
+    return this.box
+  }
+
+  /** 把某连接的约定落盘。 */
+  persistConventions(connectionId: string): void {
+    if (!this.box) return
+    this.persistence.setConventions(connectionId, this.box.dump(connectionId))
+  }
 
   constructor(persistence: Persistence, eventBus: ConnectionEventBus) {
     this.persistence = persistence
@@ -153,6 +177,8 @@ export class ConnectionManager {
     this.eventBus.clearConnection(id)
     this.whitelist.clearConnection(id)
     this.messages.clear(id)
+    this.box?.drop(id)
+    this.persistence.setConventions(id, [])
     this.emit('disconnected', conn)
   }
 

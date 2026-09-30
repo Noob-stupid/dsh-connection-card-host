@@ -8,8 +8,16 @@ import type { ConnectionEventBus } from '../core/event-bus.js'
 import type { CardHost, CardTemplateInfo } from '../card-host/loader.js'
 import type { DSHAdapter, KnownSession } from './dsh-adapter.js'
 import type { SessionBridge } from './session-bridge.js'
+import type { WorkState, WorkStateTracker } from '../core/work-state.js'
+import type { AddResult, Convention, ConventionBox } from '../core/box.js'
 
-export type { KnownSession, CardTemplateInfo }
+export type { KnownSession, CardTemplateInfo, WorkState, Convention, AddResult }
+
+/** 协作感知两层的依赖（由 index.ts 装配后注入）。 */
+export interface AwarenessDeps {
+  workState: WorkStateTracker
+  box: ConventionBox
+}
 
 export interface ConnectionCardHostService {
   // 连接管理
@@ -71,6 +79,29 @@ export interface ConnectionCardHostService {
   /** 清空某条连接的交流记录（连接本身不动）。 */
   clearMessages(connectionId: string): { ok: boolean; removed: number }
 
+  // ── 协作感知 A 层：工作状态 ──
+  /** 某会话当前在干什么（采集自工具事件）。未采集到时返回 null。 */
+  peerWork(sessionId: string, label: string): string | null
+  /** 某会话的工作状态原始快照（面板用）。 */
+  workSnapshot(sessionId: string): WorkState | undefined
+  /** 本连接两端的工作状态对照文本。 */
+  connectionWork(connectionId: string): { a: WorkState | undefined; b: WorkState | undefined }
+
+  // ── 协作感知 B 层：公约盒 ──
+  listConventions(connectionId: string, includeSuperseded?: boolean): Convention[]
+  searchConventions(connectionId: string, keyword: string): Convention[]
+  /** 声明一条约定。supersedes 用于取代旧约定（保留追溯）。 */
+  declareConvention(
+    connectionId: string,
+    by: 'a' | 'b',
+    topic: string,
+    text: string,
+    supersedes?: string,
+  ): AddResult
+  removeConvention(connectionId: string, id: string): boolean
+  /** 渲染公约盒文本（给模型看）。aLabel/bLabel 必须按连接自己的端点定义传。 */
+  renderConventions(connectionId: string, aLabel: string, bLabel: string): string
+
   // 会话桥（「A 说话 B 能感知」）
   /** 会话桥能力探测。 */
   relayCapabilities(): { observe: boolean; deliver: boolean; via: string[]; notes: string[] }
@@ -86,7 +117,13 @@ export function createStableApi(
   cardHost?: CardHost,
   adapter?: DSHAdapter,
   bridge?: SessionBridge,
+  awareness?: AwarenessDeps,
 ): ConnectionCardHostService {
+  const track = awareness?.workState
+  const box = awareness?.box
+  /** 声明约定后立刻落盘（公约必须跨重启保留）。 */
+  const persistBox = (cid: string): void => manager.persistConventions(cid)
+
   return {
     createConnection: (a, b) => manager.create(a, b),
     disconnect: (id) => manager.disconnect(id),
@@ -141,6 +178,33 @@ export function createStableApi(
         via: [],
         notes: ['会话桥未装配'],
       },
+
+    // ── 协作感知 A 层：工作状态（只读，采集自工具事件） ──
+    peerWork: (sessionId, label) => track?.summarize(sessionId, label) ?? null,
+    workSnapshot: (sessionId) => track?.get(sessionId),
+    connectionWork: (connectionId) => {
+      const conn = manager.getById(connectionId)
+      if (!conn) return { a: undefined, b: undefined }
+      return { a: track?.get(conn.sessionA), b: track?.get(conn.sessionB) }
+    },
+
+    // ── 协作感知 B 层：公约盒（显式声明，持久） ──
+    listConventions: (cid, includeSuperseded) =>
+      box?.list(cid, { ...(includeSuperseded !== undefined ? { includeSuperseded } : {}) }) ?? [],
+    searchConventions: (cid, keyword) => box?.search(cid, keyword) ?? [],
+    declareConvention: (cid, by, topic, text, supersedes) => {
+      if (!box) return { ok: false, reason: '公约盒未装配' }
+      const r = box.add(cid, by, topic, text, supersedes)
+      if (r.ok) persistBox(cid)
+      return r
+    },
+    removeConvention: (cid, id) => {
+      const ok = box?.remove(cid, id) ?? false
+      if (ok) persistBox(cid)
+      return ok
+    },
+    renderConventions: (cid, aLabel, bLabel) =>
+      box?.render(cid, aLabel, bLabel) ?? '公约盒未装配',
     deliverToSession: async (sessionId, text, wake = true) => {
       if (!bridge) return { ok: false, reason: '会话桥未装配' }
       const r = await bridge.deliver(sessionId, text, wake)
