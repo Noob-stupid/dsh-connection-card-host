@@ -182,6 +182,46 @@ function buildEndpoints(
       // 清空是破坏性操作，但只影响我们自己的交流记录（连接本身不动）
       service.clearMessages(str(p, 'connectionId')),
 
+    // ── 协作感知（面板用） ──
+    [RPC_ENDPOINTS.connectionWork]: (p) => {
+      const work = service.connectionWork(str(p, 'connectionId'))
+      // 摘要文本要带上会话名，否则会渲染成空的【】。
+      // 客户端其实用结构化字段，这个 summary 只作调试/兜底。
+      const titles = new Map(service.listSessions().map((s) => [s.id, s.title || s.id]))
+      const labelOf = (id: string): string =>
+        titles.get(id) ?? id.replace(/^session-/, '').slice(0, 8)
+      return {
+        a: work.a
+          ? { ...work.a, summary: service.peerWork(work.a.sessionId, labelOf(work.a.sessionId)) ?? '' }
+          : null,
+        b: work.b
+          ? { ...work.b, summary: service.peerWork(work.b.sessionId, labelOf(work.b.sessionId)) ?? '' }
+          : null,
+      }
+    },
+    [RPC_ENDPOINTS.listConventions]: (p) =>
+      service.listConventions(
+        str(p, 'connectionId'),
+        (p as { all?: unknown } | null)?.all === true,
+      ),
+    [RPC_ENDPOINTS.declareConvention]: (p) => {
+      const raw = p as { by?: unknown; topic?: unknown; text?: unknown; supersedes?: unknown } | null
+      const by = raw?.by === 'b' ? 'b' : 'a'
+      const supersedes = typeof raw?.supersedes === 'string' ? raw.supersedes : undefined
+      return service.declareConvention(
+        str(p, 'connectionId'),
+        by,
+        typeof raw?.topic === 'string' ? raw.topic : '一般',
+        str(p, 'text'),
+        supersedes,
+      )
+    },
+    [RPC_ENDPOINTS.removeConvention]: (p) => ({
+      ok: service.removeConvention(str(p, 'connectionId'), str(p, 'id')),
+    }),
+    [RPC_ENDPOINTS.renderConventions]: (p) =>
+      service.renderConventions(str(p, 'connectionId'), str(p, 'aLabel'), str(p, 'bLabel')),
+
     [RPC_ENDPOINTS.sendMessage]: (p) => {
       const raw = p as { from?: unknown; kind?: unknown; text?: unknown; replyTo?: unknown } | null
       const from = raw?.from === 'b' ? 'b' : 'a'

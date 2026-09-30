@@ -559,6 +559,185 @@ export const CONNECTION_CARD_CSS = `
 
 .ccr-perm-row .ccr-seg { flex: none; }
 
+/* ═══ 协作感知 A：工作状态 ═══ */
+.ccr-field__auto,
+.ccr-field__count {
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 15px;
+  border-radius: 4px;
+  opacity: 0.7;
+  background: var(--ccr-panel-highlight);
+}
+
+.ccr-work {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ccr-work__row {
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: var(--ccr-panel-highlight);
+}
+
+.ccr-work__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.ccr-work__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ccr-work__age {
+  flex: none;
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+/* 太久没更新：状态可能已经不代表现状了，弱化它 */
+.ccr-work__age--stale { opacity: 0.4; }
+
+.ccr-work__action {
+  font-size: 12px;
+  opacity: 0.9;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ccr-work__action--empty { opacity: 0.45; font-style: italic; }
+
+.ccr-work__todos {
+  margin: 5px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ccr-work__todo {
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.8;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ccr-work__todo--completed { opacity: 0.4; text-decoration: line-through; }
+.ccr-work__todo--in_progress { opacity: 1; font-weight: 600; }
+
+.ccr-work__files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.ccr-work__file {
+  padding: 1px 5px;
+  font-size: 10px;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.18);
+  opacity: 0.85;
+}
+
+.ccr-work__progress {
+  margin-top: 4px;
+  font-size: 10px;
+  opacity: 0.55;
+}
+
+/* ═══ 协作感知 B：公约盒 ═══ */
+.ccr-box {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ccr-box__item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--ccr-panel-highlight);
+  font-size: 12px;
+}
+
+.ccr-box__topic {
+  flex: none;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 15px;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.22);
+  opacity: 0.9;
+}
+
+.ccr-box__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.ccr-box__who {
+  flex: none;
+  max-width: 26%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  opacity: 0.55;
+}
+
+.ccr-box__del {
+  flex: none;
+  padding: 0 4px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  opacity: 0.35;
+}
+
+.ccr-box__del:hover { opacity: 1; }
+
+.ccr-box__empty {
+  margin-top: 4px;
+  padding: 8px;
+  font-size: 11px;
+  opacity: 0.55;
+  border-radius: 6px;
+  background: var(--ccr-panel-highlight);
+}
+
+.ccr-box__add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ccr-input--topic { flex: none; width: 72px; }
+
 /* ═══ 待确认的权限升级 ═══ */
 .ccr-pending {
   margin: 10px 0;

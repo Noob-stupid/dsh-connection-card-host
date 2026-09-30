@@ -68,5 +68,15 @@ export declare const RPC_ENDPOINTS: {
     readonly debugDeliver: "debug/deliver";
     /** 会话桥的能力探测结果。 */
     readonly relayCapabilities: "relay/capabilities";
+    /** 某条连接两端的工作状态快照。 */
+    readonly connectionWork: "awareness/work";
+    /** 列出某条连接的共享约定。 */
+    readonly listConventions: "conventions/list";
+    /** 声明一条约定（用户在面板里手填）。 */
+    readonly declareConvention: "conventions/declare";
+    /** 删除一条约定。 */
+    readonly removeConvention: "conventions/remove";
+    /** 渲染公约盒文本（调试/预览用）。 */
+    readonly renderConventions: "conventions/render";
 };
 export type RpcEndpoint = (typeof RPC_ENDPOINTS)[keyof typeof RPC_ENDPOINTS];

@@ -8,6 +8,31 @@ import type { Connection, CardInstance, PermissionLevel } from '../types/index.j
 import { type RpcResult } from '../types/rpc.js';
 /** 浏览器半收到的 Connection 视图（与宿主类型同构）。 */
 export type RemoteConnection = Connection;
+/** 某个会话的工作状态（协作感知 A 层）。 */
+export interface WorkView {
+    sessionId: string;
+    todos: {
+        content: string;
+        status: string;
+    }[];
+    files: string[];
+    recentTools: string[];
+    lastAction: string;
+    turn: number;
+    step: number;
+    updatedAt: number;
+    /** 宿主渲染好的摘要文本（面板直接用）。 */
+    summary: string;
+}
+/** 一条共享约定（协作感知 B 层）。 */
+export interface ConventionView {
+    id: string;
+    by: 'a' | 'b';
+    topic: string;
+    text: string;
+    createdAt: number;
+    supersededBy?: string;
+}
 export type RemoteCardInstance = CardInstance;
 export interface WhitelistEntryView {
     method: string;
@@ -71,6 +96,19 @@ export interface ConnectionCardHostClient {
     }[]): Promise<number>;
     listWhitelistedMethods(connectionId: string): Promise<WhitelistEntryView[]>;
     listSessions(): Promise<KnownSessionView[]>;
+    /** 某条连接两端各自在干什么（自动采集，只读）。 */
+    connectionWork(connectionId: string): Promise<{
+        a: WorkView | null;
+        b: WorkView | null;
+    }>;
+    listConventions(connectionId: string, all?: boolean): Promise<ConventionView[]>;
+    declareConvention(connectionId: string, by: 'a' | 'b', topic: string, text: string): Promise<{
+        ok: boolean;
+        reason?: string;
+    }>;
+    removeConvention(connectionId: string, id: string): Promise<{
+        ok: boolean;
+    }>;
     /** 诊断上报（浏览器里读不到 console，只能借 RPC 落盘）。 */
     report(message: string): void;
 }

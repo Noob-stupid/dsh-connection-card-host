@@ -19,6 +19,7 @@ import type { ViewPrefsStore } from '../client/view-prefs.js'
 import { useConnections } from './hooks/useConnections.js'
 import { useSessionList } from './hooks/useSessionList.js'
 import { CardStack } from './CardStack.js'
+import { AwarenessPanel } from './AwarenessPanel.js'
 
 interface ConnectionPanelProps {
   client: ConnectionCardHostClient | null
@@ -487,6 +488,14 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
                     </div>
 
                     <CardStack connection={conn} client={client} onChanged={refresh} />
+
+                    <AwarenessPanel
+                      client={client}
+                      connection={conn}
+                      labelA={labelOf(conn.sessionA)}
+                      labelB={labelOf(conn.sessionB)}
+                      onNotice={flash}
+                    />
 
                     <div className="ccr-conn__actions">
                       <button
