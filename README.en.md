@@ -317,15 +317,24 @@ resident**. (This can be reduced further — see [Status](#status).)
 
 ## Install
 
-```sh
-dsh plugin --profile web add dsh-connection-card-host
-```
-
-Or from GitHub:
+**This plugin is not published to npm** (DSH's peer dependencies aren't on the public
+registry, so `npm install` is guaranteed to fail — verified). Install from GitHub:
 
 ```sh
-npm install github:Noob-stupid/dsh-connection-card-host
+# Preview line (latest development build — the repo you're reading)
+dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host-preview
+
+# Stable line (the public facade, synced only at release time)
+dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
+
+# Or a pinned tarball (grab the asset URL from the Releases page)
+dsh plugin --profile web add https://github.com/…/releases/download/v1.0.0/dsh-external-dsh-connection-card-host-1.0.0.tgz
 ```
+
+> The two `github:` commands above are **verified working** (161 files land in `lib`, using
+> the profile's own settings: `autoInstallPeers: false`). The bare names
+> `dsh-connection-card-host` and `@dsh-external/dsh-connection-card-host` both **404** on
+> npm and won't work for anyone else — don't use them.
 
 **Compatibility**: `peerDependencies` declares `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0` — DSH
 **gates on version at install time** and refuses clearly, with a reason, rather than
