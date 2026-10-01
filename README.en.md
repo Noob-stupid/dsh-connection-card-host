@@ -1,5 +1,7 @@
 # dsh-connection-card-host
 
+[中文](README.md) | **English**
+
 > **Let your DSH sessions see each other, talk to each other, and share tools — without getting in each other's way.**
 
 Running several DSH sessions at once (one researching, one coding, one running experiments)
