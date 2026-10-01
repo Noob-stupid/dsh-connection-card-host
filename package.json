@@ -1,6 +1,6 @@
 {
   "name": "@dsh-external/dsh-connection-card-host",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "会话连接卡片宿主：在DSH会话间建立有状态连接，挂载连接级卡片插件",
   "type": "module",
   "repository": {
@@ -41,7 +41,8 @@
   "scripts": {
     "build": "bash scripts/build.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build:client": "tsdown"
+    "build:client": "tsdown",
+    "test": "node scripts/test-tool-scoping.mjs"
   },
   "exports": {
     ".": {

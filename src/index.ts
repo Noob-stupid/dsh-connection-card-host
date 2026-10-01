@@ -16,6 +16,7 @@ import { createStableApi, type ConnectionCardHostService } from './adapter/stabl
 import { ConventionBox } from './core/box.js'
 import { WorkStateTracker } from './core/work-state.js'
 import { registerAwarenessTools } from './tools/awareness-tools.js'
+import { installToolScoping } from './core/tool-scoping.js'
 import { registerRpcBridge } from './adapter/rpc-bridge.js'
 import { CardHost } from './card-host/loader.js'
 import { SessionBridge } from './adapter/session-bridge.js'
@@ -194,6 +195,30 @@ export function apply(ctx: HostContext, _config?: Record<string, unknown>): void
       debug('apply: 感知工具已注册（connection_peer_work / connection_conventions / connection_declare）')
     } else {
       debug('apply: ctx.tools 不可用，跳过感知工具注册')
+    }
+
+    /*
+     * 按会话 scope 隐藏感知工具 —— 没参与连接的会话不该背约 1700 tokens 的 schema。
+     *
+     * 走官方 `system-prompt/assemble` waterfall（它本身是 scope-filtered）。
+     * 契约照抄 dsh-tool-search 的实际用法（`ctx.on(event, (assembly, context, next) => ...)`），
+     * 不是猜的。整条链路 fail-open：拿不准就原样下发。
+     */
+    const on = safeCtxGet<(event: string, handler: (...a: unknown[]) => unknown) => () => void>(ctx, 'on')
+    if (typeof on === 'function') {
+      try {
+        const disposeScoping = installToolScoping(on.bind(ctx) as never, {
+          getConnectionsBySession: (sid) => service.getConnectionsBySession(sid),
+          audit: auditLog,
+          debug,
+        })
+        ctx.effect(() => () => disposeScoping(), 'connection-card-host: tool scoping')
+        debug('apply: 已挂 system-prompt/assemble（按会话 scope 隐藏感知工具）')
+      } catch (e) {
+        debug(`apply: 挂 tool scoping 失败（忽略，工具照常全局下发）：${e instanceof Error ? e.message : String(e)}`)
+      }
+    } else {
+      debug('apply: ctx.on 不可用，跳过 tool scoping')
     }
     // 必须走 ctx.provide（不是直接赋值）：cordis 服务由 fiber 持有生命周期，
     // 直接 `ctx.connectionCardHost = ...` 会抛 cannot set ... without provide。
