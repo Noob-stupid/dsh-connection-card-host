@@ -295,15 +295,32 @@ B 端硬调它 → 拒绝     「这张卡片只对 A 端可见（你在 B 端�
 
 ## 安装
 
+**方式一：直接从 GitHub 装（推荐）**
+
 ```sh
-dsh plugin --profile web add dsh-connection-card-host
+dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
 ```
 
-或从 GitHub 装：
+`lib/` 已随仓库提交，装完即可用 —— 不需要构建步骤，本包也没有需要授权的构建脚本。
+（`dsh plugin` 依赖 `pnpm` 在 PATH 上。）
+
+**方式二：用 Release 里的预构建 tarball**
+
+从 [Releases](https://github.com/Noob-stupid/dsh-connection-card-host/releases) 下载
+`dsh-external-dsh-connection-card-host-1.0.0.tgz`，然后：
+
+```sh
+dsh plugin --profile web add ./dsh-external-dsh-connection-card-host-1.0.0.tgz
+```
+
+**方式三：只把源码装进你自己的项目**
 
 ```sh
 npm install github:Noob-stupid/dsh-connection-card-host
 ```
+
+> 包名 `@dsh-external/dsh-connection-card-host` **尚未发布到 npm 公共源**，
+> 所以不能只写包名安装 —— 请用上面的方式一或方式二。
 
 **兼容性**：`peerDependencies` 声明 `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0` ——
 DSH 会在安装时**按版本门控**，不匹配会明确拒绝并说明原因（而不是装上再崩）。
