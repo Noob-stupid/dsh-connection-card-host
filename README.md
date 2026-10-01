@@ -309,9 +309,19 @@ dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
 dsh plugin --profile web add https://github.com/…/releases/download/v1.0.0/dsh-external-dsh-connection-card-host-1.0.0.tgz
 ```
 
-> 上面两条 `github:` 命令**实测可用**（装完 `lib` 161 个文件，`pnpm` 用 profile 同款配置：
-> `autoInstallPeers: false`）。裸包名 `dsh-connection-card-host` 与
-> `@dsh-external/dsh-connection-card-host` 在 npm 上都 **404**，对第三方不成立，别用。
+> **实测可用的三种写法**（装完 `lib` 161 个文件，`pnpm` 用 profile 同款配置
+> `autoInstallPeers: false`）：
+>
+> | 写法 | 结果 |
+> |:---|:---|
+> | `github:user/repo` | ✅ 10.5s |
+> | `user/repo`（GitHub 简写，可省 `github:`） | ✅ 8.5s |
+> | tgz 路径 / 地址 | ✅ 1.8s |
+> | **裸包名**（无斜杠，走 npm registry） | ❌ **404 —— 别用** |
+>
+> `dsh-connection-card-host` 与 `@dsh-external/dsh-connection-card-host` 在 npm 上都不存在。
+> **本插件不上 npm**：DSH 的 peer 依赖不在公开 registry 上，`npm install` 必然失败
+> （报 `notarget ... @deepseek-ai/dsh-client-runtime`）。
 
 **兼容性**：`peerDependencies` 声明 `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0` ——
 DSH 会在安装时**按版本门控**，不匹配会明确拒绝并说明原因（而不是装上再崩）。
