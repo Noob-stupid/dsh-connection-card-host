@@ -484,19 +484,40 @@ export const CONNECTION_CARD_CSS = `
   font-size: 12px;
 }
 
-/*
- * 卡片区内部的工具行（+ 添加卡片 / 卡片面板全部展开）。
- * 注意：**这不是区块标题栏** —— 区块本身用 ccr-fold（▸ 卡片）收起/展开。
- * 逐卡面板的开关放在这里而不是标题栏，免得两个"展开"并排读不出谁管谁。
- */
-.ccr-cards__head {
+/* 「卡片」+ 右侧小三角：点文字或三角都收起/展开整个卡片区 */
+.ccr-cards__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.ccr-cards__toggle:hover .ccr-field__label { opacity: 1; }
+.ccr-cards__tri {
+  font-size: 9px;
+  line-height: 1;
+  opacity: 0.65;
+}
+.ccr-cards__toggle:hover .ccr-cards__tri { opacity: 1; }
+
+/* 收起时只剩标题那一行 —— 去掉多余的上下留白 */
+.ccr-cards--folded { margin-bottom: 12px; }
+
+/* 「+ 添加卡片」顶到标题行最右 */
+.ccr-cards__add { margin-left: auto; }
+
+/* 卡片面板的逐卡开关所在行（在标题行下面、卡片上面） */
+.ccr-cards__tools {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
   margin-bottom: 6px;
 }
-.ccr-cards__add { margin-left: auto; }
-.ccr-cards__fold { margin-left: 0; }
+.ccr-cards__tools:empty { display: none; }
 
 /* 卡片面板的收起/展开箭头（默认收起，见 CardStack 的 expandedCards） */
 .ccr-card__toggle {

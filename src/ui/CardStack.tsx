@@ -264,53 +264,55 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
   /**
    * 整个「卡片」区域的收起/展开。
    *
-   * 用**已有的 `ccr-fold` 模式**（和「对方在做什么」「共享约定」一致）——
-   * 用户要的是这个区块能像别的区块一样收起来。
+   * **保留原来那一行的样式**，只在「卡片」两个字右侧加一个小三角：
+   *   收起 = 只剩这一行（卡片 ▸ 3        + 添加卡片）
+   *   展开 = 下面列出全部卡片
    *
-   * ⚠️ 注意这里有两级「展开」，**不要混在一起**：
+   * ⚠️ 这里有两级「展开」，别混：
    *   · 区块级（这个）—— 收起整个卡片区
    *   · 卡片级（`expandedCards`）—— 收起某一张卡的面板
-   * 所以逐卡的「全部收起/展开」放在**区块内部**，挨着卡片，
-   * 不放在区块标题栏 —— 两个"展开"并排会读不出谁管谁。
+   * 所以逐卡开关放在**下面那行**，文案写明「卡片面板全部展开」，
+   * 不和标题栏那个小三角挤在一起 —— 两个"展开"并排会读不出谁管谁。
    */
   const [sectionOpen, setSectionOpen] = useState(true)
 
   return (
-    <section className={`ccr-fold ccr-cards${sectionOpen ? ' ccr-fold--open' : ''}`}>
-      <button type="button" className="ccr-fold__head" onClick={() => setSectionOpen((v) => !v)}>
-        <span className="ccr-fold__chevron">{sectionOpen ? '▾' : '▸'}</span>
-        <span className="ccr-fold__title">卡片</span>
+    <div className={`ccr-cards${sectionOpen ? '' : ' ccr-cards--folded'}`}>
+      <div className="ccr-cards__head">
+        {/* 「卡片」+ 右侧小三角 = 一个点击区（点文字或三角都行） */}
+        <button
+          type="button"
+          className="ccr-cards__toggle"
+          title={sectionOpen ? '收起卡片区' : '展开卡片区'}
+          onClick={() => setSectionOpen((v) => !v)}
+        >
+          <span className="ccr-field__label">卡片</span>
+          <span className="ccr-cards__tri">{sectionOpen ? '▾' : '▸'}</span>
+        </button>
         <span className="ccr-count">{cards.length}</span>
-        {/* 收起时也能一眼看出挂了什么 —— 用卡片名，不用 id */}
-        <span className="ccr-fold__digest">
-          {cards.length === 0
-            ? '还没挂卡片'
-            : cards
-                .map((c) => templates.find((t) => t.templateId === c.templateId)?.name ?? c.templateId)
-                .join(' · ')}
-        </span>
-      </button>
+        {client && (
+          <button
+            type="button"
+            className="ccr-link ccr-cards__add"
+            onClick={() => setPicking((v) => !v)}
+          >
+            {picking ? '取消' : '+ 添加卡片'}
+          </button>
+        )}
+      </div>
 
       {sectionOpen && (
-        <div className="ccr-fold__body">
-          <div className="ccr-cards__head">
-            {client && (
-              <button
-                type="button"
-                className="ccr-link ccr-cards__add"
-                onClick={() => setPicking((v) => !v)}
-              >
-                {picking ? '取消' : '+ 添加卡片'}
-              </button>
-            )}
+        <>
+          <div className="ccr-cards__tools">
             {/*
-              逐卡面板的全部收起/展开。放在区块内部（挨着卡片），不放到标题栏 ——
-              标题栏已经有区块级的 ▸/▾，再放一个"展开"会读不出谁管谁。
+              逐卡面板的开关。放在这一行（挨着卡片），不挤进标题栏 ——
+              标题栏已经有区块级的三角，两个"展开"并排会读不出谁管谁。
+              只有 1 张卡时不显示（没意义）。
             */}
             {cards.length > 1 && (
               <button
                 type="button"
-                className="ccr-link ccr-cards__fold"
+                className="ccr-link"
                 title={anyExpanded ? '收起所有卡片面板' : '展开所有卡片面板'}
                 onClick={() => {
                   if (anyExpanded) {
@@ -525,8 +527,8 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
           </div>
         )
       })}
-        </div>
+        </>
       )}
-    </section>
+    </div>
   )
 }
