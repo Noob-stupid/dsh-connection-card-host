@@ -15,6 +15,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { dshHomeDir } from '../core/persistence.js'
+import { parseVersionedDirName } from './card-paths.js'
 import { fileURLToPath } from 'node:url'
 import type { CardInstance, CardManifest, CardAPI, CardScope } from '../types/index.js'
 import type { ConnectionManager } from '../core/connection-manager.js'
@@ -60,6 +61,16 @@ export class CardHost {
   /** instanceId → CardAPI。 */
   private apiByInstance = new Map<string, CardAPI>()
   private scanned = false
+  /**
+   * 卡片模块的缓存失效令牌。
+   *
+   * `reloadCard` 递增它，`loadCard` 把它传给 `importCardModule` ——
+   * 否则 Node 的 ESM 缓存按 URL 命中，重载会拿回**旧模块**（"重载"等于没重载）。
+   *
+   * ⚠️ 它只让**入口**新鲜；卡片内部的 `import './x.js'` 解析出的 URL 不带查询串，
+   * 仍会命中缓存。**改卡片代码请重新安装**（落进新版本目录 → 全部 URL 都新）。
+   */
+  private loadSeq = 0
 
   constructor(
     manager: ConnectionManager,
@@ -120,6 +131,46 @@ export class CardHost {
     } catch {
       return
     }
+
+    /**
+     * 已安装卡片用**版本化目录 + current 指针**（见 card-paths.ts 的说明）。
+     *
+     * 扫描规则：
+     *   1. 先读所有 `*.current` 指针，得到 id → 生效目录名
+     *   2. 只注册**指针指向的那个**版本目录（其余的是旧版本，等清理）
+     *   3. **未版本化的老目录（`<id>/`）照样认** —— 向后兼容，不需要迁移
+     */
+    if (source === 'installed') {
+      const currentByid = new Map<string, string>()
+      for (const name of entries) {
+        if (!name.endsWith('.current')) continue
+        try {
+          const target = readFileSync(join(root, name), 'utf8').trim()
+          if (target) currentByid.set(name.slice(0, -'.current'.length), target)
+        } catch {
+          /* 指针读不到就当没有，下面的老目录分支会兜住 */
+        }
+      }
+
+      for (const name of entries) {
+        if (name.endsWith('.current')) continue
+        const parsed = parseVersionedDirName(name)
+
+        if (parsed) {
+          // 版本化目录：只认指针指向的那个
+          const want = currentByid.get(parsed.cardId)
+          if (want && want !== name) continue // 旧版本，跳过
+          this.registerTemplateDir(join(root, name), source, parsed.cardId)
+          continue
+        }
+
+        // 未版本化的老目录：只有当它没有对应指针时才认（避免和版本目录重复注册）
+        if (currentByid.has(name)) continue
+        this.registerTemplateDir(join(root, name), source, name)
+      }
+      return
+    }
+
     for (const name of entries) {
       this.registerTemplateDir(join(root, name), source, name)
     }
@@ -207,8 +258,8 @@ export class CardHost {
     // 模板可以把自己固定到某一端（scope: 'a'|'b'）；否则用调用方选的，默认双向
     const scope: CardScope = template.manifest.scope ?? requestedScope ?? 'both'
 
-    // 导入卡片模块（含崩溃隔离）
-    const mod = await importCardModule(template.entry)
+    // 导入卡片模块（含崩溃隔离）。带 loadSeq 做缓存失效 —— 否则 reload 拿回的是旧模块。
+    const mod = await importCardModule(template.entry, this.loadSeq)
     this.registry.setModule(templateId, mod)
 
     const instance: CardInstance = {
@@ -265,6 +316,11 @@ export class CardHost {
     if (!instance) return
     const { templateId, connectionId } = instance
     this.registry.removeModule(templateId)
+    // ⚠️ 只清 registry 不够：Node 的 ESM 缓存按 URL 命中，再 import 同一路径
+    // 拿回的是**旧模块**，于是"重载"看起来成功、实际跑的还是旧代码（实测过）。
+    // 递增令牌 → 入口 URL 带 ?v=N → 至少入口是新鲜的。
+    // （卡片内部的子模块仍会命中缓存；改代码请重新安装，见 importCardModule 的说明。）
+    this.loadSeq += 1
     await this.unloadCard(instanceId)
     await this.loadCard(templateId, connectionId)
   }
@@ -420,7 +476,7 @@ export class CardHost {
         this.scanTemplates()
         const template = this.registry.getTemplate(instance.templateId)
         if (!template) return null
-        mod = await importCardModule(template.entry)
+        mod = await importCardModule(template.entry, this.loadSeq)
         this.registry.setModule(instance.templateId, mod)
       }
 
@@ -463,7 +519,7 @@ export class CardHost {
             )
             continue
           }
-          const mod = await importCardModule(template.entry)
+          const mod = await importCardModule(template.entry, this.loadSeq)
           this.registry.setModule(instance.templateId, mod)
 
           this.registry.registerInstance(instance)

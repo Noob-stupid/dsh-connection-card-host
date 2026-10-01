@@ -37,6 +37,16 @@ export declare class CardHost {
     /** instanceId → CardAPI。 */
     private apiByInstance;
     private scanned;
+    /**
+     * 卡片模块的缓存失效令牌。
+     *
+     * `reloadCard` 递增它，`loadCard` 把它传给 `importCardModule` ——
+     * 否则 Node 的 ESM 缓存按 URL 命中，重载会拿回**旧模块**（"重载"等于没重载）。
+     *
+     * ⚠️ 它只让**入口**新鲜；卡片内部的 `import './x.js'` 解析出的 URL 不带查询串，
+     * 仍会命中缓存。**改卡片代码请重新安装**（落进新版本目录 → 全部 URL 都新）。
+     */
+    private loadSeq;
     constructor(manager: ConnectionManager, eventBus: ConnectionEventBus, adapter: DSHAdapter, options?: CardHostOptions);
     /**
      * 默认根目录：内置取本包同级 `cards/`；已安装取 `$DSH_HOME/connection-cards/cards/`。
