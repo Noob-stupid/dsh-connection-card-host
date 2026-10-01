@@ -295,32 +295,42 @@ B 端硬调它 → 拒绝     「这张卡片只对 A 端可见（你在 B 端�
 
 ## 安装
 
-**方式一：直接从 GitHub 装（推荐）**
+**本插件不上 npm。** DSH 的 peer 依赖（`@deepseek-ai/dsh-client-runtime` 等）不在公开 registry 上，
+所以 `npm install` 会去公开 registry 装 peerDependencies 并必然失败
+（实测报 `notarget ... @deepseek-ai/dsh-client-runtime`）。安装走 GitHub：
 
 ```sh
+# 稳定线（本仓库，对外门面）
 dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
-```
 
-`lib/` 已随仓库提交，装完即可用 —— 不需要构建步骤，本包也没有需要授权的构建脚本。
-（`dsh plugin` 依赖 `pnpm` 在 PATH 上。）
+# 同上，GitHub 简写（可省 github:）—— 带斜杠就走 GitHub 仓库
+dsh plugin --profile web add Noob-stupid/dsh-connection-card-host
 
-**方式二：用 Release 里的预构建 tarball**
+# 要固定版本：用 Releases 的 tgz 附件（当前已发布 v1.0.0）
+dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.0/dsh-external-dsh-connection-card-host-1.0.0.tgz
 
-从 [Releases](https://github.com/Noob-stupid/dsh-connection-card-host/releases) 下载
-`dsh-external-dsh-connection-card-host-1.0.0.tgz`，然后：
-
-```sh
+# 同一份 tgz 先下载到本地再装，效果相同
 dsh plugin --profile web add ./dsh-external-dsh-connection-card-host-1.0.0.tgz
 ```
 
-**方式三：只把源码装进你自己的项目**
+- 开发发生在**预览线仓库** [`dsh-connection-card-host-preview`](https://github.com/Noob-stupid/dsh-connection-card-host-preview)；
+  **本仓库是稳定门面**，只在发版时按晋级流程同步。
+- `lib/` 已随仓库提交：装完即可用，不需要构建步骤，本包也没有需要授权的构建脚本。
+  （`dsh plugin` 依赖 `pnpm` 在 PATH 上。）
+- ⚠️ `github:` 与简写装的是**默认分支的最新提交**，**不是固定版本**；
+  要固定版本请用上面的 Releases tgz。
 
-```sh
-npm install github:Noob-stupid/dsh-connection-card-host
-```
-
-> 包名 `@dsh-external/dsh-connection-card-host` **尚未发布到 npm 公共源**，
-> 所以不能只写包名安装 —— 请用上面的方式一或方式二。
+> **四种写法的实测结果**（`pnpm` 用 profile 同款配置 `nodeLinker: hoisted` +
+> `autoInstallPeers: false`，装完 `lib` 161 个文件）：
+>
+> | 写法 | 结果 |
+> |:---|:---|
+> | `github:user/repo` | ✅ 可用 |
+> | `user/repo`（GitHub 简写） | ✅ 可用 |
+> | tgz 地址 / 本地路径 | ✅ 可用 |
+> | **裸包名**（无斜杠 → 当成 npm 包名，走 registry） | ❌ **404，别用** |
+>
+> `dsh-connection-card-host` 与 `@dsh-external/dsh-connection-card-host` 在 npm 上都不存在。
 
 **兼容性**：`peerDependencies` 声明 `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0` ——
 DSH 会在安装时**按版本门控**，不匹配会明确拒绝并说明原因（而不是装上再崩）。

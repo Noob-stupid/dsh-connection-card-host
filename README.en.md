@@ -317,32 +317,44 @@ resident**. (This can be reduced further — see [Status](#status).)
 
 ## Install
 
-**Option 1 — straight from GitHub (recommended)**
+**This plugin is not on npm.** DSH's peer dependencies (`@deepseek-ai/dsh-client-runtime` and
+friends) are not on the public registry, so `npm install` resolves peerDependencies from that
+registry and necessarily fails (observed as `notarget ... @deepseek-ai/dsh-client-runtime`).
+Install from GitHub instead:
 
 ```sh
+# stable line (this repository, the public face)
 dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
-```
 
-`lib/` is committed to the repository, so the install arrives ready to load — no build step
-and no build script to authorize. (`dsh plugin` requires `pnpm` on PATH.)
+# same thing, GitHub shorthand (the github: prefix is optional) — a slash means a GitHub repo
+dsh plugin --profile web add Noob-stupid/dsh-connection-card-host
 
-**Option 2 — the prebuilt tarball from Releases**
+# pin a version: use the tgz attached to Releases (v1.0.0 is published)
+dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.0/dsh-external-dsh-connection-card-host-1.0.0.tgz
 
-Download `dsh-external-dsh-connection-card-host-1.0.0.tgz` from
-[Releases](https://github.com/Noob-stupid/dsh-connection-card-host/releases), then:
-
-```sh
+# the same tgz, downloaded first — identical result
 dsh plugin --profile web add ./dsh-external-dsh-connection-card-host-1.0.0.tgz
 ```
 
-**Option 3 — sources only, into your own project**
+- Development happens on the **preview line**,
+  [`dsh-connection-card-host-preview`](https://github.com/Noob-stupid/dsh-connection-card-host-preview);
+  **this repository is the stable face** and only receives promoted releases.
+- `lib/` is committed, so the install arrives ready to load — no build step and no build script
+  to authorize. (`dsh plugin` requires `pnpm` on PATH.)
+- ⚠️ `github:` and the shorthand install the **latest commit on the default branch**, which is
+  **not a pinned version**; to pin a version use the Releases tgz above.
 
-```sh
-npm install github:Noob-stupid/dsh-connection-card-host
-```
-
-> The package name `@dsh-external/dsh-connection-card-host` is **not published to the public
-> npm registry**, so a bare package-name install does not resolve — use Option 1 or 2.
+> **What was measured for all four forms** (pnpm with the profile's own settings,
+> `nodeLinker: hoisted` + `autoInstallPeers: false`; each install lands `lib/` with 161 files):
+>
+> | Form | Result |
+> |:---|:---|
+> | `github:user/repo` | ✅ works |
+> | `user/repo` (GitHub shorthand) | ✅ works |
+> | tgz URL / local path | ✅ works |
+> | **bare package name** (no slash → read as an npm name, goes to the registry) | ❌ **404 — do not use** |
+>
+> Neither `dsh-connection-card-host` nor `@dsh-external/dsh-connection-card-host` exists on npm.
 
 **Compatibility**: `peerDependencies` declares `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0` — DSH
 **gates on version at install time** and refuses clearly, with a reason, rather than
