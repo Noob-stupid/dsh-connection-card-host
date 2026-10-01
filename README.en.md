@@ -434,5 +434,5 @@ See [`docs/card-protocol.md`](docs/card-protocol.md) for details.
 ---
 
 <p align="center">
-  <sub>MIT · not affiliated with the DSH project</sub>
+  <sub>BSD-3-Clause · not affiliated with the DSH project</sub>
 </p>

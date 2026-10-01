@@ -416,5 +416,5 @@ export function renderPanel(api) {
 ---
 
 <p align="center">
-  <sub>MIT · 与 DSH 官方无隶属关系</sub>
+  <sub>BSD-3-Clause · 与 DSH 官方无隶属关系</sub>
 </p>
