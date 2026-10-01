@@ -493,6 +493,23 @@ export const CONNECTION_CARD_CSS = `
   font-size: 12px;
 }
 
+/* 卡片面板的收起/展开箭头（默认收起，见 CardStack 的 expandedCards） */
+.ccr-card__toggle {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.ccr-card__toggle:hover:not(:disabled) { opacity: 1; }
+.ccr-card__toggle:disabled { opacity: 0.2; cursor: default; }
+
 .ccr-card__name { font-weight: 500; }
 
 .ccr-card__meta {

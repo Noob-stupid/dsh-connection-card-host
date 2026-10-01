@@ -51,6 +51,14 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
     Record<string, { hasUpdate?: boolean; latestVersion?: string; reason?: string }>
   >({})
   const [updBusy, setUpdBusy] = useState<string | null>(null)
+  /**
+   * 哪些卡片实例的面板是展开的。
+   *
+   * **默认全部收起** —— 卡片面板是卡片自己渲染的 HTML，高度不可控，
+   * 几张一起展开会把卡片区顶得很长（用户截图反馈"太占地方"）。
+   * 收起时卡片名/可见范围/重载/移除照常显示，操作入口不藏。
+   */
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({})
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
@@ -390,9 +398,24 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
       {cards.map((card) => {
         const template = templates.find((t) => t.templateId === card.templateId)
         const html = panels[card.instanceId] ?? null
+        // 收起/展开：**默认收起**。卡片面板是卡片自己渲染的 HTML，高度不可控，
+        // 几张卡一起展开会把整个卡片区顶得很长（用户截图反馈过"太占地方"）。
+        // 收起时仍然显示卡片名/范围/重载/移除 —— 操作入口不藏。
+        const expanded = expandedCards[card.instanceId] === true
         return (
           <div key={card.instanceId} className="ccr-card">
             <div className="ccr-card__head">
+              <button
+                type="button"
+                className="ccr-card__toggle"
+                title={expanded ? '收起' : '展开面板'}
+                disabled={!html}
+                onClick={() =>
+                  setExpandedCards((prev) => ({ ...prev, [card.instanceId]: !expanded }))
+                }
+              >
+                {html ? (expanded ? '▾' : '▸') : '·'}
+              </button>
               <span
                 className="ccr-dot"
                 style={{ background: HEALTH_COLOR[connection.health] ?? '#10B981' }}
@@ -440,7 +463,7 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
                 移除
               </button>
             </div>
-            {html && (
+            {html && expanded && (
               <div
                 className="ccr-card__panel"
                 // 卡片面板 HTML 由宿主渲染；卡片本来就在宿主跑任意代码，
