@@ -15,6 +15,7 @@ import { allocateLanes } from '../core/lane-allocator.js'
 import type { PermissionLevel } from '../types/index.js'
 import type { ConnectionCardHostClient } from '../client/host-client.js'
 import type { SessionsBridge } from '../client/sessions-bridge.js'
+import { sessionLabel } from '../client/sessions-bridge.js'
 import { collectSessionRows, type SessionRowInfo } from '../client/row-map.js'
 import type { ViewPrefsStore } from '../client/view-prefs.js'
 import { useConnections } from './hooks/useConnections.js'
@@ -38,6 +39,13 @@ const PERMISSION_COLOR: Record<PermissionLevel, string> = {
   read: '#9CA3AF',
   suggest: '#3B82F6',
   write: '#F97316',
+}
+
+/** 权限色对应的文字 —— 悬停提示里用，光有颜色说不清。 */
+const PERMISSION_TEXT: Record<PermissionLevel, string> = {
+  read: '只读（只能感知，不能收发消息）',
+  suggest: '可建议（能发言，不能派活）',
+  write: '可写入（能发言，也能请求对方做事）',
 }
 
 /**
@@ -204,7 +212,25 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
     // 画在会话行上：贴着行的右边缘往左排 lane
     const baseX = Math.max(...rows.map((r) => r.right)) - ROW_RIGHT_INSET
 
-    const segments = []
+    const segments: {
+      id: string
+      laneIndex: number
+      x: number
+      y1: number
+      y2: number
+      top: number
+      bottom: number
+      dotTop: number
+      dotBottom: number
+      /** 上端点的颜色（= 上端那一方**能对对方做什么**）。 */
+      topColor: string
+      /** 下端点的颜色。与 topColor 可以不同 —— 权限是分方向的。 */
+      bottomColor: string
+      /** 端点的悬停提示（连的是谁 + 什么权限）。 */
+      topTip: string
+      bottomTip: string
+      broken: boolean
+    }[] = []
     for (const conn of connections) {
       const assignment = layout.connections.get(conn.id)
       if (!assignment) continue
@@ -231,7 +257,20 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
       const y1 = upward ? yTop : yBot
       const y2 = upward ? yBot : yTop
 
-      const level = conn.permission.aToB
+      /**
+       * 两端圆点各自显示**自己那个方向**的权限。
+       *
+       * ⚠️ 原来两端都用 `aToB` —— 那是错的：不对称连接下，B 端的点会显示
+       * A→B 的权限，等于告诉你一个跟这一端无关的数字。
+       * 正确语义：**这个点代表"这一端能对对方做什么"**。
+       *
+       * 谁是 A 端：`conn.sessionA` 那一行（上行 = y1 那一端）。
+       */
+      const aOnTop = upward
+      const topLevel = aOnTop ? conn.permission.aToB : conn.permission.bToA
+      const bottomLevel = aOnTop ? conn.permission.bToA : conn.permission.aToB
+      const peerOfTop = aOnTop ? conn.sessionB : conn.sessionA
+      const peerOfBottom = aOnTop ? conn.sessionA : conn.sessionB
 
       segments.push({
         id: conn.id,
@@ -251,7 +290,11 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
          */
         dotTop: Math.min(rawY1, rawY2),
         dotBottom: Math.max(rawY1, rawY2),
-        color: PERMISSION_COLOR[level] ?? '#9CA3AF',
+        /** 两个端点各自的颜色与提示（分方向，不再是同一个值）。 */
+        topColor: PERMISSION_COLOR[topLevel] ?? '#9CA3AF',
+        bottomColor: PERMISSION_COLOR[bottomLevel] ?? '#9CA3AF',
+        topTip: `与「${sessionLabel(sessions, peerOfTop, snapshot)}」相连 · ${PERMISSION_TEXT[topLevel] ?? topLevel}`,
+        bottomTip: `与「${sessionLabel(sessions, peerOfBottom, snapshot)}」相连 · ${PERMISSION_TEXT[bottomLevel] ?? bottomLevel}`,
         broken: conn.status === 'broken',
       })
     }
@@ -382,14 +425,25 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
             strokeDasharray="10 26"
             className="ccr-rail__flow"
           />
-          {/* 两端节点：权限色区分。用**行的真实中心**坐标 —— 越界的由画布裁剪掉 */}
-          {[seg.dotTop, seg.dotBottom].map((y, i) => (
+          {/* 两端节点：**各端显示各自方向的权限**，悬停告诉你连的是谁 */}
+          {(
+            [
+              [seg.dotTop, seg.topColor, seg.topTip],
+              [seg.dotBottom, seg.bottomColor, seg.bottomTip],
+            ] as const
+          ).map(([y, color, tip], i) => (
             <g key={i}>
+              {/*
+                SVG 的 <title> 就是原生悬停提示。
+                用户反馈过：圆点只说"权限"不说"连的是谁"，
+                多条连接并存时分不清哪个点跟自己有关（曾误以为连错了会话）。
+              */}
+              <title>{tip}</title>
               <circle
                 cx={seg.x - bounds.left}
                 cy={y - bounds.top}
                 r={4.5}
-                fill={seg.color}
+                fill={color}
                 fillOpacity={0.22}
                 filter="url(#ccr-rail-glow)"
               />
@@ -397,7 +451,7 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
                 cx={seg.x - bounds.left}
                 cy={y - bounds.top}
                 r={2.6}
-                fill={seg.color}
+                fill={color}
                 fillOpacity={0.9}
               />
             </g>
