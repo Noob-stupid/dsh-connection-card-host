@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 300" width="680" height="300" font-family="ui-sans-serif, system-ui, 'Segoe UI', sans-serif">
+  <title>连线颜色 = 权限方向</title>
+  <desc>一根线两端各一个圆点，颜色表示该方向的权限：灰=只读 蓝=可建议 橙=可写入</desc>
+  <defs>
+    <style><![CDATA[
+      .bg{fill:#0d1117}
+      .row{fill:#161b22;stroke:#30363d}
+      .rowtxt{fill:#c9d1d9;font-size:13px}
+      .hint{fill:#8b949e;font-size:11px}
+      .lab{fill:#e6edf3;font-size:12px;font-weight:600}
+
+      .flow{stroke-dasharray:8 10;animation:flow 1.4s linear infinite}
+      @keyframes flow{to{stroke-dashoffset:-36}}
+
+      .pulse{animation:pulse 2.4s ease-in-out infinite}
+      @keyframes pulse{0%,100%{opacity:.55}50%{opacity:1}}
+    ]]></style>
+  </defs>
+
+  <rect class="bg" width="680" height="300" rx="10"/>
+
+  <!-- ── 例 1：两端可写入（对称） ── -->
+  <text class="lab" x="24" y="30">两端都可写入</text>
+  <rect class="row" x="24" y="44" width="150" height="30" rx="6"/>
+  <text class="rowtxt" x="36" y="64">会话甲</text>
+  <rect class="row" x="330" y="44" width="150" height="30" rx="6"/>
+  <text class="rowtxt" x="342" y="64">会话乙</text>
+
+  <path d="M 176 59 L 328 59" stroke="#f97316" stroke-width="2" class="flow"/>
+  <circle cx="176" cy="59" r="5" fill="#f97316" class="pulse"/>
+  <circle cx="328" cy="59" r="5" fill="#f97316" class="pulse"/>
+  <text class="hint" x="500" y="63">甲 ⇄ 乙 都能发 ask/reply</text>
+
+  <!-- ── 例 2：不对称 ── -->
+  <text class="lab" x="24" y="122">不对称：甲可写入，乙只能看</text>
+  <rect class="row" x="24" y="136" width="150" height="30" rx="6"/>
+  <text class="rowtxt" x="36" y="156">会话甲</text>
+  <rect class="row" x="330" y="136" width="150" height="30" rx="6"/>
+  <text class="rowtxt" x="342" y="156">会话乙</text>
+
+  <path d="M 176 151 L 328 151" stroke="#f97316" stroke-width="2" class="flow"/>
+  <circle cx="176" cy="151" r="5" fill="#f97316" class="pulse"/>
+  <circle cx="328" cy="151" r="5" fill="#9ca3af" class="pulse"/>
+  <text class="hint" x="500" y="148">甲 → 乙：可写入</text>
+  <text class="hint" x="500" y="164">乙 → 甲：只读（发不出去）</text>
+
+  <!-- ── 例 3：只读 ── -->
+  <text class="lab" x="24" y="214">两端都只读</text>
+  <rect class="row" x="24" y="228" width="150" height="30" rx="6"/>
+  <text class="rowtxt" x="36" y="248">会话甲</text>
+  <rect class="row" x="330" y="228" width="150" height="30" rx="6"/>
+  <text class="rowtxt" x="342" y="248">会话乙</text>
+
+  <path d="M 176 243 L 328 243" stroke="#9ca3af" stroke-width="2" opacity="0.6"/>
+  <circle cx="176" cy="243" r="5" fill="#9ca3af" class="pulse"/>
+  <circle cx="328" cy="243" r="5" fill="#9ca3af" class="pulse"/>
+  <text class="hint" x="500" y="240">只有感知可用</text>
+  <text class="hint" x="500" y="256">（状态 + 公约盒，0 成本）</text>
+
+  <!-- 图例 -->
+  <g transform="translate(24,278)">
+    <circle cx="4" cy="0" r="5" fill="#9ca3af"/><text class="hint" x="16" y="4">只读</text>
+    <circle cx="74" cy="0" r="5" fill="#3b82f6"/><text class="hint" x="86" y="4">可建议</text>
+    <circle cx="152" cy="0" r="5" fill="#f97316"/><text class="hint" x="164" y="4">可写入</text>
+  </g>
+</svg>
