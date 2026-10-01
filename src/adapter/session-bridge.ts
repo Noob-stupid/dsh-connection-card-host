@@ -693,6 +693,21 @@ export class SessionBridge {
     }
 
     // ── 兜底：冷会话唤醒（sessionController 自带 resume） ──
+    //
+    // ⚠️ **quiet 不能走这条路**（2026-10-01 实测发现的 bug）。
+    //
+    // 冷会话没有 live agent 可以 inject，于是会掉到这里 —— 而
+    // `sessionController.prompt` 只认 'steer'，其余一律按 **followup** 处理
+    // （见 dsh-api-session-controller/lib/index.js:882），也就是**会唤醒它**。
+    // 那直接违背 quiet 的语义（"只告知、不唤醒"）。
+    //
+    // 所以在唤醒之前先拦下：quiet + 冷会话 = **不投递**。
+    // 但**不能静默**（本项目一贯原则）：留一行审计说明跳过了、以及为什么。
+    if (mode === 'inject' && !liveAgent) {
+      this.auditLog(`quiet 投递跳过（会话是冷的，quiet 不唤醒所以未投递）: ${sessionId}`)
+      return { ok: false, reason: '会话未在运行；quiet 不唤醒，故未投递' }
+    }
+
     const controllerSource = this.controllerCtx ?? this.ctx
     const controller = safeCtxGet<{
       prompt?(request: unknown, signal?: AbortSignal): unknown
