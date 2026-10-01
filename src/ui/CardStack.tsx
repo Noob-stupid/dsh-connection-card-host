@@ -259,12 +259,36 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
 
   const installed = new Set(cards.map((c) => c.templateId))
   const available = templates.filter((t) => !installed.has(t.templateId))
+  /** 还有卡片展开着吗 —— 决定「全部收起/全部展开」显示哪个。 */
+  const anyExpanded = cards.some((c) => expandedCards[c.instanceId] === true)
 
   return (
     <div className="ccr-cards">
       <div className="ccr-cards__head">
         <span className="ccr-field__label">卡片</span>
         <span className="ccr-count">{cards.length}</span>
+        {/*
+          全部收起/展开：卡片一多，逐个点标题前的箭头太累。
+          只要**还有一张展开着**，按钮就是「全部收起」—— 这样它总是"能让你更清爽"的那个动作。
+        */}
+        {cards.length > 0 && (
+          <button
+            type="button"
+            className="ccr-link ccr-cards__fold"
+            title={anyExpanded ? '收起所有卡片面板' : '展开所有卡片面板'}
+            onClick={() => {
+              if (anyExpanded) {
+                setExpandedCards({})
+              } else {
+                const next: Record<string, boolean> = {}
+                for (const c of cards) next[c.instanceId] = true
+                setExpandedCards(next)
+              }
+            }}
+          >
+            {anyExpanded ? '全部收起' : '全部展开'}
+          </button>
+        )}
         {client && (
           <button
             type="button"
