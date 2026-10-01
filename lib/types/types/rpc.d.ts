@@ -76,6 +76,10 @@ export declare const RPC_ENDPOINTS: {
     readonly uninstallCard: "cards/uninstall";
     /** 已安装卡片的根目录（面板显示，让"装到哪儿"透明）。 */
     readonly cardsRoot: "cards/root";
+    /** 某连接上、**对某一端可见**的卡片工具（卡片给会话提供的能力）。 */
+    readonly listCardTools: "cards/tools";
+    /** 调用某张卡片的工具（**带可见范围校验**）。 */
+    readonly callCardTool: "cards/call";
     /** 某条连接两端的工作状态快照。 */
     readonly connectionWork: "awareness/work";
     /** 中继运行诊断（被挡下的非真人来源计数）—— 可查询，不靠翻日志。 */

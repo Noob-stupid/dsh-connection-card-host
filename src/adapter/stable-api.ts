@@ -60,6 +60,28 @@ export interface ConnectionCardHostService {
   cardsRoot(): string
 
   /**
+   * 某连接上、**对某一端可见**的卡片工具。
+   *
+   * 卡片此前只能画面板（`renderPanel`）；`registerTool` 注册进去**没人读**
+   * （`card-api.ts` 里注释写着"暴露工具表供宿主按白名单转发调用"，但全仓库
+   * 没有第二处引用）。这两个方法把它接通：
+   * 会话通过 `connection_card_tool` 桥接工具能**列**、能**调**，
+   * 且**遵守卡片的可见范围**（`both` / `仅 A` / `仅 B`）。
+   */
+  listCardTools(
+    connectionId: string,
+    side: 'a' | 'b',
+  ): { instanceId: string; cardId: string; scope: string; tools: string[] }[]
+
+  /** 调用某张卡片的工具（**带可见范围校验**）。 */
+  callCardTool(
+    instanceId: string,
+    tool: string,
+    args: unknown,
+    side: 'a' | 'b',
+  ): Promise<{ ok: boolean; value?: unknown; reason?: string }>
+
+  /**
    * 中继运行诊断（**可查询，不靠翻日志**）。
    *
    * 目前暴露"被挡下的非真人来源计数"。存在的理由：日志会被清空/滚动，
@@ -269,6 +291,12 @@ export function createStableApi(
       return r
     },
     cardsRoot: () => cardHost?.installedCardsRoot() ?? '',
+    listCardTools: (cid, side) => cardHost?.listCardTools(cid, side) ?? [],
+    callCardTool: async (instanceId, tool, args, side) =>
+      cardHost?.callCardTool(instanceId, tool, args, side) ?? {
+        ok: false,
+        reason: '卡片宿主未装配',
+      },
     relayDiagnostics: () => {
       const s = bridge?.skippedSummary() ?? { entries: [], total: 0 }
       return {

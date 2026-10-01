@@ -73,6 +73,43 @@ export declare class CardHost {
     setCardScope(instanceId: string, scope: CardScope): boolean;
     getCardApi(instanceId: string): CardAPI | undefined;
     /**
+     * 某张卡片注册的工具表。
+     *
+     * 卡片通过 `api.registerTool(name, fn)` 注册的能力此前是**死路** ——
+     * 注册进一个 Map 就再没人读（`card-api.ts` 里注释写着"暴露工具表供宿主
+     * 按白名单转发调用"，但全仓库没有第二处引用）。
+     * 现在由宿主按**可见范围**转发，会话才有办法调到。
+     */
+    private toolsOf;
+    /**
+     * 列出某连接上、**对某一端可见**的卡片工具。
+     *
+     * 可见性规则（这是卡片与 DSH 全局插件的关键差别）：
+     *   scope='both'      → 两端都能调
+     *   scope='a' | 'b'   → **只有那一端**能调
+     *
+     * @param connectionId 连接
+     * @param side 调用方在连接的哪一端
+     */
+    listCardTools(connectionId: string, side: 'a' | 'b'): {
+        instanceId: string;
+        cardId: string;
+        scope: string;
+        tools: string[];
+    }[];
+    /**
+     * 调用某张卡片注册的工具 —— **带可见范围校验**。
+     *
+     * 校验不通过时明确拒绝（而不是"找不到工具"这种含糊理由），
+     * 因为"这张卡片对你不可见"和"这张卡片没提供这个工具"是两回事，
+     * 排查时含义完全不同。
+     */
+    callCardTool(instanceId: string, tool: string, args: unknown, side: 'a' | 'b'): Promise<{
+        ok: boolean;
+        value?: unknown;
+        reason?: string;
+    }>;
+    /**
      * 渲染卡片面板 HTML。
      *
      * 优先 `renderPanel(api)`（纯字符串，宿主友好）；

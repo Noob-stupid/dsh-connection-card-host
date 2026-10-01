@@ -130,6 +130,17 @@ function buildEndpoints(
     [RPC_ENDPOINTS.uninstallCard]: (p) => service.uninstallCard(str(p, 'cardId')),
     [RPC_ENDPOINTS.cardsRoot]: () => service.cardsRoot(),
 
+    // 卡片给会话提供的能力 —— 此前 `registerTool` 注册进去**没人读**，
+    // 这两个端点把工具表接通（会话侧走 `connection_card_tool` 工具）。
+    [RPC_ENDPOINTS.listCardTools]: (p) => {
+      const raw = p as { side?: unknown } | null
+      return service.listCardTools(str(p, 'connectionId'), raw?.side === 'b' ? 'b' : 'a')
+    },
+    [RPC_ENDPOINTS.callCardTool]: (p) => {
+      const raw = p as { side?: unknown; args?: unknown } | null
+      return service.callCardTool(str(p, 'instanceId'), str(p, 'tool'), raw?.args ?? {}, raw?.side === 'b' ? 'b' : 'a')
+    },
+
     [RPC_ENDPOINTS.unloadCard]: async (p) => {
       await service.unloadCard(str(p, 'instanceId'))
       return null
