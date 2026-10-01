@@ -514,6 +514,29 @@ export const CONNECTION_CARD_CSS = `
  * 而 auto 外边距只在 flex/grid 容器里生效。少了它，按钮会挤在计数后面
  * （用户截图里就是这样）。
  */
+/*
+ * 可关闭的说明块（DismissibleHint）—— 右上角一个 ×，关掉后不再显示。
+ * 外层 relative，× 绝对定位到右上角；正文留出右上角空间，别顶到 × 底下。
+ */
+.ccr-dismissible { position: relative; }
+.ccr-dismissible__close {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.4;
+  cursor: pointer;
+}
+.ccr-dismissible__close:hover { opacity: 0.9; background: rgba(128, 128, 128, 0.18); }
+.ccr-dismissible .ccr-field__hint { padding-right: 22px; }
 .ccr-cards__head {
   display: flex;
   align-items: center;

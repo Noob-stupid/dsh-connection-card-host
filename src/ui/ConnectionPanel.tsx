@@ -562,15 +562,23 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
                         </div>
                       ))}
 
-                      <div className="ccr-field__hint">
-                        <strong>这个开关控制的是「允许发哪类消息」，不是「对方能不能干活」</strong>
-                        —— 对方任何时候都能自己做事，与这里无关。两个方向互不影响，
-                        可以做成一端可写入、另一端只读。
-                      </div>
-                      <div className="ccr-field__hint">
-                        只读<strong>不影响感知</strong>：工作状态与公约盒都是对端主动查询的，
-                        与权限无关。降低权限立即生效；提高权限需要被授权的一方确认。
-                      </div>
+                      {/*
+                        这两条是「教一次就够」的说明 —— 关掉后不再显示。
+                        **按连接记**（localStorage 键里带 connectionId）：
+                        新建的连接 id 不同 → 自然重新显示，正好是用户要的
+                        「除非新建连接」。
+                      */}
+                      <DismissibleHint hintKey={`perm:${conn.id}`}>
+                        <div className="ccr-field__hint">
+                          <strong>这个开关控制的是「允许发哪类消息」，不是「对方能不能干活」</strong>
+                          —— 对方任何时候都能自己做事，与这里无关。两个方向互不影响，
+                          可以做成一端可写入、另一端只读。
+                        </div>
+                        <div className="ccr-field__hint">
+                          只读<strong>不影响感知</strong>：工作状态与公约盒都是对端主动查询的，
+                          与权限无关。降低权限立即生效；提高权限需要被授权的一方确认。
+                        </div>
+                      </DismissibleHint>
                     </div>
 
                     <CardStack connection={conn} client={client} onChanged={refresh} />
@@ -601,6 +609,59 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
           })}
         </div>
       </section>
+    </div>
+  )
+}
+
+/**
+ * 可关闭的说明块 —— 「教一次就够」的文案用它包起来。
+ *
+ * ## 为什么按 `hintKey` 记、存在 localStorage
+ *
+ * 用户的要求是：**关掉后不再显示，除非新建连接**。
+ * 把 connectionId 编进键里，新建的连接 id 不同 → 查不到"已关闭"记录 → 自动重新显示。
+ * 正好是这个语义，不需要额外的"新建连接时重置"逻辑。
+ *
+ * 存本地而不是存进连接数据：这是**这一台浏览器上的阅读偏好**，
+ * 不是连接本身的属性 —— 没必要同步给对端，也没必要进持久化文件。
+ */
+function DismissibleHint({
+  hintKey,
+  children,
+}: {
+  hintKey: string
+  children: React.ReactNode
+}) {
+  const storageKey = `ccr-hint-dismissed:${hintKey}`
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(storageKey) === '1'
+    } catch {
+      // 隐私模式等拿不到 localStorage —— 那就当没关过（宁可多显示，不要报错）
+      return false
+    }
+  })
+
+  if (dismissed) return null
+
+  return (
+    <div className="ccr-dismissible">
+      <button
+        type="button"
+        className="ccr-hint__close"
+        title="关闭后不再显示（新建连接时会重新出现）"
+        onClick={() => {
+          setDismissed(true)
+          try {
+            localStorage.setItem(storageKey, '1')
+          } catch {
+            /* 存不进去只影响"下次还显示"，不该让关闭动作失败 */
+          }
+        }}
+      >
+        ×
+      </button>
+      {children}
     </div>
   )
 }
