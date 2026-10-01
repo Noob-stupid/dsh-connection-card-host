@@ -311,7 +311,9 @@ to queue.
 | **Unrelated connections** | **0 interruptions** | connecting doesn't wake anyone; unrelated sessions carry on |
 
 **The one fixed cost**: this plugin's five `connection_*` tools cost roughly **1,700 tokens
-resident**. (This can be reduced further — see [Status](#status).)
+resident** — **and only in sessions that have connections**: sessions with none have them
+stripped automatically by `system-prompt/assemble` (measured: a 0-connection session had 5
+tools removed, logged as `按会话 scope 隐藏了 5 个感知工具`).
 
 ---
 
@@ -409,12 +411,12 @@ See [`docs/card-protocol.md`](docs/card-protocol.md) for details.
   **update** / crash isolation
 - Card tools: bridge invocation with enforced visibility
 - Card directories are **versioned** (so a mounted card can still be updated)
+- **Per-session tool scoping**: sessions with no connections do **not** carry the `connection_*` schemas (~1,700 tokens saved), via the official `system-prompt/assemble` waterfall; the whole chain is **fail-open**
 
 **Known gaps**
 
 | Item | Notes |
 |:---|:---|
-| **Per-session tool scoping** | The five `connection_*` tools are registered **globally** — a session with no connections still carries ~1,700 tokens. The seam is located (`system-prompt/assemble` waterfall); the listener registration form is still unknown |
 | `mountUI` / `requestRemote` | Stubs (`mountUI` only sets a dataset attribute) |
 | Card tool schemas | Deliberately take no separate schema; callers must list before calling |
 

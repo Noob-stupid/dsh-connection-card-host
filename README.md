@@ -288,8 +288,9 @@ B 端硬调它 → 拒绝     「这张卡片只对 A 端可见（你在 B 端�
 | **自动镜像** | **0（已关闭）** | 关闭前实测 77.8% 是无用内容 |
 | **不相关的连接** | **0 打扰** | 搭线不唤醒；不相关的会话照常干活 |
 
-**唯一固定成本**：本插件 5 个 `connection_*` 工具的 schema ≈ **1700 tokens 常驻**。
-（这一项还可以再优化 —— 见[当前状态](#当前状态)。）
+**唯一固定成本**：本插件 5 个 `connection_*` 工具的 schema ≈ **1700 tokens 常驻** ——
+**且只在参与了连接的会话里常驻**：没连接的会话由 `system-prompt/assemble` 自动摘掉
+（实测：一个 0 连接的会话被摘 5 个工具，日志 `按会话 scope 隐藏了 5 个感知工具`）。
 
 ---
 
@@ -390,12 +391,13 @@ export function renderPanel(api) {
 - 卡片：模板发现 / 装载 / 按端可见 / 面板内安装 / **更新** / 崩溃隔离
 - 卡片工具：桥接调用 + 可见范围强制
 - 卡片目录**版本化**（装载中也能更新）
+- **工具按会话 scope**：没参与连接的会话**不背** `connection_*` 的 schema（省 ~1700 tokens），
+  走官方 `system-prompt/assemble` waterfall，整条链 **fail-open**（拿不准就原样下发）
 
 **已知未做**
 
 | 项 | 说明 |
 |:---|:---|
-| **工具按会话 scope** | 5 个 `connection_*` 目前**全局注册** —— 没连接的会话也背着 ~1700 tokens。接缝已定位（`system-prompt/assemble` waterfall），差注册写法 |
 | `mountUI` / `requestRemote` | 空壳（`mountUI` 只设了个 dataset 属性） |
 | 卡片工具的 schema | 不占独立 schema（有意为之）；调用方需先 list 再 call |
 
