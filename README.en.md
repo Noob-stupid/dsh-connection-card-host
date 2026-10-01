@@ -411,7 +411,7 @@ See [`docs/card-protocol.md`](docs/card-protocol.md) for details.
   **update** / crash isolation
 - Card tools: bridge invocation with enforced visibility
 - Card directories are **versioned** (so a mounted card can still be updated)
-- **Per-session tool scoping**: sessions with no connections do **not** carry the `connection_*` schemas (~1,700 tokens saved), via the official `system-prompt/assemble` waterfall; the whole chain is **fail-open**
+- **Per-session tool scoping**: sessions with no connections do **not** carry the `connection_*` schemas (~1,700 tokens saved), via the official `system-prompt/assemble` waterfall; the whole chain is **fail-open** — **behaviour introduced in `v1.0.1`** (`v1.0.0` registers them globally)
 
 **Known gaps**
 

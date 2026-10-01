@@ -393,6 +393,7 @@ export function renderPanel(api) {
 - 卡片目录**版本化**（装载中也能更新）
 - **工具按会话 scope**：没参与连接的会话**不背** `connection_*` 的 schema（省 ~1700 tokens），
   走官方 `system-prompt/assemble` waterfall，整条链 **fail-open**（拿不准就原样下发）
+  —— **`v1.0.1` 起才有此行为**；`v1.0.0` 是全局注册
 
 **已知未做**
 
