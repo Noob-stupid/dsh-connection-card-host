@@ -329,11 +329,11 @@ dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
 # same thing, GitHub shorthand (the github: prefix is optional) — a slash means a GitHub repo
 dsh plugin --profile web add Noob-stupid/dsh-connection-card-host
 
-# pin a version: use the tgz attached to Releases (v1.0.0 is published)
-dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.0/dsh-external-dsh-connection-card-host-1.0.0.tgz
+# pin a version: use the tgz attached to Releases (v1.0.1 is published)
+dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.1/dsh-external-dsh-connection-card-host-1.0.1.tgz
 
 # the same tgz, downloaded first — identical result
-dsh plugin --profile web add ./dsh-external-dsh-connection-card-host-1.0.0.tgz
+dsh plugin --profile web add ./dsh-external-dsh-connection-card-host-1.0.1.tgz
 ```
 
 - Development happens on the **preview line**,

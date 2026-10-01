@@ -306,11 +306,11 @@ dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
 # 同上，GitHub 简写（可省 github:）—— 带斜杠就走 GitHub 仓库
 dsh plugin --profile web add Noob-stupid/dsh-connection-card-host
 
-# 要固定版本：用 Releases 的 tgz 附件（当前已发布 v1.0.0）
-dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.0/dsh-external-dsh-connection-card-host-1.0.0.tgz
+# 要固定版本：用 Releases 的 tgz 附件（当前已发布 v1.0.1）
+dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.1/dsh-external-dsh-connection-card-host-1.0.1.tgz
 
 # 同一份 tgz 先下载到本地再装，效果相同
-dsh plugin --profile web add ./dsh-external-dsh-connection-card-host-1.0.0.tgz
+dsh plugin --profile web add ./dsh-external-dsh-connection-card-host-1.0.1.tgz
 ```
 
 - 开发发生在**预览线仓库** [`dsh-connection-card-host-preview`](https://github.com/Noob-stupid/dsh-connection-card-host-preview)；
