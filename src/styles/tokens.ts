@@ -507,17 +507,20 @@ export const CONNECTION_CARD_CSS = `
 /* 收起时只剩标题那一行 —— 去掉多余的上下留白 */
 .ccr-cards--folded { margin-bottom: 12px; }
 
-/* 「+ 添加卡片」顶到标题行最右 */
-.ccr-cards__add { margin-left: auto; }
-
-/* 卡片面板的逐卡开关所在行（在标题行下面、卡片上面） */
-.ccr-cards__tools {
+/*
+ * 卡片区标题行：卡片 ▸ 3 ………………………… + 添加卡片
+ *
+ * ⚠️ display:flex 是**必需**的 —— 「+ 添加卡片」靠 margin-left:auto 顶到右边，
+ * 而 auto 外边距只在 flex/grid 容器里生效。少了它，按钮会挤在计数后面
+ * （用户截图里就是这样）。
+ */
+.ccr-cards__head {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  margin-bottom: 6px;
+  gap: 8px;
+  margin-bottom: 8px;
 }
-.ccr-cards__tools:empty { display: none; }
+.ccr-cards__add { margin-left: auto; }
 
 /* 卡片面板的收起/展开箭头（默认收起，见 CardStack 的 expandedCards） */
 .ccr-card__toggle {

@@ -259,20 +259,16 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
 
   const installed = new Set(cards.map((c) => c.templateId))
   const available = templates.filter((t) => !installed.has(t.templateId))
-  /** 还有卡片展开着吗 —— 决定「全部收起/全部展开」显示哪个。 */
-  const anyExpanded = cards.some((c) => expandedCards[c.instanceId] === true)
   /**
    * 整个「卡片」区域的收起/展开。
    *
    * **保留原来那一行的样式**，只在「卡片」两个字右侧加一个小三角：
-   *   收起 = 只剩这一行（卡片 ▸ 3        + 添加卡片）
+   *   收起 = 只剩这一行（卡片 ▸ 3                  + 添加卡片）
    *   展开 = 下面列出全部卡片
    *
-   * ⚠️ 这里有两级「展开」，别混：
-   *   · 区块级（这个）—— 收起整个卡片区
-   *   · 卡片级（`expandedCards`）—— 收起某一张卡的面板
-   * 所以逐卡开关放在**下面那行**，文案写明「卡片面板全部展开」，
-   * 不和标题栏那个小三角挤在一起 —— 两个"展开"并排会读不出谁管谁。
+   * 逐张卡片的面板各由**卡片自己那行的 ▸** 控制（`expandedCards`）。
+   * **不做"全部展开"这种批量开关** —— 用户明确要求去掉：
+   * 卡片本来就不多，两层"展开"并排反而读不出谁管谁。
    */
   const [sectionOpen, setSectionOpen] = useState(true)
 
@@ -303,31 +299,6 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
 
       {sectionOpen && (
         <>
-          <div className="ccr-cards__tools">
-            {/*
-              逐卡面板的开关。放在这一行（挨着卡片），不挤进标题栏 ——
-              标题栏已经有区块级的三角，两个"展开"并排会读不出谁管谁。
-              只有 1 张卡时不显示（没意义）。
-            */}
-            {cards.length > 1 && (
-              <button
-                type="button"
-                className="ccr-link"
-                title={anyExpanded ? '收起所有卡片面板' : '展开所有卡片面板'}
-                onClick={() => {
-                  if (anyExpanded) {
-                    setExpandedCards({})
-                  } else {
-                    const next: Record<string, boolean> = {}
-                    for (const c of cards) next[c.instanceId] = true
-                    setExpandedCards(next)
-                  }
-                }}
-              >
-                {anyExpanded ? '卡片面板全部收起' : '卡片面板全部展开'}
-              </button>
-            )}
-          </div>
 
       {error && <div className="ccr-error">{error}</div>}
 
