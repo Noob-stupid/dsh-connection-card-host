@@ -8,7 +8,11 @@
 这个插件把「连接」做成 DSH 里的一等对象：**会话是节点，连接是容器，卡片是连接级插件**。
 
 <p align="center">
-  <img src="docs/assets/demo-drag.svg" width="680" alt="从输入框左侧圆点拖到会话行即可建立连接；已连的行拖上去即断开" />
+  <img src="docs/assets/demo-drag-rail.gif" width="560" alt="从会话行拖出连线：落点高亮 → 松手连上 → 会话行右侧出现竖轨，两端各一个彩色圆点表示该方向的权限" />
+</p>
+
+<p align="center">
+  <sub>拖拽建连：从会话行拖出 → 落点 → 连上后出现竖轨与权限彩点（<a href="docs/assets/demo-drag-rail.mp4">原视频</a>）</sub>
 </p>
 
 ---
@@ -45,11 +49,26 @@
 
 ## 三十秒上手
 
-1. **建连接**：按住输入框左侧的圆点，拖到左侧会话列表里的某一行。
+1. **建连接**：按住输入框左侧的圆点（或会话行上的「…」），拖到左侧会话列表里的某一行。
+
+<p align="center">
+  <img src="docs/assets/demo-drag-anchor.gif" width="480" alt="从输入框左侧的锚点圆点拖出一条弧线" />
+</p>
+
+<p align="center">
+  <sub><a href="docs/assets/demo-drag-anchor.mp4">原视频</a></sub>
+</p>
+
    - **开关语义**：拖到未连的行 = 连接；拖到**已连**的行 = 断开（悬停时会提示）
    - 也可以从侧栏「连接」面板里选两个会话
 2. **完事**。两端各自收到一条静默通知（说清了连上了谁、能做什么），**不打断任何人**。
 3. 想看得更细：点侧栏「连接」，或者让会话自己调 `connection_peer_work`。
+
+连接建立后，会话行右侧会出现**竖轨**，两端各一个**彩色圆点** —— 那是该方向的权限：
+
+<p align="center">
+  <img src="docs/assets/shot-connections.png" width="620" alt="连接面板：每个连接的权限可以两个方向分别设置，卡片、感知、约定都在同一条连接下" />
+</p>
 
 ---
 
@@ -145,6 +164,10 @@ B 端硬调它 → 拒绝     「这张卡片只对 A 端可见（你在 B 端�
 会话通过桥接调用，拿回真实解析结果。
 
 ### 面板内安装与更新
+
+<p align="center">
+  <img src="docs/assets/shot-card-picker.png" width="620" alt="卡片选择器：内置卡片一键加；也可以给包名、仓库 tgz 地址或本地目录来安装" />
+</p>
 
 - **装**：包名 / 仓库 tgz 地址 / 本地目录 → 装进我们自己的目录，**不跑 pnpm、不改 profile**
 - **更新**：已安装的卡片带「检查更新」入口，三态分列
