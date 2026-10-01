@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 380" width="680" height="380" font-family="ui-sans-serif, system-ui, 'Segoe UI', sans-serif">
+  <title>拖拽建立连接</title>
+  <desc>从输入框左侧的锚点拖到会话行：落点提示 → 松手连上 → 连线持久可用</desc>
+  <defs>
+    <style><![CDATA[
+      .bg{fill:#0d1117}
+      .row{fill:#161b22;stroke:#30363d;stroke-width:1}
+      .rowtxt{fill:#c9d1d9;font-size:13px}
+      .hint{fill:#8b949e;font-size:11px}
+      .title{fill:#e6edf3;font-size:13px;font-weight:600}
+
+      /* 拖动线：用 dash 逐步画出 */
+      .drag{stroke:#3b82f6;stroke-width:2;fill:none;stroke-linecap:round;
+            stroke-dasharray:260;stroke-dashoffset:260;animation:draw 1.6s ease-in-out infinite}
+      @keyframes draw{
+        0%{stroke-dashoffset:260;opacity:0}
+        8%{opacity:1}
+        55%{stroke-dashoffset:0;opacity:1}
+        75%{stroke-dashoffset:0;opacity:1}
+        100%{stroke-dashoffset:0;opacity:0}
+      }
+
+      /* 拖动的圆点 */
+      .cursor{animation:travel 1.6s ease-in-out infinite}
+      @keyframes travel{
+        0%{transform:translate(0,0);opacity:0}
+        8%{opacity:1}
+        55%{transform:translate(268px,-58px);opacity:1}
+        75%{transform:translate(268px,-58px);opacity:1}
+        100%{transform:translate(268px,-58px);opacity:0}
+      }
+
+      /* 悬停告示"松手即连接" */
+      .tip{animation:tip 1.6s ease-in-out infinite}
+      @keyframes tip{0%,45%{opacity:0}55%,78%{opacity:1}100%{opacity:0}}
+
+      /* 连接成功后：锚点与行端点染色 */
+      .anchored{animation:lit 1.6s ease-in-out infinite}
+      @keyframes lit{0%,55%{fill:#484f58}62%,88%{fill:#3b82f6}100%{fill:#484f58}}
+
+      /* 竖轨：连接建立后出现 */
+      .rail{stroke:#3b82f6;stroke-width:2;stroke-linecap:round;
+            stroke-dasharray:70;stroke-dashoffset:70;animation:rail 1.6s ease-in-out infinite}
+      @keyframes rail{0%,62%{stroke-dashoffset:70;opacity:0}72%,90%{stroke-dashoffset:0;opacity:1}100%{opacity:0}}
+
+      .permdot{animation:dot 1.6s ease-in-out infinite}
+      @keyframes dot{0%,62%{opacity:0}72%,90%{opacity:1}100%{opacity:0}}
+    ]]></style>
+  </defs>
+
+  <rect class="bg" width="680" height="380" rx="10"/>
+
+  <!-- 会话行 -->
+  <text class="hint" x="24" y="30">左侧会话列表</text>
+  <rect class="row" x="24" y="44" width="250" height="34" rx="7"/>
+  <text class="rowtxt" x="38" y="66">准备测试</text>
+  <rect class="row" x="24" y="86" width="250" height="34" rx="7"/>
+  <text class="rowtxt" x="38" y="108">CS2 延迟优化</text>
+  <rect class="row" x="24" y="128" width="250" height="34" rx="7"/>
+  <text class="rowtxt" x="38" y="150">水面与船</text>
+
+  <!-- 行的右端端点 -->
+  <circle class="anchored" cx="258" cy="61" r="4" fill="#484f58"/>
+  <circle cx="258" cy="103" r="4" fill="#484f58"/>
+  <circle cx="258" cy="145" r="4" fill="#484f58"/>
+
+  <!-- 竖轨（连上之后持久显示） -->
+  <path class="rail" d="M 286 61 L 286 145"/>
+  <circle class="permdot" cx="286" cy="61" r="4.5" fill="#3b82f6"/>
+  <circle class="permdot" cx="286" cy="145" r="4.5" fill="#f97316"/>
+
+  <!-- 拖动线 + 光标 -->
+  <path class="drag" d="M 120 300 C 190 250, 240 160, 258 61"/>
+  <g class="cursor">
+    <circle cx="120" cy="300" r="6" fill="#3b82f6"/>
+    <circle cx="120" cy="300" r="11" fill="none" stroke="#3b82f6" stroke-width="1" opacity="0.35"/>
+  </g>
+
+  <g class="tip">
+    <rect x="300" y="40" width="132" height="26" rx="6" fill="#1f6feb" opacity="0.9"/>
+    <text x="312" y="57" fill="#fff" font-size="11">松手即建立连接</text>
+  </g>
+
+  <!-- 输入框区 -->
+  <rect class="row" x="80" y="322" width="420" height="36" rx="9"/>
+  <circle cx="100" cy="340" r="5.5" fill="#484f58"/>
+  <circle cx="100" cy="340" r="5.5" fill="#3b82f6" opacity="0.85" class="anchored"/>
+  <text class="hint" x="118" y="344">按住这个圆点拖到会话行 → 建立连接；拖到已连的行 → 断开</text>
+
+  <text class="title" x="560" y="30">拖拽建连</text>
+  <text class="hint" x="560" y="48">开关语义：</text>
+  <text class="hint" x="560" y="64">已连=断开</text>
+  <text class="hint" x="560" y="80">未连=连接</text>
+</svg>
