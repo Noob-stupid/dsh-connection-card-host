@@ -88,6 +88,10 @@ export const RPC_ENDPOINTS = {
   listCardTools: 'cards/tools',
   /** 调用某张卡片的工具（**带可见范围校验**）。 */
   callCardTool: 'cards/call',
+  /** 检查某张已安装卡片有没有更新（判断不了时带 reason，**不谎报"已是最新"**）。 */
+  checkCardUpdate: 'cards/check-update',
+  /** 按记录的来源更新一张卡片（装载中也能更新，靠版本化目录）。 */
+  updateCard: 'cards/update',
 
   // ── 协作感知 A 层：工作状态（面板显示"两边各自在干什么"） ──
   /** 某条连接两端的工作状态快照。 */

@@ -82,6 +82,8 @@ export declare class CardHost {
      */
     setCardScope(instanceId: string, scope: CardScope): boolean;
     getCardApi(instanceId: string): CardAPI | undefined;
+    /** 某个模板当前装载了哪些实例（更新卡片后要逐个重载）。 */
+    listInstancesByTemplate(templateId: string): CardInstance[];
     /**
      * 某张卡片注册的工具表。
      *

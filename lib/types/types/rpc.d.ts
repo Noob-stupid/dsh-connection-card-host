@@ -80,6 +80,10 @@ export declare const RPC_ENDPOINTS: {
     readonly listCardTools: "cards/tools";
     /** 调用某张卡片的工具（**带可见范围校验**）。 */
     readonly callCardTool: "cards/call";
+    /** 检查某张已安装卡片有没有更新（判断不了时带 reason，**不谎报"已是最新"**）。 */
+    readonly checkCardUpdate: "cards/check-update";
+    /** 按记录的来源更新一张卡片（装载中也能更新，靠版本化目录）。 */
+    readonly updateCard: "cards/update";
     /** 某条连接两端的工作状态快照。 */
     readonly connectionWork: "awareness/work";
     /** 中继运行诊断（被挡下的非真人来源计数）—— 可查询，不靠翻日志。 */

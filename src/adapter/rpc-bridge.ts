@@ -141,6 +141,10 @@ function buildEndpoints(
       return service.callCardTool(str(p, 'instanceId'), str(p, 'tool'), raw?.args ?? {}, raw?.side === 'b' ? 'b' : 'a')
     },
 
+    // 卡片更新
+    [RPC_ENDPOINTS.checkCardUpdate]: (p) => service.checkCardUpdate(str(p, 'cardId')),
+    [RPC_ENDPOINTS.updateCard]: (p) => service.updateCard(str(p, 'cardId')),
+
     [RPC_ENDPOINTS.unloadCard]: async (p) => {
       await service.unloadCard(str(p, 'instanceId'))
       return null

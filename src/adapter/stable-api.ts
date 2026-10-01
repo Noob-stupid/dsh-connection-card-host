@@ -11,6 +11,7 @@ import type { SessionBridge, DeliverUrgency } from './session-bridge.js'
 import type { WorkState, WorkStateTracker } from '../core/work-state.js'
 import type { AddResult, Convention, ConventionBox } from '../core/box.js'
 import { installCard, uninstallCard, type InstallResult } from '../card-host/installer.js'
+import { checkCardUpdate, readSourceRecord, type UpdateCheck } from '../card-host/updates.js'
 
 export type { KnownSession, CardTemplateInfo, WorkState, Convention, AddResult, InstallResult }
 
@@ -56,6 +57,27 @@ export interface ConnectionCardHostService {
   installCard(spec: string): Promise<InstallResult>
   /** 卸载一张已安装的卡片（只删我们目录下的）。 */
   uninstallCard(cardId: string): { ok: boolean; reason?: string }
+
+  /**
+   * 检查某张已安装卡片有没有更新。
+   *
+   * **判断不了时带 `reason`，而不是 `hasUpdate: false`** ——
+   * "无法检查"和"已是最新"是两回事，面板必须能区分，否则就是谎报。
+   */
+  checkCardUpdate(cardId: string): UpdateCheck
+
+  /**
+   * 更新一张卡片：照着**记录的来源**重装 + 让已装载的实例重载。
+   *
+   * 能"装载中更新"靠的是版本化目录（新版本写新目录，不碰被锁的旧的）。
+   */
+  updateCard(cardId: string): Promise<{
+    ok: boolean
+    version?: string
+    reloaded?: number
+    dir?: string
+    reason?: string
+  }>
   /** 已安装卡片的根目录（面板显示给用户看，让"装到哪儿了"是透明的）。 */
   cardsRoot(): string
 
@@ -291,6 +313,50 @@ export function createStableApi(
       return r
     },
     cardsRoot: () => cardHost?.installedCardsRoot() ?? '',
+
+    /**
+     * 检查某张已安装卡片有没有更新。
+     *
+     * **判断不了时会带 `reason` 而不是 `hasUpdate: false`** ——
+     * "无法检查"和"已是最新"是两回事，面板必须能区分，否则就是谎报。
+     */
+    checkCardUpdate: (cardId) => {
+      if (!cardHost) return { cardId, spec: '', kind: 'dir' as const, dirName: '', reason: '卡片宿主未装配' }
+      return checkCardUpdate(cardHost.installedCardsRoot(), cardId)
+    },
+
+    /**
+     * 更新一张卡片：照着**记录的来源**重装，然后让装载的实例重载。
+     *
+     * 之所以能"装载中更新"：安装走**版本化目录**（新版本写新目录，不碰被锁的旧的），
+     * 指针切过去之后 `reloadCard` 从新目录导入 —— 所有子模块的 URL 都是新的，
+     * 不会被 ESM 缓存命中旧代码。
+     */
+    updateCard: async (cardId) => {
+      if (!cardHost) return { ok: false, reason: '卡片宿主未装配' }
+      const root = cardHost.installedCardsRoot()
+      const rec = readSourceRecord(root, cardId)
+      if (!rec) {
+        return { ok: false, reason: '没有来源记录，无法自动更新；请用原来的地址重新安装一次' }
+      }
+      const r = await installCard(rec.spec, root, audit)
+      if (!r.ok) return { ok: false, reason: r.reason }
+      cardHost.scanTemplates(true)
+
+      // 已装载的实例重载到新代码（没装载的话下次装载自然是新的）
+      let reloaded = 0
+      for (const inst of cardHost.listInstancesByTemplate(cardId)) {
+        await cardHost.reloadCard(inst.instanceId)
+        reloaded++
+      }
+      audit(`卡片已更新：${cardId} → ${r.version ?? '?'}（重载 ${reloaded} 个实例）`)
+      return {
+        ok: true,
+        version: r.version,
+        reloaded,
+        dir: r.dir,
+      }
+    },
     listCardTools: (cid, side) => cardHost?.listCardTools(cid, side) ?? [],
     callCardTool: async (instanceId, tool, args, side) =>
       cardHost?.callCardTool(instanceId, tool, args, side) ?? {

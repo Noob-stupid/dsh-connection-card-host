@@ -11,6 +11,7 @@ import type { SessionBridge, DeliverUrgency } from './session-bridge.js';
 import type { WorkState, WorkStateTracker } from '../core/work-state.js';
 import type { AddResult, Convention, ConventionBox } from '../core/box.js';
 import { type InstallResult } from '../card-host/installer.js';
+import { type UpdateCheck } from '../card-host/updates.js';
 export type { KnownSession, CardTemplateInfo, WorkState, Convention, AddResult, InstallResult };
 /** 协作感知两层的依赖（由 index.ts 装配后注入）。 */
 export interface AwarenessDeps {
@@ -49,6 +50,25 @@ export interface ConnectionCardHostService {
         ok: boolean;
         reason?: string;
     };
+    /**
+     * 检查某张已安装卡片有没有更新。
+     *
+     * **判断不了时带 `reason`，而不是 `hasUpdate: false`** ——
+     * "无法检查"和"已是最新"是两回事，面板必须能区分，否则就是谎报。
+     */
+    checkCardUpdate(cardId: string): UpdateCheck;
+    /**
+     * 更新一张卡片：照着**记录的来源**重装 + 让已装载的实例重载。
+     *
+     * 能"装载中更新"靠的是版本化目录（新版本写新目录，不碰被锁的旧的）。
+     */
+    updateCard(cardId: string): Promise<{
+        ok: boolean;
+        version?: string;
+        reloaded?: number;
+        dir?: string;
+        reason?: string;
+    }>;
     /** 已安装卡片的根目录（面板显示给用户看，让"装到哪儿了"是透明的）。 */
     cardsRoot(): string;
     /**

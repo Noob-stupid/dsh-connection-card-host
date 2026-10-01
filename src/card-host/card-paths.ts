@@ -98,6 +98,33 @@ export function currentPointerName(cardId: string): string {
   return `${safeCardId(cardId)}.current`
 }
 
+/**
+ * 安装来源记录文件名。
+ *
+ * 存下来才能在以后回答两个问题：
+ *   · 这个卡片是从哪装的？（更新要照着同一个来源重装）
+ *   · 装的什么版本？（和上游最新版比较，才知道要不要更新按钮亮起来）
+ */
+export function sourceRecordName(cardId: string): string {
+  return `${safeCardId(cardId)}.source.json`
+}
+
+/** 一次安装的来源记录。 */
+export interface CardSourceRecord {
+  /** 原始安装 spec（本地目录 / tgz / npm 包名 / HTTP 地址）。 */
+  spec: string
+  /** 来源种类。 */
+  kind: 'dir' | 'tgz-file' | 'tgz-url' | 'npm'
+  /** 安装时的版本（取自包内 package.json）。 */
+  installedVersion?: string
+  /** 当前生效的版本目录名。 */
+  dirName: string
+  /** 内容指纹（本地来源用它判断"来源是不是变了"）。 */
+  fingerprint?: string
+  /** 安装时刻（毫秒）。 */
+  installedAt: number
+}
+
 /** 目录名是不是"版本化"形式（含 `@<ver>-<8位指纹>`）。 */
 export function parseVersionedDirName(name: string): { cardId: string; version: string; fp: string } | null {
   const m = /^(.+)@([^@]+)-([0-9a-f]{8})$/.exec(name)

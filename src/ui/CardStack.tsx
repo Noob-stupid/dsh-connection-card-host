@@ -41,6 +41,16 @@ const SCOPE_CHOICES: { value: CardScope; label: string; hint: string }[] = [
 export function CardStack({ connection, client, onChanged }: CardStackProps) {
   const [templates, setTemplates] = useState<CardTemplateView[]>([])
   const [panels, setPanels] = useState<Record<string, string | null>>({})
+  /**
+   * 卡片更新状态：templateId → 检查结论。
+   *
+   * **`hasUpdate` 与 `reason` 要分开呈现** —— "无法检查"和"已是最新"是两回事，
+   * 混在一起就是谎报（"检查更新"按钮点了却什么也没查，却显示"已是最新"）。
+   */
+  const [upd, setUpd] = useState<
+    Record<string, { hasUpdate?: boolean; latestVersion?: string; reason?: string }>
+  >({})
+  const [updBusy, setUpdBusy] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
@@ -111,6 +121,61 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
   )
 
   /** 装一张卡片到我们自己的目录，然后重扫模板。 */
+  /**
+   * 检查某张已安装卡片有没有更新。
+   *
+   * 结论**原样保留 `reason`** —— 面板会区分"有更新 / 已是最新 / 无法检查"三态。
+   */
+  const doCheckUpdate = useCallback(
+    async (templateId: string) => {
+      if (!client) return
+      setUpdBusy(templateId)
+      try {
+        const r = await client.checkCardUpdate(templateId)
+        setUpd((prev) => ({ ...prev, [templateId]: r }))
+        if (r.reason) setInstallMsg(`检查更新：${r.reason}`)
+      } catch (e) {
+        setUpd((prev) => ({
+          ...prev,
+          [templateId]: { reason: e instanceof Error ? e.message : String(e) },
+        }))
+      } finally {
+        setUpdBusy(null)
+      }
+    },
+    [client],
+  )
+
+  /**
+   * 更新一张已安装卡片：照着**记录的来源**重装，并让已装载的实例重载。
+   *
+   * 装载中也能更新，靠的是版本化目录（新版本写新目录，不碰被锁的旧目录）。
+   */
+  const doUpdate = useCallback(
+    async (templateId: string) => {
+      if (!client) return
+      setUpdBusy(templateId)
+      setInstallMsg(null)
+      try {
+        const r = await client.updateCard(templateId)
+        if (r.ok) {
+          setInstallMsg(
+            `已更新：v${r.version ?? '?'}${r.reloaded ? `（重载 ${r.reloaded} 个实例）` : ''}`,
+          )
+          setUpd((prev) => ({ ...prev, [templateId]: {} }))
+          await load()
+        } else {
+          setInstallMsg(`更新失败：${r.reason ?? '未知原因'}`)
+        }
+      } catch (e) {
+        setInstallMsg(e instanceof Error ? e.message : String(e))
+      } finally {
+        setUpdBusy(null)
+      }
+    },
+    [client, load],
+  )
+
   const doInstall = useCallback(async () => {
     if (!client) return
     const s = spec.trim()
@@ -247,6 +312,33 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
                 {/* 模板自己钉死了范围的话，用户选什么都会被覆盖 —— 提前说清 */}
                 {t.scope && ` · 固定仅${t.scope === 'a' ? 'A' : 'B'}端`}
               </span>
+
+              {/*
+                已安装的卡片给一个「检查更新 / 更新」入口。
+                状态分三种，而且**"无法判断"必须与"已是最新"分开显示** ——
+                谎报"已是最新"会让人以为检查过了，实际什么都没查。
+              */}
+              {t.source === 'installed' && (
+                <span
+                  className="ccr-card-option__upd"
+                  onClick={(e) => {
+                    // 别触发外层的"装载"按钮
+                    e.stopPropagation()
+                    if (upd[t.templateId]?.hasUpdate) void doUpdate(t.templateId)
+                    else void doCheckUpdate(t.templateId)
+                  }}
+                >
+                  {updBusy === t.templateId
+                    ? '…'
+                    : upd[t.templateId]?.hasUpdate
+                      ? `↑ 更新到 ${upd[t.templateId]?.latestVersion ?? '新版'}`
+                      : upd[t.templateId]?.reason
+                        ? '无法检查'
+                        : upd[t.templateId]
+                          ? '已是最新'
+                          : '检查更新'}
+                </span>
+              )}
             </button>
           ))}
         </div>

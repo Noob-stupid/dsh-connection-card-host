@@ -369,6 +369,11 @@ export class CardHost {
     return this.apiByInstance.get(instanceId)
   }
 
+  /** 某个模板当前装载了哪些实例（更新卡片后要逐个重载）。 */
+  listInstancesByTemplate(templateId: string): CardInstance[] {
+    return this.registry.listInstancesByTemplate(templateId)
+  }
+
   /**
    * 某张卡片注册的工具表。
    *

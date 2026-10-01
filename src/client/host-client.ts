@@ -110,6 +110,27 @@ export interface ConnectionCardHostClient {
   /** 卸载一张已安装的卡片（只删我们目录下的）。 */
   uninstallCard(cardId: string): Promise<{ ok: boolean; reason?: string }>
   /** 已安装卡片的根目录（面板显示用）。 */
+  /** 检查已安装卡片有没有更新（判断不了时带 reason，不谎报"已是最新"）。 */
+  checkCardUpdate(cardId: string): Promise<{
+    cardId: string
+    spec: string
+    kind: string
+    dirName: string
+    currentVersion?: string
+    latestVersion?: string
+    hasUpdate?: boolean
+    reason?: string
+  }>
+
+  /** 按记录的来源更新一张卡片（装载中也能更新，靠版本化目录）。 */
+  updateCard(cardId: string): Promise<{
+    ok: boolean
+    version?: string
+    reloaded?: number
+    dir?: string
+    reason?: string
+  }>
+
   cardsRoot(): Promise<string>
   /**
    * 中继运行诊断。**可查询，不靠翻日志** —— 日志会被清空/滚动，
@@ -216,6 +237,8 @@ export function createHostClient(rpc: RpcCaller): ConnectionCardHostClient {
     installCard: (spec) => invoke(RPC_ENDPOINTS.installCard, { spec }),
     uninstallCard: (cardId) => invoke(RPC_ENDPOINTS.uninstallCard, { cardId }),
     cardsRoot: () => invoke(RPC_ENDPOINTS.cardsRoot),
+    checkCardUpdate: (cardId) => invoke(RPC_ENDPOINTS.checkCardUpdate, { cardId }),
+    updateCard: (cardId) => invoke(RPC_ENDPOINTS.updateCard, { cardId }),
     relayDiagnostics: () => invoke(RPC_ENDPOINTS.relayDiagnostics),
     listCardTemplates: (connectionId) =>
       invoke(RPC_ENDPOINTS.listCardTemplates, connectionId ? { connectionId } : {}),

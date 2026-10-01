@@ -81,6 +81,11 @@ export class CardRegistry {
     )
   }
 
+  /** 某个模板当前装载在哪些连接上（更新卡片后要逐个重载）。 */
+  listInstancesByTemplate(templateId: string): CardInstance[] {
+    return Array.from(this.instances.values()).filter((i) => i.templateId === templateId)
+  }
+
   /** 缓存动态 import 的卡片模块（templateId → apply/mountPanel）。 */
   setModule(templateId: string, mod: CardModule): void {
     this.modules.set(templateId, mod)

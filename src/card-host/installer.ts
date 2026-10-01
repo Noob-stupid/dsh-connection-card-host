@@ -30,7 +30,14 @@ import { join, basename, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { versionedDirName, currentPointerName, parseVersionedDirName, fingerprintSourceDir } from './card-paths.js'
+import {
+  versionedDirName,
+  currentPointerName,
+  parseVersionedDirName,
+  fingerprintSourceDir,
+  sourceRecordName,
+  type CardSourceRecord,
+} from './card-paths.js'
 
 export interface InstallResult {
   ok: boolean
@@ -233,6 +240,24 @@ export async function installCard(
 
     // 改指针（内容极小，不会被锁）
     writeFileSync(pointerPath, dirName, 'utf8')
+
+    // 记下**来源**与版本 —— 以后"检查更新 / 更新"要照着同一个来源重装，
+    // 也得知道当前装的是哪一版才能和上游比。指针只回答"在用的是哪个目录"，
+    // 回答不了"从哪来的"。
+    try {
+      const record: CardSourceRecord = {
+        spec: raw,
+        kind,
+        ...(check.version ? { installedVersion: check.version } : {}),
+        dirName,
+        fingerprint: sourceKey,
+        installedAt: Date.now(),
+      }
+      writeFileSync(join(cardsRoot, sourceRecordName(cardId)), JSON.stringify(record, null, 2), 'utf8')
+    } catch (e) {
+      // 记录写不进去不该让安装失败 —— 只是"更新"能力会退化成"不知道来源"
+      auditLog(`卡片来源记录写入失败（不影响安装）：${e instanceof Error ? e.message : String(e)}`)
+    }
 
     auditLog(
       `卡片已安装：${check.name} v${check.version ?? '?'} (${cardId}) → ${dirName}` +

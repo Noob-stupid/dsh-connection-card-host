@@ -45,6 +45,8 @@ export declare class CardRegistry {
     getInstance(instanceId: string): CardInstance | undefined;
     removeInstance(instanceId: string): void;
     listInstancesByConnection(connectionId: string): CardInstance[];
+    /** 某个模板当前装载在哪些连接上（更新卡片后要逐个重载）。 */
+    listInstancesByTemplate(templateId: string): CardInstance[];
     /** 缓存动态 import 的卡片模块（templateId → apply/mountPanel）。 */
     setModule(templateId: string, mod: CardModule): void;
     getModule(templateId: string): CardModule | undefined;

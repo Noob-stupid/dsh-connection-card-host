@@ -462,6 +462,20 @@ export const CONNECTION_CARD_CSS = `
 .ccr-card-option:hover:not(:disabled) { background: var(--ccr-panel-highlight); }
 .ccr-card-option:disabled { opacity: 0.45; cursor: default; }
 .ccr-card-option__name { font-size: 12px; font-weight: 500; }
+/* 卡片更新入口（已安装卡片才有）：点一次检查，有新版再点一次更新 */
+.ccr-card-option__upd {
+  flex: none;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  opacity: 0.7;
+  background: rgba(128, 128, 128, 0.16);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ccr-card-option__upd:hover { opacity: 1; background: rgba(128, 128, 128, 0.28); }
+
 .ccr-card-option__meta { font-size: 11px; opacity: 0.6; }
 
 .ccr-card {
