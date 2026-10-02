@@ -10,7 +10,7 @@
  * 测量会话行实际坐标后作画 —— DSH 没暴露行坐标接口，只能实测。
  * id 的来源见 client/row-map.ts。
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { allocateLanes } from '../core/lane-allocator.js'
 import type { PermissionLevel } from '../types/index.js'
 import type { ConnectionCardHostClient } from '../client/host-client.js'
@@ -411,12 +411,64 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
     )
   }, [rail, rows, connections, client])
 
+  /** 上次已上报诊断的段数 —— 只在「0 → 非 0」那一次打一行，不刷屏。 */
+  const railDiagRef = useRef(0)
+
   /** 视图偏好：整条轨道可以一键隐藏（只影响观感，连接本身不动）。 */
   const [railVisible, setRailVisible] = useState(() => prefs.get().railVisible)
   useEffect(
     () => prefs.subscribe(() => setRailVisible(prefs.get().railVisible)),
     [prefs],
   )
+
+  /**
+   * 遮挡诊断：**画出来了但看不见**时用（2026-10-02 加）。
+   *
+   * 与 rail 的 `skips=` 诊断互补 —— 那个答的是"为什么没算出来"，
+   * 这个答的是"算出来了为什么看不到"。两者都是"一次定位"的思路。
+   *
+   * 触发时机：段数从 0 变成 >0 的那一次（**只在首次出现时打一行**，不刷屏）。
+   * 内容：
+   *   · 画布 rect / 计算样式的 z-index、opacity、display
+   *   · 段数 + 首段两端坐标
+   *   · **在首段中点做一次 `elementsFromPoint`** —— 若栈顶不是我们自己的 SVG，
+   *     而是别人的元素，就是被遮住了（这条一行定性）
+   */
+  useEffect(() => {
+    if (!client) return
+    const n = rail?.segments.length ?? 0
+    if (n === 0) return
+    if (railDiagRef.current === n) return
+    railDiagRef.current = n
+    const seg = rail!.segments[0]!
+    const midX = seg.x
+    const midY = (seg.y1 + seg.y2) / 2
+    let top3 = 'n/a'
+    let svgStyle = 'n/a'
+    try {
+      const stack = document.elementsFromPoint(midX, midY).slice(0, 3)
+      top3 = stack
+        .map((e) => `${e.tagName.toLowerCase()}${e.getAttribute('class') ? `.${(e.getAttribute('class') ?? '').split(/\s+/)[0]}` : ''}`)
+        .join(' | ')
+      const svg = document.querySelector('.ccr-rail-overlay')
+      if (svg) {
+        const cs = window.getComputedStyle(svg)
+        svgStyle = `z=${cs.zIndex} op=${cs.opacity} disp=${cs.display}`
+      }
+    } catch {
+      /* 诊断失败不影响渲染 */
+    }
+    const r = rail!.bounds
+    client.report(
+      `rail 遮挡诊断 segs=${n} bounds={x:${Math.round(r?.left ?? 0)},y:${Math.round(
+        r?.top ?? 0,
+      )},w:${Math.round((r?.right ?? 0) - (r?.left ?? 0))},h:${Math.round(
+        (r?.bottom ?? 0) - (r?.top ?? 0),
+      )}} ${svgStyle} 首段=(${Math.round(seg.x)},${Math.round(seg.y1)})~(${Math.round(
+        seg.x,
+      )},${Math.round(seg.y2)}) 中点栈顶3层=[${top3}]`,
+    )
+  }, [client, rail])
 
   if (!railVisible) return null
   if (!rail) return null
@@ -438,7 +490,18 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
         width,
         height,
         pointerEvents: 'none',
-        zIndex: 5,
+        /*
+         * ⚠️ z-index 从 5 提到 9999（2026-10-02）。
+         *
+         * 现场：用户装 `web-ui-skin-center` 时**看不到连线，却看得到拖拽线** ——
+         * 而拖拽线是 `z-index: 9999`、轨道原来是 `5`。
+         * **同一个界面里一个可见一个不可见，差别就是这个层级**：
+         * 皮肤的壁纸/叠加层落在 5 之上、9999 之下。
+         *
+         * 提到与拖拽线同级（两者不重叠：轨道只在会话列表区域，拖拽线是全程跟随）。
+         * `pointer-events: none` 已保证它不挡交互 —— 所以抬高只是"画得更靠前"。
+         */
+        zIndex: 9999,
         // hidden（不是 visible）：画布已经是「内容 ∩ 列表可视区」，
         // 越界的形状（尤其滚出去的端点圆点）必须在这里被统一裁掉 ——
         // 这就是"线永远不会画到列表之外"的最后一道保证。
