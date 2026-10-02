@@ -26,6 +26,42 @@
 > 这种**隐式通过**很危险：它看起来像门控，实际测的是别的包，
 > 且一旦 DSH 发布 0.2.0 正式版就会被拒。现已改成显式标注真实支持范围。
 
+### peer 为什么全部标了 `optional`
+
+`peerDependenciesMeta` 把四个 peer 全部标成 `optional: true`
+（**依赖区间一个字没改**）。两条独立的理由：
+
+**(1) 有一个 peer 在公开 registry 上无解** —— 不标就装不上：
+
+| peer | 区间 | registry 上的最高版本 | 可解析 |
+|:---|:---|:---|:---|
+| `@deepseek-ai/cordis` | `>=4.0.1 <4.1.0` | 4.0.4 | ✅ |
+| `@deepseek-ai/dsh` | `>=0.2.0-rc.1 <0.3.0` | 0.2.0-rc.2 | ✅ |
+| `@deepseek-ai/dsh-client-ui-slots` | `>=0.2.0-rc.1 <0.3.0` | 0.2.0-rc.2 | ✅ |
+| `@deepseek-ai/dsh-client-runtime` | `>=0.2.0-rc.1 <0.3.0` | **0.1.1-rc.2** | ❌ **无解** |
+
+`autoInstallPeers: false` 只在 peer **完全不存在**时跳过；这个包名存在（11 个版本，
+`latest` 停在 0.0.1-rc.1），只是没有满足区间的版本，pnpm 因此**硬报错**
+`ERR_PNPM_NO_MATCHING_VERSION` —— 整个安装失败（v1.0.1 起一直如此，与改名无关）。
+
+**(2) 可解析的 peer 也会被真装进来** —— 实测（pnpm 9.15.9，`nodeLinker: hoisted` +
+`autoInstallPeers: false`，装本包）：
+
+| 标法 | 结果 |
+|:---|:---|
+| 只把 `dsh-client-runtime` 标 optional | ✅ 装上，但**用时 1 分 36 秒、拉进 602 个包** —— 整棵 `@deepseek-ai/dsh` 依赖树（`node-pty`、`koffi`、`protobufjs`…） |
+| **四个全标 optional** | ✅ **612 毫秒、只加 1 个包** |
+
+把整棵 DSH 框架拖进用户的 profile，正是 `autoInstallPeers: false` 要避免的事
+（会和用户正在跑的 DSH 抢依赖）。而本包**运行时一个 `@deepseek-ai/*` 都不 import**
+（`lib/` 全树 grep 无命中；浏览器端两个包由 DSH 的 `__ModuleLoader__` 注入），
+所以"声明契约但不强制安装"才是准确的表达。
+
+**这不影响版本门控**：`evaluatePluginCompatibility` 只读 `manifest.peerDependencies`，
+从不读 `peerDependenciesMeta`（见 `@dsh-app-boot/lib/index.js`：按 `@deepseek-ai/dsh`
+与 `@deepseek-ai/dsh-` 前缀筛选后逐条 `semver.satisfies`）。表里的区间照旧生效 ——
+DSH 版本不匹配仍然会被拒绝并说明原因。
+
 **两道防线，各管各的**：
 
 1. **安装/加载期** —— DSH 的 peer 门控（上面这张表），不满足则拒绝加载

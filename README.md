@@ -2,12 +2,20 @@
 
 **中文** | [English](README.en.md)
 
-> **让 DSH 的多个会话互相看得见、说得上话、共用得上工具 —— 而互不打扰。**
+> **把「连接」做成 DSH 里的一等对象：会话是节点，连接是容器，卡片是连接级插件 —— 一个「连接级插件宿主」。**
 
-在一个 DSH 里同时开着好几个会话（一个查资料、一个写代码、一个跑实验）是常态，
-但它们**互相隔离**：不知道对方在干什么，也没法把结论递过去。
+**为什么是你**：别的插件把能力写死在插件里；这个插件让能力变成「连接上可安装的卡片」——
+**装、卸、隔离都是连接粒度**的。
 
-这个插件把「连接」做成 DSH 里的一等对象：**会话是节点，连接是容器，卡片是连接级插件**。
+在一个 DSH 里同时开着好几个会话（一个查资料、一个写代码、一个跑实验）是常态。
+缺的不是"会话之间能互相看见"这个功能，而是 **DSH 的会话之间可编程的关系层**：
+没有一个可以挂东西的"关系对象"，权限边界、共享前提、可装载的能力就都无处安放。
+
+<p align="center">
+  <img src="docs/assets/diagram-connection-platform.svg" width="820" alt="连接是平台对象：会话 A 与会话 B 之间是一条连接，连接上有事件总线、权限边界、公约盒与卡片宿主；卡片挂在连接上，受连接权限约束，连接经适配层调用 DSH" />
+</p>
+
+在这个关系层之上，连接的两端**互相看得见、说得上话、共用得上工具 —— 而互不打扰**。
 
 <table>
 <tr>
@@ -20,7 +28,7 @@
 </td>
 <td width="50%">
 
-**结构示意**（[架构图](docs/capabilities.md)）
+**交互结构**（[架构图](docs/capabilities.md)）
 
 <img src="docs/assets/demo-drag.svg" alt="拖拽建连的结构：锚点 → 会话行 → 竖轨" />
 
@@ -29,7 +37,7 @@
 </table>
 
 <p align="center">
-  <sub>左：真实操作（<a href="docs/assets/demo-drag-anchor.mp4">原视频</a>） · 右：同一动作的结构示意，标出了「开关语义」</sub>
+  <sub>左：真实操作（<a href="docs/assets/demo-drag-anchor.mp4">原视频</a>） · 右：同一动作的交互结构示意，标出了「开关语义」</sub>
 </p>
 
 ---
@@ -45,7 +53,7 @@
 - [省在哪](#省在哪)
 - [安装](#安装)
 - [卡片开发](#卡片开发)
-- [当前状态](#当前状态)
+- [路线图（规划中）](#路线图规划中)
 
 ---
 
@@ -59,10 +67,6 @@
 | **共用前提** | 「公约盒」存放双方说好的事：接口、单位、命名、分工边界 |
 | **互不打扰** | 感知是**拉取式**的 —— 对方不查就零成本；不相关的连接**不会吵到你** |
 
-<p align="center">
-  <img src="docs/assets/demo-permission.svg" width="680" alt="连线颜色表示该方向的权限：灰=只读，蓝=可建议，橙=可写入；两端可不对称" />
-</p>
-
 ---
 
 ## 三十秒上手
@@ -73,9 +77,12 @@
 <tr>
 <td width="50%">
 
-**从锚点拖**（录屏）
+**起手式与开关语义**
 
-<img src="docs/assets/demo-drag-anchor.gif" alt="从输入框左侧锚点拖出弧线" />
+- 输入框左侧的**圆点** → 拖到某一行
+- 会话行上的「**…**」→ 拖到另一行
+- 落点即开关：**未连的行 = 连接**；**已连的行 = 断开**（悬停时会提示）
+- 也可以从侧栏「连接」面板里选两个会话
 
 </td>
 <td width="50%">
@@ -89,11 +96,9 @@
 </table>
 
 <p align="center">
-  <sub><a href="docs/assets/demo-drag-anchor.mp4">锚点原视频</a> · <a href="docs/assets/demo-drag-rail.mp4">会话行原视频</a></sub>
+  <sub><a href="docs/assets/demo-drag-rail.mp4">这段的原视频</a>（锚点拖拽那段的原视频见首屏）</sub>
 </p>
 
-   - **开关语义**：拖到未连的行 = 连接；拖到**已连**的行 = 断开（悬停时会提示）
-   - 也可以从侧栏「连接」面板里选两个会话
 2. **完事**。两端各自收到一条静默通知（说清了连上了谁、能做什么），**不打断任何人**。
 3. 想看得更细：点侧栏「连接」，或者让会话自己调 `connection_peer_work`。
 
@@ -209,6 +214,38 @@ B 端硬调它 → 拒绝     「这张卡片只对 A 端可见（你在 B 端�
   ```
   **"无法检查"绝不显示成"已是最新"** —— 那是谎报。
 
+### 声明：第三方 / 社区卡片可以直接下载安装，装完即用
+
+**可以在内部直接下载安装外部 DSH 会话相关的插件卡片，并立即使用。**
+
+这不是"官方卡片市场"，也不是一个需要审核上架的中心 —— 它是**开放的分发**：
+任何按[卡片协议](docs/card-protocol.md)写出来的包，都能从下面三种来源装进你自己的 DSH。
+
+| 来源 | 给什么 | 实现 |
+|:---|:---|:---|
+| **包名**（注册表） | `monitor-card` / `@scope/monitor-card` | 从 registry 拉 **tarball**（一次 HTTPS GET） |
+| **仓库 tgz 地址** | `https://example.com/card.tgz` | 下载后解压 |
+| **本地目录** | `D:\my-cards\monitor-card` | 直接拷贝 |
+
+（与连接面板里**卡片选择器**的三种来源一致。）
+
+**装完即可用** —— 卡片装到一条连接上之后：
+
+- 连接上的会话**立刻**能用它提供的工具（经 `connection_card_tool` 桥接调用）——
+  **不需要重启 DSH，不需要改 DSH 配置**：不跑 pnpm、不写 `dsh.profile.bundles`
+- 卡片装在自己的目录 `$DSH_HOME/connection-cards/cards/<id>/`，与 DSH profile 完全隔离
+
+**三条边界**（是设计，不是"限制"）：
+
+| 边界 | 含义 |
+|:---|:---|
+| **分端可见** | 可见范围分端：两端 / 仅 A 端 / 仅 B 端。**A 端可见 ≠ B 端可见**；不可见的一端硬调会被拒绝，并说明原因 |
+| **版本门控** | DSH 版本不匹配会被**明确拒绝并说明原因**，而不是装上再崩。卡片另有一条 CardAPI 版本护栏（要更高版本的卡片会被拒绝装载并说明原因） |
+| **崩溃隔离** | 卡片 import / apply 抛异常不会拖垮宿主 |
+
+> 第三方 / 社区卡片与 DSH 官方项目**没有隶属关系**；本插件不提供审核、背书，
+> 也不存在"官方目录"这种东西。
+
 ---
 
 ## 架构速览
@@ -245,11 +282,7 @@ B 端硬调它 → 拒绝     「这张卡片只对 A 端可见（你在 B 端�
 ### 卡片工具怎么到会话手里
 
 卡片注册的工具**不各占一个 schema** —— 会话只看得见**一个**常驻桥接，
-按需发现、按需调用，且在桥接层强制可见范围：
-
-<p align="center">
-  <img src="docs/assets/demo-card-tool.svg" width="640" alt="会话用一个常驻桥接工具，按需发现并调用卡片提供的工具，且受可见范围约束" />
-</p>
+按需发现、按需调用，且在桥接层强制可见范围（图见[连接上的卡片](#连接上的卡片)）。
 
 ---
 
@@ -289,51 +322,61 @@ B 端硬调它 → 拒绝     「这张卡片只对 A 端可见（你在 B 端�
 | **不相关的连接** | **0 打扰** | 搭线不唤醒；不相关的会话照常干活 |
 
 **唯一固定成本**：本插件 5 个 `connection_*` 工具的 schema ≈ **1700 tokens 常驻**。
-（这一项还可以再优化 —— 见[当前状态](#当前状态)。）
+（这一项还可以再优化 —— 见[路线图](#路线图规划中)。）
 
 ---
 
 ## 安装
 
-**本插件不上 npm。** DSH 的 peer 依赖（`@deepseek-ai/dsh-client-runtime` 等）不在公开 registry 上，
-所以 `npm install` 会去公开 registry 装 peerDependencies 并必然失败
-（实测报 `notarget ... @deepseek-ai/dsh-client-runtime`）。安装走 GitHub：
+**npm（推荐，可锁版本）**：
 
 ```sh
-# 稳定线（本仓库，对外门面）
+dsh plugin --profile web add @noob-stupid/dsh-connection-card-host
+```
+
+**GitHub 直装**（装**默认分支最新提交**，不是固定版本）：
+
+```sh
 dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
 
 # 同上，GitHub 简写（可省 github:）—— 带斜杠就走 GitHub 仓库
 dsh plugin --profile web add Noob-stupid/dsh-connection-card-host
+```
 
-# 要固定版本：用 Releases 的 tgz 附件（当前已发布 v1.0.1）
-dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.1/dsh-external-dsh-connection-card-host-1.0.1.tgz
+**固定版本：用 Releases 的 tgz 附件**（当前最新 v1.0.2）：
+
+```sh
+dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.2/noob-stupid-dsh-connection-card-host-1.0.2.tgz
 
 # 同一份 tgz 先下载到本地再装，效果相同
-dsh plugin --profile web add ./dsh-external-dsh-connection-card-host-1.0.1.tgz
+dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-1.0.2.tgz
 ```
 
 - 开发发生在**预览线仓库** [`dsh-connection-card-host-preview`](https://github.com/Noob-stupid/dsh-connection-card-host-preview)；
   **本仓库是稳定门面**，只在发版时按晋级流程同步。
-- `lib/` 已随仓库提交：装完即可用，不需要构建步骤，本包也没有需要授权的构建脚本。
-  （`dsh plugin` 依赖 `pnpm` 在 PATH 上。）
+- `lib/` 已随仓库提交（npm 包里也带上）：装完即可用，不需要构建步骤，
+  本包也没有需要授权的构建脚本。（`dsh plugin` 依赖 `pnpm` 在 PATH 上。）
 - ⚠️ `github:` 与简写装的是**默认分支的最新提交**，**不是固定版本**；
-  要固定版本请用上面的 Releases tgz。
+  要固定版本请用 npm 的版本号（`@noob-stupid/dsh-connection-card-host@1.0.2`）或上面的 Releases tgz。
 
-> **四种写法的实测结果**（`pnpm` 用 profile 同款配置 `nodeLinker: hoisted` +
-> `autoInstallPeers: false`，装完 `lib` 161 个文件）：
->
-> | 写法 | 结果 |
-> |:---|:---|
-> | `github:user/repo` | ✅ 可用 |
-> | `user/repo`（GitHub 简写） | ✅ 可用 |
-> | tgz 地址 / 本地路径 | ✅ 可用 |
-> | **裸包名**（无斜杠 → 当成 npm 包名，走 registry） | ❌ **404，别用** |
->
-> `dsh-connection-card-host` 与 `@dsh-external/dsh-connection-card-host` 在 npm 上都不存在。
+> 实测（pnpm 9.15.9 + profile 同款配置）：npm 包名安装**只增加 1 个包**，落 `lib/` 164 个文件，
+> **不会**把 `@deepseek-ai/*` 依赖拖进你的 profile。
 
-**兼容性**：`peerDependencies` 声明 `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0` ——
+**兼容性**：`peerDependencies` 声明 `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0`
+（另有 `@deepseek-ai/cordis` 与两个 `@deepseek-ai/dsh-client-*`）——
 DSH 会在安装时**按版本门控**，不匹配会明确拒绝并说明原因（而不是装上再崩）。
+
+这四个 peer 都标了 `peerDependenciesMeta.optional`。原因有两条，都实测过：
+
+- `@deepseek-ai/dsh-client-runtime` 在公开 registry 上**没有**满足区间的版本
+  （最高停在 `0.1.1-rc.2`）—— 不标 optional，pnpm 直接 `ERR_PNPM_NO_MATCHING_VERSION`，**装不上**；
+- 只标那一个也不行：pnpm 会把**整棵 `@deepseek-ai/dsh` 依赖树（602 个包）**装进你的 profile
+  （实测 1 分 36 秒），而那正是 `autoInstallPeers: false` 要避免的事。
+
+本包**运行时一个 `@deepseek-ai/*` 都不 import**（`lib/` 全树无命中；浏览器端那两个包由 DSH 的
+`__ModuleLoader__` 注入），所以"声明契约、不强制安装"才是准确的表达。标 optional
+**不改门控** —— DSH 的 `evaluatePluginCompatibility` 只读 `peerDependencies`。
+细节见 [`docs/compatibility.md`](docs/compatibility.md)。
 
 ---
 
@@ -387,9 +430,9 @@ export function renderPanel(api) {
 
 ---
 
-## 当前状态
+## 路线图（规划中）
 
-**已实现并实测**
+**当前版本能做什么**（已实现并实测）
 
 - 连接：拖拽建连（开关语义）、三会话两两相连、持久化 + 重启恢复
 - 权限：分方向三档、不对称、升级需对方确认、拒绝原因自证
@@ -400,13 +443,17 @@ export function renderPanel(api) {
 - 卡片工具：桥接调用 + 可见范围强制
 - 卡片目录**版本化**（装载中也能更新）
 
-**已知未做**
+**规划中**（下面几项**尚未实现**，接口已就位、实现待补）
 
-| 项 | 说明 |
-|:---|:---|
-| **工具按会话 scope** | 5 个 `connection_*` 目前**全局注册** —— 没连接的会话也背着 ~1700 tokens。接缝已定位（`system-prompt/assemble` waterfall），差注册写法 |
-| `mountUI` / `requestRemote` | 空壳（`mountUI` 只设了个 dataset 属性） |
-| 卡片工具的 schema | 不占独立 schema（有意为之）；调用方需先 list 再 call |
+| 项 | 现状 | v1.1 目标 |
+|:---|:---|:---|
+| **工具按会话 scope** | 5 个 `connection_*` 目前**全局注册** —— 没连接的会话也背着 ~1700 tokens。接缝已定位（`system-prompt/assemble` waterfall），差注册写法 | 只对参与连接的会话注册，省掉这笔常驻成本 |
+| `mountUI` | 接口已就位、实现待补：目前只设了一个 dataset 属性 | 浏览器侧真实挂载 DOM |
+| `requestRemote` | 接口已就位、实现待补：宿主无 `ctx.remote`，调用返回 `not_available` | 按对端白名单做远程调用 + 审计 |
+| 卡片面板浏览器侧执行 | 未实现（面板 HTML 在宿主侧渲染后取回） | 视需要评估 |
+
+> 卡片工具的 schema **有意不各占一个**：调用方需先 list 再 call。
+> 这是成本与可见范围的取舍，不是待办。
 
 ---
 
@@ -422,5 +469,5 @@ export function renderPanel(api) {
 ---
 
 <p align="center">
-  <sub>MIT · 与 DSH 官方无隶属关系</sub>
+  <sub>BSD-3-Clause · 与 DSH 官方无隶属关系</sub>
 </p>

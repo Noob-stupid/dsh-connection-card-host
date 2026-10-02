@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 520" width="860" height="520" font-family="ui-sans-serif, system-ui, 'Segoe UI', sans-serif" role="img">
+  <title>连接是 DSH 里的一等对象</title>
+  <desc>会话 A 与会话 B 之间是一条「连接」。连接是容器：上面有事件总线、权限边界、公约盒与卡片宿主。卡片挂在连接上，只依赖 CardAPI；连接层经适配层调用 DSH，卡片绝不 import 任何 @deepseek-ai/* 包。</desc>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b949e"/>
+    </marker>
+    <marker id="arB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6"/>
+    </marker>
+    <style><![CDATA[
+      .bg{fill:#0d1117}
+      .panel{fill:#161b22;stroke:#30363d;stroke-width:1}
+      .conn{fill:#0f1b2d;stroke:#1f6feb;stroke-width:1.5}
+      .chip{fill:#21262d;stroke:#30363d;stroke-width:1}
+      .card{fill:#1c2a3a;stroke:#3b82f6;stroke-width:1.2}
+      .adapter{fill:#161b22;stroke:#30363d;stroke-width:1;stroke-dasharray:5 3}
+      .t{fill:#c9d1d9;font-size:13px}
+      .tb{fill:#e6edf3;font-size:13.5px;font-weight:600}
+      .s{fill:#e6edf3;font-size:13px;font-weight:600}
+      .h{fill:#8b949e;font-size:11px}
+      .hb{fill:#8b949e;font-size:11.5px;font-weight:600}
+      .mono{fill:#8b949e;font-size:10.5px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+      .flow{stroke:#8b949e;stroke-width:1.4;fill:none;marker-start:url(#ar);marker-end:url(#ar)}
+      .flowin{stroke:#8b949e;stroke-width:1.4;fill:none;marker-end:url(#ar)}
+      .cap{stroke:#3b82f6;stroke-width:1.4;fill:none;marker-start:url(#arB);marker-end:url(#arB)}
+      .dotA{fill:#3b82f6}
+      .dotB{fill:#f97316}
+    ]]></style>
+  </defs>
+
+  <rect class="bg" width="860" height="520" rx="10"/>
+
+  <!-- ── 会话层 ───────────────────────────────────────────── -->
+  <text class="h" x="96" y="30">会话层</text>
+
+  <rect class="panel" x="96" y="40" width="210" height="62" rx="9"/>
+  <text class="s" x="112" y="66">会话 A</text>
+  <text class="mono" x="112" y="86">session-a4a3d1a8</text>
+
+  <rect class="panel" x="554" y="40" width="210" height="62" rx="9"/>
+  <text class="s" x="570" y="66">会话 B</text>
+  <text class="mono" x="570" y="86">session-bd5ac1b1</text>
+
+  <!-- 会话 ↔ 连接 的两向箭头 -->
+  <path class="flow" d="M 201 102 L 201 176"/>
+  <path class="flow" d="M 659 102 L 659 176"/>
+  <text class="hb" x="352" y="118">感知（拉取，0 成本） · 传话（推送，三档紧急度）</text>
+  <text class="h" x="352" y="136">每个方向各自一个权限档 —— 两端可以不对称</text>
+  <circle class="dotA" cx="215" cy="139" r="4.5"/>
+  <circle class="dotB" cx="645" cy="139" r="4.5"/>
+  <text class="h" x="228" y="143">A→B</text>
+  <text class="h" x="600" y="143">B→A</text>
+
+  <!-- ── 连接：平台对象 / 容器 ─────────────────────────────── -->
+  <rect class="conn" x="96" y="176" width="668" height="208" rx="14"/>
+  <text class="tb" x="116" y="202">连接（connection）—— DSH 里的一等对象，也是一个容器</text>
+
+  <rect class="chip" x="116" y="216" width="132" height="34" rx="7"/>
+  <text class="t" x="132" y="238">事件总线</text>
+  <rect class="chip" x="264" y="216" width="132" height="34" rx="7"/>
+  <text class="t" x="280" y="238">权限边界</text>
+  <rect class="chip" x="412" y="216" width="132" height="34" rx="7"/>
+  <text class="t" x="428" y="238">公约盒</text>
+  <rect class="chip" x="560" y="216" width="188" height="34" rx="7"/>
+  <text class="t" x="576" y="238">卡片宿主</text>
+
+  <!-- 卡片：挂在连接上 -->
+  <rect class="card" x="560" y="290" width="188" height="78" rx="9"/>
+  <text class="s" x="576" y="314">卡片</text>
+  <text class="h" x="576" y="332">连接级插件</text>
+  <text class="mono" x="576" y="350">registerTool / send / on</text>
+  <text class="h" x="576" y="364">只依赖 CardAPI</text>
+  <path class="cap" d="M 654 290 L 654 250"/>
+  <text class="h" x="662" y="276">挂载 / 卸载</text>
+
+  <!-- 容器语义 -->
+  <text class="h" x="116" y="286">一条连接 = 一个容器：权限、感知、约定、卡片都挂在同一条连接下</text>
+  <text class="h" x="116" y="308">· 权限分方向：A→B 与 B→A 各自独立设置</text>
+  <text class="h" x="116" y="328">· 卡片可见范围分端：两端 / 仅 A 端 / 仅 B 端</text>
+  <text class="h" x="116" y="348">· 装、卸、隔离都是连接粒度 —— 不碰 DSH profile</text>
+  <text class="h" x="116" y="370">· 不相关的连接不会吵到你：拉取式感知，0 上下文成本</text>
+
+  <!-- ── 适配层 ──────────────────────────────────────────── -->
+  <path class="flowin" d="M 430 384 L 430 416"/>
+  <text class="h" x="442" y="405">唯一出口</text>
+
+  <rect class="adapter" x="96" y="416" width="668" height="66" rx="10"/>
+  <text class="s" x="116" y="442">DSH 适配层（DSHAdapter + 白名单 + 审计）</text>
+  <text class="h" x="116" y="462">所有 DSH 交互的唯一出口；不重写 DSH 的通信 / 权限 / 插件系统 —— 卡片不注册进 DSH 全局 Loader</text>
+
+  <text class="h" x="96" y="504">卡片经 CardAPI 挂到「连接」上，连接经适配层调用 DSH。卡片绝不 import 任何 @deepseek-ai/* 包。</text>
+</svg>

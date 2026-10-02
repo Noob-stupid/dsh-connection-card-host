@@ -2,14 +2,23 @@
 
 [中文](README.md) | **English**
 
-> **Let your DSH sessions see each other, talk to each other, and share tools — without getting in each other's way.**
+> **Makes a *connection* a first-class object in DSH: sessions are nodes, a connection is the container, cards are connection-scoped plugins — a "connection-level plugin host".**
 
-Running several DSH sessions at once (one researching, one coding, one running experiments)
-is normal — but they're **isolated**: they can't see what the others are doing, and can't
-hand conclusions over.
+**Why this one**: other plugins hard-code their capabilities inside the plugin; this one turns
+capability into **cards you install on a connection** — mounting, unmounting and isolation are
+all at **connection granularity**.
 
-This plugin makes a **connection** a first-class object in DSH:
-**sessions are nodes, a connection is the container, cards are connection-scoped plugins.**
+Running several DSH sessions at once (one researching, one coding, one running experiments) is
+normal. What's missing isn't "sessions can see each other" as a feature — it's a **programmable
+relationship layer between DSH sessions**: without a "relationship object" to hang things on,
+permission boundaries, shared premises and loadable capabilities have nowhere to live.
+
+<p align="center">
+  <img src="docs/assets/diagram-connection-platform.svg" width="820" alt="A connection is a platform object: session A and session B are joined by one connection carrying an event bus, a permission boundary, a convention box and a card host; cards mount on the connection and are constrained by its permissions, and the connection reaches DSH through an adapter layer" />
+</p>
+
+On top of that relationship layer, the two ends **see each other, talk to each other and share
+tools — without getting in each other's way**.
 
 <table>
 <tr>
@@ -22,7 +31,7 @@ This plugin makes a **connection** a first-class object in DSH:
 </td>
 <td width="50%">
 
-**Structure** (diagram)
+**Interaction structure** (diagram)
 
 <img src="docs/assets/demo-drag.svg" alt="Drag-to-connect structure: anchor → session row → rail" />
 
@@ -31,7 +40,7 @@ This plugin makes a **connection** a first-class object in DSH:
 </table>
 
 <p align="center">
-  <sub>Left: the real thing (<a href="docs/assets/demo-drag-anchor.mp4">source video</a>) · Right: the same action as a diagram, showing the toggle semantics</sub>
+  <sub>Left: the real thing (<a href="docs/assets/demo-drag-anchor.mp4">source video</a>) · Right: the same action as an interaction diagram, showing the toggle semantics</sub>
 </p>
 
 ---
@@ -47,7 +56,7 @@ This plugin makes a **connection** a first-class object in DSH:
 - [Where it saves](#where-it-saves)
 - [Install](#install)
 - [Writing a card](#writing-a-card)
-- [Status](#status)
+- [Roadmap (planned)](#roadmap-planned)
 
 ---
 
@@ -61,10 +70,6 @@ This plugin makes a **connection** a first-class object in DSH:
 | **Shared premises** | A "convention box" holds what you agreed on: interfaces, units, naming, who owns what |
 | **Stay out of the way** | Awareness is **pull-based** — zero cost unless the other side asks. Unrelated connections **never interrupt you** |
 
-<p align="center">
-  <img src="docs/assets/demo-permission.svg" width="680" alt="Line colour shows the permission in that direction: grey = read-only, blue = can suggest, orange = can write; the two ends can differ" />
-</p>
-
 ---
 
 ## Quick start
@@ -76,9 +81,12 @@ This plugin makes a **connection** a first-class object in DSH:
 <tr>
 <td width="50%">
 
-**Drag from the anchor** (recording)
+**How to start, and the toggle semantics**
 
-<img src="docs/assets/demo-drag-anchor.gif" alt="Dragging an arc out from the anchor beside the composer" />
+- The **circle** left of the composer → drag onto a row
+- The **`…`** on a session row → drag onto another row
+- The drop target is the toggle: **unconnected row = connect**; **already-connected row = disconnect** (the hover hint tells you which)
+- You can also pick two sessions from the "Connections" panel in the sidebar
 
 </td>
 <td width="50%">
@@ -92,12 +100,9 @@ This plugin makes a **connection** a first-class object in DSH:
 </table>
 
 <p align="center">
-  <sub><a href="docs/assets/demo-drag-anchor.mp4">anchor source video</a> · <a href="docs/assets/demo-drag-rail.mp4">session-row source video</a></sub>
+  <sub><a href="docs/assets/demo-drag-rail.mp4">Source video for this one</a> (the anchor drag is at the top of this page)</sub>
 </p>
 
-   - **Toggle semantics**: drop on an unconnected row = connect; drop on an **already
-     connected** row = disconnect (the hover hint tells you which)
-   - You can also pick two sessions from the "Connections" panel in the sidebar
 2. **Done.** Both ends get one quiet notice (who you're connected to, what it enables) —
    **nobody is interrupted**.
 3. Want more detail? Open "Connections" in the sidebar, or have the session call
@@ -221,6 +226,42 @@ parse results back.
   ```
   **"Couldn't check" is never shown as "up to date"** — that would be lying.
 
+### Statement: third-party / community cards install and work straight away
+
+**You can download and install external DSH-session plugin cards directly, inside DSH, and use
+them immediately.**
+
+This is not an "official card marketplace", and it is not a curated store you submit to — it is
+**open distribution**: any package written against the [card protocol](docs/card-protocol.md)
+can be installed into your own DSH from the three sources below.
+
+| Source | What you give it | How it works |
+|:---|:---|:---|
+| **Package name** (registry) | `monitor-card` / `@scope/monitor-card` | pulls the **tarball** from the registry (one HTTPS GET) |
+| **Repo tgz URL** | `https://example.com/card.tgz` | download, then unpack |
+| **Local directory** | `D:\my-cards\monitor-card` | copied directly |
+
+(These are the same three sources as the **card picker** in the connection panel.)
+
+**Installed means usable** — once a card is mounted on a connection:
+
+- Sessions on that connection can use the tools it provides (called through the
+  `connection_card_tool` bridge) **immediately** — **no DSH restart, no DSH config change**:
+  no pnpm, nothing written to `dsh.profile.bundles`
+- The card lives in its own directory, `$DSH_HOME/connection-cards/cards/<id>/`, fully isolated
+  from the DSH profile
+
+**Three boundaries** (by design, not as "limitations"):
+
+| Boundary | Meaning |
+|:---|:---|
+| **Per-side visibility** | Scope is per side: both / A only / B only. **Visible to A ≠ visible to B**; the side that can't see it gets a refusal *with the reason* if it calls anyway |
+| **Version gating** | A DSH version mismatch is **refused clearly, with the reason** — rather than installing and crashing later. Cards have a second guard: the CardAPI version (a card requiring a newer one is refused at mount time, with the reason) |
+| **Crash isolation** | An exception from a card's import / apply does not take down the host |
+
+> Third-party / community cards are **not affiliated with** the DSH project; this plugin offers
+> no review, no endorsement, and there is no such thing as an "official directory".
+
 ---
 
 ## Architecture at a glance
@@ -261,11 +302,8 @@ immediately; raising one requires confirmation from the side being granted it.
 ### How card tools reach a session
 
 Tools registered by cards **do not each take a schema** — a session sees **one** resident
-bridge, discovers on demand, calls on demand, and visibility is enforced at the bridge:
-
-<p align="center">
-  <img src="docs/assets/demo-card-tool.svg" width="640" alt="A session uses one resident bridge tool to discover and call tools provided by cards, subject to visibility scope" />
-</p>
+bridge, discovers on demand, calls on demand, and visibility is enforced at the bridge
+(illustrated under [Cards on a connection](#cards-on-a-connection)).
 
 ---
 
@@ -311,54 +349,68 @@ to queue.
 | **Unrelated connections** | **0 interruptions** | connecting doesn't wake anyone; unrelated sessions carry on |
 
 **The one fixed cost**: this plugin's five `connection_*` tools cost roughly **1,700 tokens
-resident**. (This can be reduced further — see [Status](#status).)
+resident**. (This can be reduced further — see the [roadmap](#roadmap-planned).)
 
 ---
 
 ## Install
 
-**This plugin is not on npm.** DSH's peer dependencies (`@deepseek-ai/dsh-client-runtime` and
-friends) are not on the public registry, so `npm install` resolves peerDependencies from that
-registry and necessarily fails (observed as `notarget ... @deepseek-ai/dsh-client-runtime`).
-Install from GitHub instead:
+**npm (recommended, version-pinnable)**:
 
 ```sh
-# stable line (this repository, the public face)
+dsh plugin --profile web add @noob-stupid/dsh-connection-card-host
+```
+
+**Straight from GitHub** (installs the **latest commit on the default branch**, not a pinned version):
+
+```sh
 dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
 
 # same thing, GitHub shorthand (the github: prefix is optional) — a slash means a GitHub repo
 dsh plugin --profile web add Noob-stupid/dsh-connection-card-host
+```
 
-# pin a version: use the tgz attached to Releases (v1.0.1 is published)
-dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.1/dsh-external-dsh-connection-card-host-1.0.1.tgz
+**Pin a version: use the tgz attached to Releases** (currently v1.0.2):
+
+```sh
+dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.2/noob-stupid-dsh-connection-card-host-1.0.2.tgz
 
 # the same tgz, downloaded first — identical result
-dsh plugin --profile web add ./dsh-external-dsh-connection-card-host-1.0.1.tgz
+dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-1.0.2.tgz
 ```
 
 - Development happens on the **preview line**,
   [`dsh-connection-card-host-preview`](https://github.com/Noob-stupid/dsh-connection-card-host-preview);
   **this repository is the stable face** and only receives promoted releases.
-- `lib/` is committed, so the install arrives ready to load — no build step and no build script
-  to authorize. (`dsh plugin` requires `pnpm` on PATH.)
+- `lib/` is committed (and shipped in the npm package), so the install arrives ready to load —
+  no build step and no build script to authorize. (`dsh plugin` requires `pnpm` on PATH.)
 - ⚠️ `github:` and the shorthand install the **latest commit on the default branch**, which is
-  **not a pinned version**; to pin a version use the Releases tgz above.
+  **not a pinned version**; to pin one use the npm version (`@noob-stupid/dsh-connection-card-host@1.0.2`)
+  or the Releases tgz above.
 
-> **What was measured for all four forms** (pnpm with the profile's own settings,
-> `nodeLinker: hoisted` + `autoInstallPeers: false`; each install lands `lib/` with 161 files):
->
-> | Form | Result |
-> |:---|:---|
-> | `github:user/repo` | ✅ works |
-> | `user/repo` (GitHub shorthand) | ✅ works |
-> | tgz URL / local path | ✅ works |
-> | **bare package name** (no slash → read as an npm name, goes to the registry) | ❌ **404 — do not use** |
->
-> Neither `dsh-connection-card-host` nor `@dsh-external/dsh-connection-card-host` exists on npm.
+> Measured (pnpm 9.15.9, the profile's own settings): installing by npm name **adds exactly one
+> package**, lands `lib/` with 164 files, and does **not** drag the `@deepseek-ai/*` dependencies
+> into your profile.
 
-**Compatibility**: `peerDependencies` declares `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0` — DSH
+**Compatibility**: `peerDependencies` declares `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0`
+(plus `@deepseek-ai/cordis` and the two `@deepseek-ai/dsh-client-*` packages) — DSH
 **gates on version at install time** and refuses clearly, with a reason, rather than
 installing and crashing later.
+
+All four peers carry `peerDependenciesMeta.optional`, for two measured reasons:
+
+- `@deepseek-ai/dsh-client-runtime` has **no** version on the public registry that satisfies the
+  range (it stops at `0.1.1-rc.2`) — without `optional`, pnpm hard-fails with
+  `ERR_PNPM_NO_MATCHING_VERSION` and the install **doesn't happen**;
+- marking only that one is not enough either: pnpm then pulls **the entire `@deepseek-ai/dsh`
+  dependency tree (602 packages, 1m36s in measurement)** into your profile — exactly what
+  `autoInstallPeers: false` exists to prevent.
+
+This plugin **imports no `@deepseek-ai/*` package at runtime** (nothing in `lib/`; the two
+browser-side ones are injected by DSH's `__ModuleLoader__`), so "declare the contract, don't
+force the install" is the accurate expression. Marking them optional **does not weaken the
+gate** — DSH's `evaluatePluginCompatibility` reads only `peerDependencies`.
+Details in [`docs/compatibility.md`](docs/compatibility.md).
 
 ---
 
@@ -414,9 +466,9 @@ See [`docs/card-protocol.md`](docs/card-protocol.md) for details.
 
 ---
 
-## Status
+## Roadmap (planned)
 
-**Implemented and measured**
+**What this version can do** (implemented and measured)
 
 - Connections: drag to connect (toggle semantics), three sessions fully interconnected,
   persistence and restore across restarts
@@ -430,13 +482,18 @@ See [`docs/card-protocol.md`](docs/card-protocol.md) for details.
 - Card tools: bridge invocation with enforced visibility
 - Card directories are **versioned** (so a mounted card can still be updated)
 
-**Known gaps**
+**Planned** (the items below are **not implemented yet**; the interfaces are in place, the
+implementations are still to come)
 
-| Item | Notes |
-|:---|:---|
-| **Per-session tool scoping** | The five `connection_*` tools are registered **globally** — a session with no connections still carries ~1,700 tokens. The seam is located (`system-prompt/assemble` waterfall); the listener registration form is still unknown |
-| `mountUI` / `requestRemote` | Stubs (`mountUI` only sets a dataset attribute) |
-| Card tool schemas | Deliberately take no separate schema; callers must list before calling |
+| Item | Today | v1.1 target |
+|:---|:---|:---|
+| **Per-session tool scoping** | The five `connection_*` tools are registered **globally** — a session with no connections still carries ~1,700 tokens. The seam is located (`system-prompt/assemble` waterfall); the listener registration form is still unknown | Register only for sessions that are on a connection, removing that resident cost |
+| `mountUI` | Interface in place, implementation pending: currently only sets a dataset attribute | Real DOM mounting on the browser side |
+| `requestRemote` | Interface in place, implementation pending: the host has no `ctx.remote`, so calls return `not_available` | Remote calls under the peer's allowlist, with auditing |
+| Browser-side card panel execution | Not implemented (panel HTML is rendered host-side and handed back) | Evaluate as needed |
+
+> Card tools **deliberately** take no separate schema: callers must list before calling.
+> That's a cost/visibility trade-off, not a to-do.
 
 ---
 
@@ -452,5 +509,5 @@ See [`docs/card-protocol.md`](docs/card-protocol.md) for details.
 ---
 
 <p align="center">
-  <sub>MIT · not affiliated with the DSH project</sub>
+  <sub>BSD-3-Clause · not affiliated with the DSH project</sub>
 </p>
