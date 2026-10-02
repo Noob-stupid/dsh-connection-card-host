@@ -415,6 +415,35 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
   /** 上次已上报诊断的段数 —— 只在「0 → 非 0」那一次打一行，不刷屏。 */
   const railDiagRef = useRef(0)
 
+  /**
+   * 轨道的专用宿主 —— **追加为 `document.body` 的最后一个子节点**。
+   *
+   * 见渲染末尾那段长注释：只 portal 到 `body` 不够（会被应用根节点盖住），
+   * 必须**排在应用根之后**（同层级后者胜）**且**带接近上限的 z-index。
+   *
+   * 这个宿主独立于 DSH 的任何槽位容器 —— 轨道的堆叠因此与"哪个槽位在上面"
+   * 彻底解耦，不会被别人的皮肤/叠加层按堆叠上下文压住。
+   */
+  const hostRef = useRef<HTMLDivElement | null>(null)
+  if (typeof document !== 'undefined' && !hostRef.current) {
+    const el = document.createElement('div')
+    el.className = 'ccr-rail-host'
+    // 宿主自己也要 fixed + 高 z-index：光抬 svg 的不够 ——
+    // 真正比的是"宿主所在上下文 vs 应用根所在上下文"。
+    el.style.cssText =
+      'position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:2147483000;'
+    document.body.appendChild(el)
+    hostRef.current = el
+  }
+  // 卸载时移除宿主：不留 DOM 垃圾，也避免热重载堆积多个宿主
+  useEffect(
+    () => () => {
+      hostRef.current?.remove()
+      hostRef.current = null
+    },
+    [],
+  )
+
   /** 视图偏好：整条轨道可以一键隐藏（只影响观感，连接本身不动）。 */
   const [railVisible, setRailVisible] = useState(() => prefs.get().railVisible)
   useEffect(
@@ -446,6 +475,8 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
     const midY = (seg.y1 + seg.y2) / 2
     let top3 = 'n/a'
     let svgStyle = 'n/a'
+    /** 宿主与"应用根"的层级对比 —— 对方第 3 条要求：谁在谁上面要完全可见。 */
+    let hostInfo = 'n/a'
     try {
       const stack = document.elementsFromPoint(midX, midY).slice(0, 3)
       top3 = stack
@@ -455,6 +486,23 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
       if (svg) {
         const cs = window.getComputedStyle(svg)
         svgStyle = `z=${cs.zIndex} op=${cs.opacity} disp=${cs.display}`
+      }
+      // 宿主自身：z-index / 是否还挂在 DOM 上 / 在 body 子节点里的索引
+      const host = hostRef.current
+      if (host) {
+        const hcs = window.getComputedStyle(host)
+        const idx = Array.prototype.indexOf.call(document.body.children, host)
+        hostInfo = `host[z=${hcs.zIndex} conn=${host.isConnected} idx=${idx}/${
+          document.body.children.length - 1
+        }]`
+      }
+      // 应用根（常见几个）的 z-index —— 用来判断"谁建立了堆叠上下文"
+      const root = document.querySelector('#root,#app,[data-reactroot]')
+      if (root) {
+        const rcs = window.getComputedStyle(root)
+        hostInfo += ` root[z=${rcs.zIndex} pos=${rcs.position} tf=${
+          rcs.transform === 'none' ? 'none' : 'yes'
+        }]`
       }
     } catch {
       /* 诊断失败不影响渲染 */
@@ -467,7 +515,7 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
         (r?.bottom ?? 0) - (r?.top ?? 0),
       )}} ${svgStyle} 首段=(${Math.round(seg.x)},${Math.round(seg.y1)})~(${Math.round(
         seg.x,
-      )},${Math.round(seg.y2)}) 中点栈顶3层=[${top3}]`,
+      )},${Math.round(seg.y2)}) ${hostInfo} 中点栈顶3层=[${top3}]`,
     )
   }, [client, rail])
 
@@ -579,26 +627,34 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
   )
 
   /*
-   * ⚠️ **portal 到 `document.body`**（2026-10-02）—— 这是"线看不见"的真正修法。
+   * ⚠️ **专用宿主 + 追加为 body 最后一个子节点**（2026-10-02 第二版修法）。
    *
-   * 为什么光抬 `z-index` 不够：**`z-index` 只在同一个堆叠上下文里可比**。
+   * ## 为什么"只 portal 到 body"还不够 —— 被实测打回来了
    *
-   * 现场对比（同一界面，一个可见一个不可见）：
-   *   · 锚点 + 拖拽线 → 槽位 `conversation.input.left`（对话区）→ **可见**
-   *   · 轨道         → 槽位 `shell.overlay`（侧栏覆盖层）→ **不可见**
-   * 两者在**不同 DOM 容器**里 = 不同堆叠上下文 → 轨道那个上下文整体在
-   * 皮肤壁纸（`div.skin-wallpaper`）之下。**此时把 svg 自己的 z-index 抬到
-   * 9999 也没用** —— 它被自己容器的层级压着，比的是"容器 vs 容器"。
+   * 第一版直接 createPortal(svg, document.body)，诊断读数是：
    *
-   * 而且皮肤若用 `transform`/`filter`/`will-change` 造出新堆叠上下文，
-   * 任何 z-index 都可能失效。
+   *     div.skin-wallpaper 不再在栈里 ✓        ← 壁纸遮挡解决
+   *     但栈顶变成 span.hIlkoa_time | div.hIlkoa_sessionRow   ← 输给了应用内容
    *
-   * **所以：换宿主，而不是猜层级。** 挂到 `document.body` 之后，
-   * 轨道的堆叠直接相对 body，与"哪个槽位容器在上面"彻底解耦 ——
-   * 这也正是"**与可见者同宿**比猜一个 z-index 可靠"的落地。
+   * 物理含义：轨道是 x=254 一条**竖线**（bounds 只 16px 宽），会话行是**通栏**的 ——
+   * 行不透明时，线只在**行与行的缝里**透出来，等于看不见。
+   * （这也解释了 skin-off 时为何可见：那时轨道在 shell.overlay 槽位里，本就压在行之上。）
    *
-   * 坐标不受影响：svg 是 `position: fixed`，用的是 `getBoundingClientRect()`
-   * 的视口坐标，与父容器无关。
+   * ## 两个要点，缺一不可
+   *
+   * ① **追加为 document.body 的最后一个子节点** ——
+   *    若应用根节点（#root/#app 之类）**自身建立了堆叠上下文**或带 z-index，
+   *    那么**先挂上去的 body 子节点仍会被它盖住**。同层级下**后者胜**，
+   *    所以"排在它后面"与"高 z-index"一样重要。
+   * ② **接近上限的 z-index** —— 压过任何正常应用的层级。
+   *    2147483000 是离 32 位上限还有余量的值（留出调试空间）。
+   *
+   * 坐标不受影响：svg 仍是 position: fixed + getBoundingClientRect() 视口坐标。
+   * 宿主与 svg 都 pointer-events: none —— 不挡任何交互。
+   *
+   * 宿主随组件卸载而移除（见上面的 cleanup effect），不留 DOM 垃圾。
    */
-  return typeof document === 'undefined' ? svg : createPortal(svg, document.body)
+  const host = hostRef.current
+  if (!host) return null
+  return createPortal(svg, host)
 }

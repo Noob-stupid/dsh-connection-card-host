@@ -7,5 +7,5 @@ interface SessionRailOverlayProps {
     /** 视图偏好（lane 上限等），与面板共享同一实例。 */
     prefs: ViewPrefsStore;
 }
-export declare function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverlayProps): string | number | boolean | import("react").JSX.Element | Iterable<import("react").ReactNode> | null | undefined;
+export declare function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverlayProps): import("react").ReactNode;
 export {};
