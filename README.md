@@ -62,7 +62,7 @@
 | | |
 |:---|:---|
 | **互相看得见** | 查得到对方**正在改哪个文件、计划进行到第几步、最近用了什么工具** —— 自动采集，对方不需要专门告诉你 |
-| **说得上话** | 给对端发消息，**三档紧急度自己判断**：只告知（不打断）／排队／插话 |
+| **说得上话** | 给对端发消息，**紧急度自己判断**：只告知（不打断）／排队／插话／**抢占式中断**（第四档，**默认关闭**） |
 | **共用得上工具** | 连接上可以挂**卡片**：卡片能给会话提供工具，甚至带几十 MB 的真依赖 |
 | **共用前提** | 「公约盒」存放双方说好的事：接口、单位、命名、分工边界 |
 | **互不打扰** | 感知是**拉取式**的 —— 对方不查就零成本；不相关的连接**不会吵到你** |
@@ -142,15 +142,24 @@
 > **为什么是"拉"不是"推"**：推送会把对方上下文慢慢填满，而大部分时候它用不上。
 > 做成"存在盒子里、需要时自己查"，成本就是 0。
 
-### C. 传话（三档紧急度，**由发起方判断**）
+### C. 传话（四档紧急度，**由发起方判断**）
 
 | 档位 | 底层 | 对方会怎样 |
 |:---|:---|:---|
 | `quiet` | `inject` | 放进上下文**但不唤醒** —— 它下次干活时看到，**不被打断** |
 | `normal` | `followup` | **排队** —— 处理完手头的事就看到 |
 | `urgent` | `steer` | **插话** —— 插进它**正在跑的那一轮**，当场读到 |
+| `preempt` | `steer` + 可选 `cancel` | **抢占** —— **打断**它正在跑的这一轮（第四档，**默认关闭**；不满足条件时自动退化为 `urgent`，消息照样送到） |
 
 `urgent` 而对端空闲时**自动降级为排队**（下一轮立刻开始，效果等同即时），不会失败。
+
+> **第四档 `preempt`（抢占式）默认关闭。** 它是破坏性的：被打断的那一轮，已经做的工作白费。
+> 开通需要**写权限**（只读连接不能停别人的活），且**每个连接 5 分钟最多 1 次**；
+> **对端正在执行工具时绝不打断**（硬红线 —— 跑一半的工具被 cancel 会留下悬空调用）；
+> 对端空闲或状态未知时不打断，只投递。任一条件不满足 → **自动退化为 `urgent`，消息照样送到**（永不失败）。
+> **旧三档的语义一字未改**：`preempt` 的投递模式与 `urgent` 相同（在跑就插话、空闲就排队），只是多了一次可选的 `cancel`。
+>
+> 另：`cancel()` 必须带 `keepInbox` —— 它默认**清空收件箱**，会把用户自己排队的输入和别的会话发来的消息一起丢掉。
 
 > **判断原则**（写在工具描述里）：打断是有代价的（对方要中断当前思路）。
 > 大部分消息不急 —— 默认 `normal`，只有确实需要它**立刻**改变行为时才 `urgent`。
@@ -308,7 +317,7 @@ B 端硬调它 → 拒绝     「这张卡片只对 A 端可见（你在 B 端�
 ### 3. 打断是要花钱的
 
 旧实现的投递策略是"对端在跑就插话"—— 等价于**每条消息都是最高优先级**。
-现在紧急度由发起方判断，默认排队。
+现在紧急度由发起方判断，默认排队；第四档 `preempt`（抢占式，会**打断**对方正在跑的一轮）**默认关闭**，开通需写权限、每连接 5 分钟 1 次。
 
 ---
 
@@ -343,13 +352,13 @@ dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
 dsh plugin --profile web add Noob-stupid/dsh-connection-card-host
 ```
 
-**固定版本：用 Releases 的 tgz 附件**（当前最新 v1.0.2）：
+**固定版本：用 Releases 的 tgz 附件**（当前最新 v1.0.3）：
 
 ```sh
-dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.2/noob-stupid-dsh-connection-card-host-1.0.2.tgz
+dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.3/noob-stupid-dsh-connection-card-host-1.0.3.tgz
 
 # 同一份 tgz 先下载到本地再装，效果相同
-dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-1.0.2.tgz
+dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-1.0.3.tgz
 ```
 
 - 开发发生在**预览线仓库** [`dsh-connection-card-host-preview`](https://github.com/Noob-stupid/dsh-connection-card-host-preview)；
@@ -357,7 +366,7 @@ dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-1.0.2.tgz
 - `lib/` 已随仓库提交（npm 包里也带上）：装完即可用，不需要构建步骤，
   本包也没有需要授权的构建脚本。（`dsh plugin` 依赖 `pnpm` 在 PATH 上。）
 - ⚠️ `github:` 与简写装的是**默认分支的最新提交**，**不是固定版本**；
-  要固定版本请用 npm 的版本号（`@noob-stupid/dsh-connection-card-host@1.0.2`）或上面的 Releases tgz。
+  要固定版本请用 npm 的版本号（`@noob-stupid/dsh-connection-card-host@1.0.3`）或上面的 Releases tgz。
 
 > 实测（pnpm 9.15.9 + profile 同款配置）：npm 包名安装**只增加 1 个包**，落 `lib/` 164 个文件，
 > **不会**把 `@deepseek-ai/*` 依赖拖进你的 profile。
@@ -438,7 +447,7 @@ export function renderPanel(api) {
 - 权限：分方向三档、不对称、升级需对方确认、拒绝原因自证
 - 感知 A：自动采集工作状态（0 上下文）
 - 共识 B：公约盒（0 上下文）
-- 传话 C：三档紧急度 + 自动降级
+- 传话 C：四档紧急度（第四档 `preempt` 抢占式，**默认关闭**）+ 自动降级
 - 卡片：模板发现 / 装载 / 按端可见 / 面板内安装 / **更新** / 崩溃隔离
 - 卡片工具：桥接调用 + 可见范围强制
 - 卡片目录**版本化**（装载中也能更新）

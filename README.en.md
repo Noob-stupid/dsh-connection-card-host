@@ -65,7 +65,7 @@ tools — without getting in each other's way**.
 | | |
 |:---|:---|
 | **See each other** | Look up **which files the other session is editing, how far its plan has got, what tools it last used** — collected automatically, no effort required from the other side |
-| **Talk to each other** | Send a message with **one of three urgencies you choose**: notify only (no interruption) / queue / interject |
+| **Talk to each other** | Send a message with **an urgency you choose**: notify only (no interruption) / queue / interject / **preemptive interrupt** (fourth tier, **off by default**) |
 | **Share tools** | Mount **cards** on a connection: a card can provide tools to the sessions, even with tens of MB of real dependencies |
 | **Shared premises** | A "convention box" holds what you agreed on: interfaces, units, naming, who owns what |
 | **Stay out of the way** | Awareness is **pull-based** — zero cost unless the other side asks. Unrelated connections **never interrupt you** |
@@ -150,16 +150,30 @@ Editable in the panel; sessions read and write it with `connection_conventions` 
 > **Why pull, not push**: pushing slowly fills the other's context, and most of it is
 > never needed. Keeping it in a box that the other queries on demand costs zero.
 
-### C. Messaging (three urgencies, **chosen by the sender**)
+### C. Messaging (four urgencies, **chosen by the sender**)
 
 | Urgency | Under the hood | What the other sees |
 |:---|:---|:---|
 | `quiet` | `inject` | placed in context **without waking it** — it sees the message next time it works, **uninterrupted** |
 | `normal` | `followup` | **queued** — it sees the message once it finishes what it's doing |
 | `urgent` | `steer` | **interjected** — inserted into the turn it's **currently running**, read immediately |
+| `preempt` | `steer` + optional `cancel` | **preempted** — **interrupts** the turn it's running (fourth tier, **off by default**; falls back to `urgent` when the conditions aren't met, and the message is still delivered) |
 
 `urgent` on an idle peer **degrades to queued** automatically (the next turn starts
 immediately, so the effect is the same), and never fails.
+
+> **The fourth tier, `preempt`, is off by default.** It is destructive: the interrupted turn
+> loses the work it had already done. Enabling it requires **write permission** (a read-only
+> connection must not be able to stop the peer's work) and is limited to **once per connection
+> every 5 minutes**; it **never interrupts while a tool is executing** (a hard red line —
+> cancelling a half-finished tool leaves a dangling call); when the peer is idle or its state is
+> unknown it does not interrupt at all, it just delivers. If any condition fails it **degrades to
+> `urgent` and the message is still delivered** (it never fails).
+> **The three original tiers are unchanged**: `preempt` delivers exactly like `urgent` (interject
+> while running, queue while idle) and merely adds an optional `cancel`.
+>
+> Also: `cancel()` must pass `keepInbox` — by default it **clears the inbox**, dropping the user's
+> own queued input together with messages from other sessions.
 
 > **The rule** (written into the tool description): interrupting has a cost — the other
 > session has to drop its current line of thought. Most messages aren't urgent: default to
@@ -335,7 +349,9 @@ awareness uses layers A and B.
 
 The old delivery policy was "if the peer is running, interject" — equivalent to treating
 **every message as top priority**. Now the sender chooses the urgency, and the default is
-to queue.
+to queue. The fourth tier, `preempt` (a preemptive interrupt that **cuts short** the peer's
+running turn), is **off by default**; enabling it requires write permission and is limited to
+once per connection every 5 minutes.
 
 ---
 
@@ -370,13 +386,13 @@ dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
 dsh plugin --profile web add Noob-stupid/dsh-connection-card-host
 ```
 
-**Pin a version: use the tgz attached to Releases** (currently v1.0.2):
+**Pin a version: use the tgz attached to Releases** (currently v1.0.3):
 
 ```sh
-dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.2/noob-stupid-dsh-connection-card-host-1.0.2.tgz
+dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.3/noob-stupid-dsh-connection-card-host-1.0.3.tgz
 
 # the same tgz, downloaded first — identical result
-dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-1.0.2.tgz
+dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-1.0.3.tgz
 ```
 
 - Development happens on the **preview line**,
@@ -385,7 +401,7 @@ dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-1.0.2.tgz
 - `lib/` is committed (and shipped in the npm package), so the install arrives ready to load —
   no build step and no build script to authorize. (`dsh plugin` requires `pnpm` on PATH.)
 - ⚠️ `github:` and the shorthand install the **latest commit on the default branch**, which is
-  **not a pinned version**; to pin one use the npm version (`@noob-stupid/dsh-connection-card-host@1.0.2`)
+  **not a pinned version**; to pin one use the npm version (`@noob-stupid/dsh-connection-card-host@1.0.3`)
   or the Releases tgz above.
 
 > Measured (pnpm 9.15.9, the profile's own settings): installing by npm name **adds exactly one
@@ -476,7 +492,7 @@ See [`docs/card-protocol.md`](docs/card-protocol.md) for details.
   confirmation, refusals explain themselves
 - Awareness A: work state collected automatically (0 context)
 - Conventions B: the convention box (0 context)
-- Messaging C: three urgencies, with automatic degradation
+- Messaging C: four urgencies (the fourth, `preempt`, is **off by default**), with automatic degradation
 - Cards: template discovery / mounting / per-side visibility / in-panel install /
   **update** / crash isolation
 - Card tools: bridge invocation with enforced visibility
