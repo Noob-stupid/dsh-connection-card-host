@@ -353,6 +353,27 @@ to queue. The fourth tier, `preempt` (a preemptive interrupt that **cuts short**
 running turn), is **off by default**; enabling it requires write permission and is limited to
 once per connection every 5 minutes.
 
+### 4. The lines live at `body` level — decoupled from slot containers
+
+The two lines (rail line, drag line) are **not rendered inside a slot container**. They hang off a
+**dedicated host** that is the **last child of `document.body`** and carries a near-maximum `z-index`.
+
+**Why it has to be this way**: `z-index` is only comparable **within one stacking context**. Each
+plugin slot renders inside a different DSH container, and a different container means a different
+stacking context — so if someone else (a skin, an overlay) merely orders **their own container**
+above ours, no `z-index` on **our element** can win. If the skin also uses `transform` / `filter` /
+`will-change`, it creates yet another stacking context and any `z-index` may stop working.
+Observed in the field: with `web-ui-skin-center` installed the lines were **invisible**; disabling
+it fixed them — the rail line and the drag line **each failed this way once**.
+
+**The cost (stated plainly)**: the host **always sits at `body` level**, so a future "must be on top"
+full-screen modal would have these two lines **drawn over it**. `pointer-events: none` currently
+keeps interaction unaffected, so the risk is low.
+
+**If it ever needs tightening**, the suggested fix is a **minimal predicate**: while
+`[role="dialog"][aria-modal="true"]` is present, drop the rail below that modal and restore it when
+the modal closes — **not** an unconditional hide.
+
 ---
 
 ## Where it saves
@@ -386,13 +407,13 @@ dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
 dsh plugin --profile web add Noob-stupid/dsh-connection-card-host
 ```
 
-**Pin a version: use the tgz attached to Releases** (currently v1.0.3):
+**Pin a version: use the tgz attached to Releases** (currently v1.0.17):
 
 ```sh
-dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.3/noob-stupid-dsh-connection-card-host-1.0.3.tgz
+dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.17/noob-stupid-dsh-connection-card-host-1.0.17.tgz
 
 # the same tgz, downloaded first — identical result
-dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-1.0.3.tgz
+dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-1.0.17.tgz
 ```
 
 - Development happens on the **preview line**,
@@ -401,11 +422,11 @@ dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-1.0.3.tgz
 - `lib/` is committed (and shipped in the npm package), so the install arrives ready to load —
   no build step and no build script to authorize. (`dsh plugin` requires `pnpm` on PATH.)
 - ⚠️ `github:` and the shorthand install the **latest commit on the default branch**, which is
-  **not a pinned version**; to pin one use the npm version (`@noob-stupid/dsh-connection-card-host@1.0.3`)
+  **not a pinned version**; to pin one use the npm version (`@noob-stupid/dsh-connection-card-host@1.0.17`)
   or the Releases tgz above.
 
 > Measured (pnpm 9.15.9, the profile's own settings): installing by npm name **adds exactly one
-> package**, lands `lib/` with 164 files, and does **not** drag the `@deepseek-ai/*` dependencies
+> package**, lands `lib/` with 170 files, and does **not** drag the `@deepseek-ai/*` dependencies
 > into your profile.
 
 **Compatibility**: `peerDependencies` declares `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0`

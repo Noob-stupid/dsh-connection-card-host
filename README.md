@@ -319,6 +319,24 @@ B 端硬调它 → 拒绝     「这张卡片只对 A 端可见（你在 B 端�
 旧实现的投递策略是"对端在跑就插话"—— 等价于**每条消息都是最高优先级**。
 现在紧急度由发起方判断，默认排队；第四档 `preempt`（抢占式，会**打断**对方正在跑的一轮）**默认关闭**，开通需写权限、每连接 5 分钟 1 次。
 
+### 4. 连线挂在 `body` 层级 —— 与槽位解耦的取舍
+
+两条线（轨道线、拖拽线）**不用槽位容器渲染**，而是挂在一个**专用宿主**上 ——
+该宿主是 `document.body` 的**最后一个子节点**，自带接近上限的 `z-index`。
+
+**为什么非这样不可**：`z-index` **只在同一个堆叠上下文（stacking context）里可比**。
+插件各槽位渲染在 DSH 不同的容器里，容器不同就是堆叠上下文不同 ——
+别人（皮肤 / 叠加层）只要把**自己那个容器**排在我们容器之上，
+我们**元素自身**的 `z-index` 抬到多高都赢不了；
+皮肤若再用 `transform` / `filter` / `will-change`，还会造出新的堆叠上下文，任何 `z-index` 都可能失效。
+实测现场：装 `web-ui-skin-center` 时"看不见线"，关掉就正常 —— 轨道线与拖拽线**各自都栽过一次**。
+
+**代价（如实）**：宿主**永远在 `body` 层级**，所以将来若有"必须最上层"的全屏模态，
+这两条线会**画在模态之上**。当前靠 `pointer-events: none` 保证不挡交互，风险低。
+
+**要收的话建议做最小判据**：检测到 `[role="dialog"][aria-modal="true"]` 时把轨道压到模态之下，
+模态关闭即恢复 —— **不是**无条件降级隐藏。
+
 ---
 
 ## 省在哪
@@ -352,13 +370,13 @@ dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
 dsh plugin --profile web add Noob-stupid/dsh-connection-card-host
 ```
 
-**固定版本：用 Releases 的 tgz 附件**（当前最新 v1.0.3）：
+**固定版本：用 Releases 的 tgz 附件**（当前最新 v1.0.17）：
 
 ```sh
-dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.3/noob-stupid-dsh-connection-card-host-1.0.3.tgz
+dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.17/noob-stupid-dsh-connection-card-host-1.0.17.tgz
 
 # 同一份 tgz 先下载到本地再装，效果相同
-dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-1.0.3.tgz
+dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-1.0.17.tgz
 ```
 
 - 开发发生在**预览线仓库** [`dsh-connection-card-host-preview`](https://github.com/Noob-stupid/dsh-connection-card-host-preview)；
@@ -366,9 +384,9 @@ dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-1.0.3.tgz
 - `lib/` 已随仓库提交（npm 包里也带上）：装完即可用，不需要构建步骤，
   本包也没有需要授权的构建脚本。（`dsh plugin` 依赖 `pnpm` 在 PATH 上。）
 - ⚠️ `github:` 与简写装的是**默认分支的最新提交**，**不是固定版本**；
-  要固定版本请用 npm 的版本号（`@noob-stupid/dsh-connection-card-host@1.0.3`）或上面的 Releases tgz。
+  要固定版本请用 npm 的版本号（`@noob-stupid/dsh-connection-card-host@1.0.17`）或上面的 Releases tgz。
 
-> 实测（pnpm 9.15.9 + profile 同款配置）：npm 包名安装**只增加 1 个包**，落 `lib/` 164 个文件，
+> 实测（pnpm 9.15.9 + profile 同款配置）：npm 包名安装**只增加 1 个包**，落 `lib/` 170 个文件，
 > **不会**把 `@deepseek-ai/*` 依赖拖进你的 profile。
 
 **兼容性**：`peerDependencies` 声明 `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0`
