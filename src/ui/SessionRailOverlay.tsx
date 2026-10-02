@@ -649,27 +649,67 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
 
       {segments.map((seg) => (
         <g key={seg.id} opacity={seg.broken ? 0.35 : 1}>
+          {/*
+            ═══ 双晕（halo）—— 2026-10-02 修「线画了但看不见」 ═══
+
+            根因（对端直接读皮肤 CSS 确诊）：
+            主线颜色走的是三跳链，最后一跳是 **DSH 的"文字色"语义令牌**
+            `--dsw-alias-label-primary`，而皮肤把它设成了 `#dbe2f2`（浅蓝灰）。
+            用户壁纸是明亮场景 ⇒ **线与背景同调 ＝ 隐形**。
+            且 `var(…, #ffffff)` 的兜底**只在变量未定义时生效** ——
+            这里是被**定义成了不合适的颜色**，兜底不会触发。
+
+            **修法**：不写死颜色（那会破坏主题适配），而是在主题色之下垫**两层反相晕**：
+
+                深晕（贴底）→ 浅晕 → 主题色芯
+
+            为什么是**两层**而不是一层：单层晕只在"背景与晕色相反"时有用；
+            双层之后，**任何背景上至少有一层与它形成对比** ——
+            这正是地图/画布类应用在任意底图上画线的标准做法（白晕 + 黑边）。
+            主题色仍然来自主题，**主题适配没有被破坏**。
+          */}
+          <line
+            x1={seg.x - bounds.left}
+            y1={seg.y1 - bounds.top}
+            x2={seg.x - bounds.left}
+            y2={seg.y2 - bounds.top}
+            stroke="var(--ccr-rail-halo-dark, rgba(0, 0, 0, 0.5))"
+            strokeWidth={7}
+            strokeLinecap="round"
+          />
+          <line
+            x1={seg.x - bounds.left}
+            y1={seg.y1 - bounds.top}
+            x2={seg.x - bounds.left}
+            y2={seg.y2 - bounds.top}
+            stroke="var(--ccr-rail-halo-light, rgba(255, 255, 255, 0.6))"
+            strokeWidth={5}
+            strokeLinecap="round"
+          />
           {/* 光晕层：与拖拽拉线的「水汽」同一手法 */}
           <line
             x1={seg.x - bounds.left}
             y1={seg.y1 - bounds.top}
             x2={seg.x - bounds.left}
             y2={seg.y2 - bounds.top}
-            stroke="var(--ccr-flow-color, #fff)"
+            stroke="var(--ccr-rail-color, var(--ccr-flow-color, #fff))"
             strokeWidth={5}
             strokeOpacity={0.14}
             strokeLinecap="round"
             filter="url(#ccr-rail-glow)"
           />
-          {/* 主线：白色半透明、圆头 —— 风格对齐拖拽线 */}
+          {/* 主线：圆头 —— 风格对齐拖拽线。
+              ⚠️ 用 --ccr-rail-color（**轨道自有令牌**）而不是直接借 --ccr-flow-color：
+              轨道是"画在任意底图上的线"，与"沿路径流动的水"用途不同，
+              语义令牌不该混用（这次的事故正是借了"文字色"令牌导致的）。 */}
           <line
             x1={seg.x - bounds.left}
             y1={seg.y1 - bounds.top}
             x2={seg.x - bounds.left}
             y2={seg.y2 - bounds.top}
-            stroke="var(--ccr-flow-color, #fff)"
+            stroke="var(--ccr-rail-color, var(--ccr-flow-color, #fff))"
             strokeWidth={2}
-            strokeOpacity={0.55}
+            strokeOpacity={0.75}
             strokeLinecap="round"
           />
           {/* 微流动：短划线缓慢下滑，比拖拽线克制 */}
@@ -678,7 +718,7 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
             y1={seg.y1 - bounds.top}
             x2={seg.x - bounds.left}
             y2={seg.y2 - bounds.top}
-            stroke="var(--ccr-flow-color, #fff)"
+            stroke="var(--ccr-rail-color, var(--ccr-flow-color, #fff))"
             strokeWidth={1.2}
             strokeOpacity={0.45}
             strokeLinecap="round"
@@ -699,6 +739,23 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
                 多条连接并存时分不清哪个点跟自己有关（曾误以为连错了会话）。
               */}
               <title>{tip}</title>
+              {/*
+                端点圆点也垫双向晕 —— 理由与线一样：
+                圆点用的是**权限色**，同样可能与壁纸同调。
+                线修好了点却没修，等于只解决一半。
+              */}
+              <circle
+                cx={seg.x - bounds.left}
+                cy={y - bounds.top}
+                r={6}
+                fill="var(--ccr-rail-halo-dark, rgba(0, 0, 0, 0.5))"
+              />
+              <circle
+                cx={seg.x - bounds.left}
+                cy={y - bounds.top}
+                r={5.2}
+                fill="var(--ccr-rail-halo-light, rgba(255, 255, 255, 0.6))"
+              />
               <circle
                 cx={seg.x - bounds.left}
                 cy={y - bounds.top}
