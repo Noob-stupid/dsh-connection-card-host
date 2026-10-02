@@ -19,6 +19,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { safeCtxGet, safeCtxMethod } from '../safe-ctx.js'
+import { deliverModeFor, shouldCancel } from '../core/preempt.js'
 
 /** 观察到的会话活动。 */
 export interface SessionActivity {
@@ -51,7 +52,7 @@ export interface SessionActivity {
  * 旧实现是"只要对端在跑就打断"（等价于每条消息都是最高优先级），
  * 而大部分消息并不急 —— 打断的代价（对端中断当前思路）只该在真急时付。
  */
-export type DeliverUrgency = 'quiet' | 'normal' | 'urgent'
+export type DeliverUrgency = 'quiet' | 'normal' | 'urgent' | 'preempt'
 
 export interface DeliverResult {
   ok: boolean
@@ -139,6 +140,8 @@ export class SessionBridge {
   private listeners = new Set<(activity: SessionActivity) => void>()
   private off: (() => void) | undefined
   private auditLog: (msg: string) => void
+  /** 抢占前的安全探针：true = 有工具在执行（或状态未知）→ 不能打断。 */
+  private busyProbe: ((sessionId: string) => boolean) | undefined
   /** 记录本插件投递过的 sessionId，投递瞬间到达的 session/event 据此忽略。 */
   private delivering = new Set<string>()
   /**
@@ -299,9 +302,26 @@ export class SessionBridge {
     this.auditLog('sessionController 已接入（冷会话可被唤醒）')
   }
 
-  constructor(ctx: Context, auditLog?: (msg: string) => void) {
+  /**
+   * @param ctx - 宿主上下文
+   * @param auditLog - 审计日志
+   * @param busyProbe - **抢占式中断的安全探针**：问"这个会话此刻有没有工具在执行"。
+   *
+   *   为什么要外部注入而不是自己去读事件流：工作状态由 `WorkStateTracker` 单独
+   *   消费一条不过滤的事件流（见本文件里关于两条流的说明），SessionBridge 不该再抄一份。
+   *
+   *   ⚠️ **不传 = 永远返回 true = 永不抢占**（保守默认）。
+   *   这个默认是刻意的：抢占是破坏性能力，接线没接好时应当退化成"不打断"，
+   *   而不是"以为它空闲就打断"。
+   */
+  constructor(
+    ctx: Context,
+    auditLog?: (msg: string) => void,
+    busyProbe?: (sessionId: string) => boolean,
+  ) {
     this.ctx = ctx
     this.auditLog = auditLog ?? (() => {})
+    this.busyProbe = busyProbe
   }
 
   /** 能力探测：投递通道是否可用。 */
@@ -566,6 +586,7 @@ export class SessionBridge {
       | {
           followup?(message: unknown): void
           steer?(message: unknown): void
+          cancel?(opts: unknown): void
           inject?(message: unknown): void
           status?: unknown
         }
@@ -612,14 +633,62 @@ export class SessionBridge {
      * （它下一轮立刻开始，效果本来就等同于即时），不报错。
      */
     const peerRunning = liveAgent?.status === 'running'
-    const mode: 'inject' | 'queue' | 'steer' =
-      urgency === 'quiet'
-        ? 'inject'
-        : urgency === 'urgent'
-          ? peerRunning
-            ? 'steer'
-            : 'queue'
-          : 'queue'
+
+    /*
+     * 抢占式中断（preempt）—— **先算它该不该真打断**，再决定要不要 cancel。
+     *
+     * 这是唯一会**破坏性**影响对端的一档：cancel 会把对方正在跑的那一轮掐掉，
+     * 已经做的工作白费。所以它要过三重闸门（开关/权限/频控），
+     * 还要过一道**安全判断**（有没有工具正在执行）。
+     *
+     * 任何一步不满足 → **不 cancel，按 urgent 投递**（不是失败，
+     * 而是"不打断"本来就是这条消息的合理退化）。所以调用方永远拿得到投递结果。
+     */
+    let preemptNote: string | undefined
+    let wantCancel = false
+    if (urgency === 'preempt') {
+      const verdict = shouldCancel({
+        running: peerRunning,
+        // 探针没接上 = 状态未知 = **当作"有工具在跑"**（保守，见构造函数的说明）
+        busyWithTool: this.busyProbe ? this.busyProbe(sessionId) : true,
+      })
+      wantCancel = verdict.cancel
+      preemptNote = verdict.why
+    }
+
+    /*
+     * ⚠️ 投递模式走**纯函数**，不是就地写的三元 ——
+     * 用户明确问过"新增这档会不会动到原来的 quiet/normal"，
+     * 抽成 `deliverModeFor` 后可以用真值表钉住"原来三档一字未改"
+     * （见 scripts/test-preempt.mjs）。
+     */
+    const mode = deliverModeFor(urgency, peerRunning)
+
+    /*
+     * ⚠️ 真正 cancel 时**必须带 keepInbox**。
+     *
+     * DSH 文档原文：`cancel(cause)` aborts the active activity and,
+     * **unless `keepInbox` is set, clears pending work** ——
+     * 也就是会把用户自己排队的输入、以及别的会话发来的消息**一起丢掉**。
+     * DSH 自己的停止按钮就是带 `keepInbox` 的（`workspace/session-stop` 的注释
+     * 明确说它"cancels that turn the way the user's own stop does …
+     * but without the stop button's keepInbox"，即停止按钮有、那个路径故意没有）。
+     *
+     * 我们要的是"打断当前这一轮"，**不是"清空它的待办"** —— 所以必须带。
+     */
+    if (wantCancel && liveAgent?.cancel) {
+      try {
+        liveAgent.cancel({ kind: 'plugin', keepInbox: true })
+        this.auditLog(`抢占式中断：已 cancel 对端当前回合（${preemptNote ?? ''}，keepInbox）`)
+      } catch (e) {
+        // cancel 失败不该让消息发不出去 —— 继续走 steer
+        this.auditLog(
+          `抢占 cancel 失败（继续按 steer 投递）：${e instanceof Error ? e.message : String(e)}`,
+        )
+      }
+    } else if (urgency === 'preempt' && preemptNote) {
+      this.auditLog(`抢占降级为 steer：${preemptNote}`)
+    }
 
     // 投递 id：**登记下来供防回环识别**（见 isFromPlugin 的说明）。
     // 这个 id 会被 sessionController 原样放进它自己造的 source.rpcId，

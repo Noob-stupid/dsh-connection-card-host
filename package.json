@@ -42,7 +42,7 @@
     "build": "bash scripts/build.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build:client": "tsdown",
-    "test": "node scripts/test-tool-scoping.mjs"
+    "test": "node scripts/test-tool-scoping.mjs && node scripts/test-preempt.mjs"
   },
   "exports": {
     ".": {

@@ -126,15 +126,26 @@ export function apply(ctx: HostContext, _config?: Record<string, unknown>): void
     //   observe: ctx.on('session/event') —— 宿主级监听收到【所有会话】的事件
     //   deliver: ctx.agents.get(id) → agent.followup(msg) —— 投递并唤醒对端
     // 必须在 createStableApi 之前建好（稳定 API 要把桥暴露给 RPC）。
-    const bridge = new SessionBridge(ctx, auditLog)
-    const relay = new ConnectionRelay(manager, bridge, auditLog)
-
     // 协作感知的两层底座：
     //   WorkStateTracker —— 采集「在干什么」（自动，易变）
     //   ConventionBox    —— 共享「说好了什么」（显式，持久）
     // 二者都**只存不发**，由使用方按需拉取（工具查询 / 面板），不占对方上下文。
+    //
+    // ⚠️ 顺序有讲究：`workState` 必须**先建** —— 下面 SessionBridge 要拿它当
+    // **抢占式中断的安全探针**（"这个会话此刻有没有工具在执行"）。
+    // 放在后面就会出现"桥要用还没建好的跟踪器"，只能靠闭包绕过 TDZ，不干净。
     const workState = new WorkStateTracker(auditLog)
     const box = new ConventionBox()
+
+    const bridge = new SessionBridge(
+      ctx,
+      auditLog,
+      // 探针：true = 有工具在跑（或状态未知）→ 抢占不打断。
+      // 构造函数里说明了"不传就永不抢占"的保守默认。
+      (sid) => workState.busyWithTool(sid),
+    )
+    const relay = new ConnectionRelay(manager, bridge, auditLog)
+
     manager.attachBox(box)
 
     // 工具事件、步骤推进都在原始流里 —— observe() 只放行发言，会把它们丢掉
