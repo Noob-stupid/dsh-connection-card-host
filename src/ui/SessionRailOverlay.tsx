@@ -475,16 +475,48 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
     const midY = (seg.y1 + seg.y2) / 2
     let top3 = 'n/a'
     let svgStyle = 'n/a'
-    /** 宿主与"应用根"的层级对比 —— 对方第 3 条要求：谁在谁上面要完全可见。 */
+    /** 宿主与"应用根"的层级对比 —— 谁在谁上面要完全可见。 */
     let hostInfo = 'n/a'
     try {
-      const stack = document.elementsFromPoint(midX, midY).slice(0, 3)
-      top3 = stack
-        .map((e) => `${e.tagName.toLowerCase()}${e.getAttribute('class') ? `.${(e.getAttribute('class') ?? '').split(/\s+/)[0]}` : ''}`)
-        .join(' | ')
-      const svg = document.querySelector('.ccr-rail-overlay')
-      if (svg) {
-        const cs = window.getComputedStyle(svg)
+      const svgEl = document.querySelector('.ccr-rail-overlay') as SVGElement | null
+
+      /*
+       * ⚠️ **测量前临时放开命中**（2026-10-02，对方指出的构造性盲点）。
+       *
+       * 我们的宿主与 svg 都是 `pointer-events: none`，而
+       * **`elementsFromPoint` 会跳过这类元素** —— 所以不放开的话，
+       * 轨道**再高也永远不会出现在栈里**：那个栈测的是"**谁能被点到**"，
+       * 不是"**谁画在上面**"。
+       *
+       * 这曾导致一个错误结论（我自己下的、后来被对方更正）：
+       * 看到栈顶是 `div.skin-wallpaper` 就断定"轨道被壁纸遮住" ——
+       * 其实那只能说明"壁纸能被点到"，与轨道的绘制顺序无关。
+       *
+       * 所以：测量瞬间把 host + svg 的 pointer-events 放开 → 取栈 → **立刻恢复**。
+       * `finally` 保证异常路径也会恢复，不留状态。
+       */
+      const hostEl = hostRef.current
+      const hostPe = hostEl?.style.pointerEvents ?? ''
+      const svgPe = svgEl?.style.pointerEvents ?? ''
+      if (hostEl) hostEl.style.pointerEvents = 'auto'
+      if (svgEl) svgEl.style.pointerEvents = 'auto'
+      try {
+        const stack = document.elementsFromPoint(midX, midY).slice(0, 3)
+        top3 = stack
+          .map(
+            (e) =>
+              `${e.tagName.toLowerCase()}${
+                e.getAttribute('class') ? `.${(e.getAttribute('class') ?? '').split(/\s+/)[0]}` : ''
+              }`,
+          )
+          .join(' | ')
+      } finally {
+        if (hostEl) hostEl.style.pointerEvents = hostPe
+        if (svgEl) svgEl.style.pointerEvents = svgPe
+      }
+
+      if (svgEl) {
+        const cs = window.getComputedStyle(svgEl)
         svgStyle = `z=${cs.zIndex} op=${cs.opacity} disp=${cs.display}`
       }
       // 宿主自身：z-index / 是否还挂在 DOM 上 / 在 body 子节点里的索引
