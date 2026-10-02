@@ -235,6 +235,25 @@ function describeElement(el: Element | null): string {
 }
 
 /**
+ * 栈里某一层的描述：元素 + **`pointer-events` 计算值** + 是否会话行。
+ *
+ * 为什么要 `pointer-events`：它是区分两种病因的关键判据 ——
+ * `elementsFromPoint` **会跳过 `pointer-events: none` 的元素**，
+ * 所以"栈里没有真实行"到底是"行不在那个位置"还是"行被关了指针事件"，
+ * 不看这个值就只能猜。
+ */
+function describeStackLayer(el: Element): string {
+  let pe = '?'
+  try {
+    pe = window.getComputedStyle(el).pointerEvents || '?'
+  } catch {
+    /* 拿不到就算了 */
+  }
+  const isRow = el.closest?.('[role="treeitem"]') ? ' ✓row' : ''
+  return `${describeElement(el)}(pe=${pe}${isRow})`
+}
+
+/**
  * 对一个**具体的行元素**解析会话 id —— 不要求它在全量映射表里。
  *
  * @param row - `role="treeitem"` 的行元素
@@ -339,22 +358,45 @@ export function sessionRowHitAtPoint(
     return { info: null, hitRow: false, elementDesc: 'no-document' }
   }
 
+  const mapped = collectSessionRows(snapshot)
+
   /*
-   * 从栈顶往下逐层找第一个会话行。
+   * ── ① 几何命中：**首选**，因为它对叠加层免疫 ──
    *
-   * `elementsFromPoint` 在个别环境可能不存在（老 WebView）→ 退回单数版，
-   * 至少不比原来差。
+   * 实测证据：装上 `web-ui-skin-center` 后，`elementsFromPoint` **走完整条栈
+   * （13–25 层）却一个会话行都没有**，而关掉皮肤就正常。
+   * 两种可能（皮肤给真实 UI 关了 `pointer-events`／皮肤渲染了自己的视觉副本）
+   * **DOM 栈都救不了** —— 复数版会跳过 `pointer-events:none` 的元素，
+   * 视觉副本则根本不是 `[role="treeitem"]`。只有几何能救。
+   *
+   * 这也正是用户的心智模型：**我看得见那一行，就该能拖上去。**
+   *
+   * 与 `collectSessionRows` 的 `fillGap` 同纪律：**唯一解才采用**。
+   * 行之间本不该重叠；真重叠了说明有状况，那时不猜，退到 DOM 栈。
    */
+  const inside = mapped.filter(
+    (r) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom,
+  )
+  if (inside.length === 1) {
+    const only = inside[0]!
+    return {
+      info: only,
+      hitRow: true,
+      elementDesc: `几何命中 ${describeElement(only.element)}`,
+    }
+  }
+
+  // ── ② DOM 栈穿透：处理几何没覆盖到的情形 ──
   const stack: Element[] =
     typeof document.elementsFromPoint === 'function'
       ? document.elementsFromPoint(x, y)
       : ([document.elementFromPoint(x, y)].filter(Boolean) as Element[])
 
+  // 诊断：前 3 层的 pointer-events 与是否行 —— 区分 H1 与 H2 的关键证据
+  const top3 = stack.slice(0, 3).map(describeStackLayer).join(' | ')
+
   let row: Element | null = null
-  let topDesc = 'null'
-  for (let i = 0; i < stack.length; i++) {
-    const el = stack[i]!
-    if (i === 0) topDesc = describeElement(el)
+  for (const el of stack) {
     const candidate = el.closest?.('[role="treeitem"]')
     if (candidate) {
       row = candidate
@@ -363,17 +405,45 @@ export function sessionRowHitAtPoint(
   }
 
   if (!row) {
-    // 一个会话行都没穿到。诊断里要能看出"栈顶是什么"以及"穿了几层"
+    /*
+     * 栈里一个会话行都没有 —— H1/H2 的现场。
+     *
+     * 诊断要能一眼区分两种可能，所以除栈顶三层的 `pointer-events` 外，
+     * 还给出**最近的已知行离指针多远**：
+     *   · 距离 ≈ 0（指针就在某行矩形里）→ 行在正确位置却不进栈
+     *     → **H1**：皮肤把真实 UI 的 pointer-events 关了（或视觉副本顶掉了它）
+     *   · 所有行都离得很远 → **H2 的极端情形**：真实行被 display:none / 移走
+     *     → 那属于皮肤侧必须修（不得替换/隐藏真实交互 DOM）
+     */
+    let nearest = 'n/a'
+    if (mapped.length > 0) {
+      let best = Infinity
+      let bestId = ''
+      for (const r of mapped) {
+        const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0
+        const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0
+        const d = Math.round(Math.hypot(dx, dy))
+        if (d < best) {
+          best = d
+          bestId = r.id
+        }
+      }
+      nearest = `${bestId.slice(0, 8)} 距 ${best}px`
+    }
     return {
       info: null,
       hitRow: false,
-      elementDesc: stack.length > 0 ? `${topDesc} (栈 ${stack.length} 层均非行)` : '空栈',
+      elementDesc:
+        stack.length > 0
+          ? `栈 ${stack.length} 层均非行(命中行 ${inside.length} 个) [${top3}] 最近行=${nearest}`
+          : '空栈',
     }
   }
 
-  const mapped = collectSessionRows(snapshot)
   const direct = mapped.find((info) => info.element === row)
-  if (direct) return { info: direct, hitRow: true, elementDesc: describeElement(row) }
+  if (direct) {
+    return { info: direct, hitRow: true, elementDesc: `栈命中 ${describeElement(row)}` }
+  }
 
   const resolved = resolveRowId(row, snapshot, mapped)
   if (!resolved.id) {
