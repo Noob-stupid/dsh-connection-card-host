@@ -48,7 +48,7 @@ export interface SessionActivity {
  * 旧实现是"只要对端在跑就打断"（等价于每条消息都是最高优先级），
  * 而大部分消息并不急 —— 打断的代价（对端中断当前思路）只该在真急时付。
  */
-export type DeliverUrgency = 'quiet' | 'normal' | 'urgent';
+export type DeliverUrgency = 'quiet' | 'normal' | 'urgent' | 'preempt';
 export interface DeliverResult {
     ok: boolean;
     /** 实际走通的通道，便于诊断。 */
@@ -76,6 +76,8 @@ export declare class SessionBridge {
     private listeners;
     private off;
     private auditLog;
+    /** 抢占前的安全探针：true = 有工具在执行（或状态未知）→ 不能打断。 */
+    private busyProbe;
     /** 记录本插件投递过的 sessionId，投递瞬间到达的 session/event 据此忽略。 */
     private delivering;
     /**
@@ -162,7 +164,19 @@ export declare class SessionBridge {
     observeRaw(handler: (sessionId: string, event: unknown) => void): () => void;
     /** 接入一个声明了 sessionController 的上下文（冷会话唤醒通道）。 */
     attachControllerContext(ctx: Context): void;
-    constructor(ctx: Context, auditLog?: (msg: string) => void);
+    /**
+     * @param ctx - 宿主上下文
+     * @param auditLog - 审计日志
+     * @param busyProbe - **抢占式中断的安全探针**：问"这个会话此刻有没有工具在执行"。
+     *
+     *   为什么要外部注入而不是自己去读事件流：工作状态由 `WorkStateTracker` 单独
+     *   消费一条不过滤的事件流（见本文件里关于两条流的说明），SessionBridge 不该再抄一份。
+     *
+     *   ⚠️ **不传 = 永远返回 true = 永不抢占**（保守默认）。
+     *   这个默认是刻意的：抢占是破坏性能力，接线没接好时应当退化成"不打断"，
+     *   而不是"以为它空闲就打断"。
+     */
+    constructor(ctx: Context, auditLog?: (msg: string) => void, busyProbe?: (sessionId: string) => boolean);
     /** 能力探测：投递通道是否可用。 */
     capabilities(): {
         observe: boolean;
