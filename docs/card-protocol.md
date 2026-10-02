@@ -254,11 +254,13 @@ export function renderPanel(api) {
 
 ### 未实现
 
+> 下表这些项**尚未实现**。接口已就位，实现待补（路线图见 README 的「路线图（规划中）」一节）。
+
 | 能力 | 状态 |
 |---|---|
 | 卡片面板的浏览器侧执行 | 未实现（见上方局限：面板 HTML 在宿主侧渲染后注入） |
-| `requestRemote` | **空壳**：宿主没有 `ctx.remote`，永远返回 `not_available`。白名单校验与审计日志已就绪，缺的是真正能打到对端会话的执行通道 |
-| `repairPreset` | stub，未接真实修复逻辑 |
+| `requestRemote` | **接口已就位、实现待补**：宿主没有 `ctx.remote`，目前永远返回 `not_available`。白名单校验与审计日志已就绪，缺的是真正能打到对端会话的执行通道 |
+| `repairPreset` | **接口已就位、实现待补**：未接真实修复逻辑 |
 
 ### 手动安装一张卡片
 
