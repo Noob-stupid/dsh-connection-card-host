@@ -418,8 +418,9 @@ export function renderPanel(api) {
 
 | 项 | 说明 |
 |:---|:---|
-| `mountUI` / `requestRemote` | 空壳（`mountUI` 只设了个 dataset 属性） |
+| `mountUI` / `requestRemote` | 接口已就位、实现待补（`mountUI` 目前只设了个 dataset 属性） |
 | 卡片工具的 schema | 不占独立 schema（有意为之）；调用方需先 list 再 call |
+| **连线的层级取舍** | 轨道用 portal 挂在 `document.body` 上 —— **与槽位容器解耦**，这样才不会被别人的皮肤/叠加层按堆叠上下文压住（`z-index` 只在同一堆叠上下文里可比）。代价：它**永远在 body 层级**，将来若有"必须最上层"的全屏模态，轨道会画在模态之上。当前靠 `pointer-events: none` 保证不挡交互，风险低；要收的话建议做**最小判据** —— 检测到 `[role="dialog"][aria-modal="true"]` 时把轨道压到模态之下，模态关闭即恢复（**不是**无条件降级隐藏） |
 
 ---
 

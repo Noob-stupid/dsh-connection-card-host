@@ -417,8 +417,9 @@ See [`docs/card-protocol.md`](docs/card-protocol.md) for details.
 
 | Item | Notes |
 |:---|:---|
-| `mountUI` / `requestRemote` | Stubs (`mountUI` only sets a dataset attribute) |
+| `mountUI` / `requestRemote` | Interface in place, implementation pending (`mountUI` currently only sets a dataset attribute) |
 | Card tool schemas | Deliberately take no separate schema; callers must list before calling |
+| **Rail layering trade-off** | The rail is portaled onto `document.body` — **decoupled from slot containers**, which is the only way to keep someone else's skin/overlay from beating it via stacking context (`z-index` is only comparable *within* one stacking context). The cost: it always sits at body level, so a future "must be on top" full-screen modal would have the rail drawn over it. `pointer-events: none` keeps interaction unaffected, so the risk is low; if it ever needs tightening, the suggested fix is a **minimal predicate** — while `[role="dialog"][aria-modal="true"]` is present, drop the rail below that modal and restore when it closes (**not** an unconditional hide) |
 
 ---
 
