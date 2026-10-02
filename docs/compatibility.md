@@ -93,7 +93,7 @@ splice 进会话 → 落盘编码 `session-format-v3-to-v4` 的 `assertV4RowAdmi
 修法：① 改生产方代码（`PLUGIN_SOURCE_KIND`）+ 重建 + 热重载；
 ② 已卡死的会话再清写缓冲：`sessionPersistence.tracker.writers.get(id)` → 把 `buffered`
 里的坏 `source` 改成 producer-owned kind → `drainLive()` + `flush()`。
-现场用的巡检/修复工具留在 `D:\dsh-link\_v4fix-2026-09-30\`（`wedge_probe` / `flush_repair2`，
+现场用的巡检/修复工具留在本机一次性目录 `_v4fix-2026-09-30\`（`wedge_probe` / `flush_repair2`，
 经 `dsh-super-injector` 的 `dev_stage_call` 调用）。
 
 ## 失败降级行为

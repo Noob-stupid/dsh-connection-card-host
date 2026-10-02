@@ -1,0 +1,90 @@
+name: ci
+
+# 门面仓库的 CI 硬门槛 —— 与 hub（dsh-plugin-gating-hub）同级的发布纪律。
+# 四类门槛全部是硬门槛：任何一步非零退出即失败，**不使用 continue-on-error**（不许掩盖）。
+#
+# Node 版本 = 24（Active LTS，2025-10-28 起）的理由：
+#   ① 仓库没有 engines / .nvmrc，所以必须自己定一个，并把理由写在这里备查；
+#   ② devDependencies 是 @types/node ^24、tsconfig target ES2023 —— Node 24 完整覆盖；
+#   ③ 作者本机开发运行时是 v24.13.0，CI 跑同一大版本，避免「本机过、CI 挂」的差异。
+#
+# 注意：`npm test` 在本仓库**不需要任何依赖、不需要网络**（见 test job 里的说明）。
+on:
+  push: # main + 所有分支（不加 branch 过滤）
+  pull_request:
+  workflow_dispatch: # 需要单独复跑门槛时手动触发，不必为此造一个空提交
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    name: ① 语法检查 node --check（硬门槛）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: lib/**.js 与 scripts/**.mjs 逐个 node --check
+        run: |
+          set -euo pipefail
+          files=$(git ls-files 'lib/*.js' 'lib/**/*.js' 'scripts/*.mjs' 'scripts/**/*.mjs')
+          # 防假绿：pathspec 写错会得到空清单，一个都不检查也算绿 —— 先钉住必须存在的文件
+          for must in lib/index.js lib/client.js scripts/test-tool-scoping.mjs scripts/test-preempt.mjs; do
+            grep -qx "$must" <<< "$files" || { echo "::error::文件清单里没有 $must —— pathspec 写错了"; exit 1; }
+          done
+          n=0
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            node --check "$f"
+            n=$((n + 1))
+          done <<< "$files"
+          echo "✅ node --check 通过：$n 个文件"
+
+  test:
+    name: ② 单元/契约测试 + 构建产物对齐（硬门槛）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      # 这里**故意不跑 npm ci / npm install**：仓库没有 lockfile（package-lock.json 未提交），
+      # 而 `npm test` = `node scripts/test-tool-scoping.mjs && node scripts/test-preempt.mjs`，
+      # 这两个脚本只 import lib/core/{tool-scoping,preempt}.js —— 零 import、零 devDeps、零网络。
+      # 装 devDeps（typescript/tsdown/@types/node）对测试没有任何作用，只会白等网络。
+      - name: 构建产物与源码对齐（防假绿：测的必须是当前代码）
+        run: node scripts/ci/check-src-lib-parity.mjs
+      - name: 单元 / 契约测试
+        run: npm test
+
+  patch-manifest:
+    name: ③ cordis.patch.yml 结构（硬门槛）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      # 零依赖的结构断言（不为了这一步装 YAML 库）：形状合法 + id 不变 + name 与 package.json 一致 + dsh.client 在
+      - name: 断言 insert / id / name / dsh.client
+        run: node scripts/ci/check-cordis-patch.mjs
+
+  no-machine-paths:
+    name: ④ 本机路径扫描（硬门槛）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      # 先自校验，再扫描：「扫描器永远返回 0 命中」这种假绿必须先被排除掉
+      - name: 扫描器自校验（该命中的必须命中 / 不该误伤的必须不命中 / 脚本自身 0 命中）
+        run: node scripts/ci/selfcheck-localscan.mjs
+      - name: 扫描被 git 跟踪的文本文件（盘符路径 / 本机用户名 / file:// URI）
+        run: node scripts/ci/no-machine-paths.mjs

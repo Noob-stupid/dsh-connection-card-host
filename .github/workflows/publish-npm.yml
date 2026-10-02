@@ -1,0 +1,138 @@
+name: publish-npm
+
+# npm 发布工作流（tag `v*` 触发 + 手动触发）。门面仓库的正式发布通道；本机 CLI 发布仍然可用。
+#
+# ── 启用步骤（一次性，用户操作）─────────────────────────────────────────────
+#   1) npmjs.com → Access Tokens → Generate New Token → 选 **Automation** 类型
+#      （Automation 绕过 2FA/OTP，CI 里可用；Publish 类型在 CI 里会卡在 OTP 上）
+#   2) GitHub → 仓库 → Settings → Secrets and variables → Actions → New repository secret
+#      Name: NPM_TOKEN        Value: 上一步生成的 token
+#      地址：https://github.com/Noob-stupid/dsh-connection-card-host/settings/secrets/actions
+#   没配置 NPM_TOKEN 时本工作流**响亮跳过**（::notice:: + job summary，运行仍是绿色），
+#   不会把 CI/发布线变红 —— 所以在加 secret 之前它是安全的。
+#
+# ── 纪律（不许违反）────────────────────────────────────────────────────────
+#   · 不移动 / 不删除 tag、不 `--force`、不 `npm unpublish`：发布是只增操作。
+#   · 「npm 上的字节 == GitHub Release 资产的字节」：同一个 `npm pack` 产物，
+#     既 `npm publish <tgz>`，又作为 Release 资产上传（先发 npm，再用同一个文件建/补 Release）。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '只打包校验，不发布 npm、不建 Release（true/false）'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write # gh release create / upload 需要
+
+jobs:
+  publish:
+    name: npm 发布 + Release 同字节资产
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # 取全量 tag/历史，版本一致性校验按 ref 判定
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      # 关键：secret 缺失 = 响亮跳过，不是红叉。后续发布步骤全部由这一步的 output 门控。
+      - id: guard
+        name: 检查 NPM_TOKEN 是否已配置（缺了则响亮跳过，不变红）
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=未配置 NPM_TOKEN，跳过 npm 发布::请到 https://github.com/${{ github.repository }}/settings/secrets/actions 添加名为 NPM_TOKEN 的 Automation 类型 token，然后重跑本工作流。"
+            {
+              echo '### ⏭️ 跳过 npm 发布：未配置 `NPM_TOKEN`'
+              echo ''
+              echo '本次运行**不是失败**：发布通道在等凭据，后续步骤按门控全部跳过。'
+              echo ''
+              echo '启用方式：npmjs.com → Access Tokens → Generate New Token → **Automation** 类型，'
+              echo "然后加到 https://github.com/${{ github.repository }}/settings/secrets/actions （Name: \`NPM_TOKEN\`）。"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "::notice title=NPM_TOKEN 已配置::继续执行发布流水线"
+
+      - name: tag 与 package.json 版本一致性（防发错产物）
+        if: steps.guard.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          PKG=$(node -p "require('./package.json').version")
+          echo "package.json 版本: $PKG ；触发 ref: $GITHUB_REF"
+          case "$GITHUB_REF" in
+            refs/tags/v*)
+              TAGVER="${GITHUB_REF#refs/tags/v}"
+              [ "$TAGVER" = "$PKG" ] || { echo "::error::tag v$TAGVER 与 package.json $PKG 不一致，拒绝发布"; exit 1; }
+              echo "✅ tag 与 package.json 版本一致" ;;
+            *) echo "非 tag 触发（手动）：按 package.json 版本走" ;;
+          esac
+
+      - name: 发布前校验（语法 + 构建产物对齐 + 测试，都是硬门槛）
+        if: steps.guard.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          node --check lib/index.js
+          node --check lib/client.js
+          node scripts/ci/check-src-lib-parity.mjs
+          npm test
+
+      - id: pack
+        name: npm pack（这一个文件同时是 npm 产物与 Release 资产）
+        if: steps.guard.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          TGZ=$(npm pack --silent | tail -n 1)
+          [ -f "$TGZ" ] || { echo "::error::npm pack 没有产出 tgz"; exit 1; }
+          sha256sum "$TGZ" | tee "$TGZ.sha256"
+          echo "tgz=$TGZ" >> "$GITHUB_OUTPUT"
+          echo "::notice::打包完成 $TGZ —— npm 发布与 Release 资产用同一个文件"
+
+      - name: 发布到 npm（发布的就是上面那份 tgz 的字节）
+        if: steps.guard.outputs.publish == 'true' && inputs.dry_run != 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm publish "./${{ steps.pack.outputs.tgz }}" --registry=https://registry.npmjs.org/ --access public
+
+      - name: dry-run 报告
+        if: steps.guard.outputs.publish == 'true' && inputs.dry_run == 'true'
+        run: echo "::notice::dry_run=true —— 只打包校验，未发布 npm、未建 Release"
+
+      - name: GitHub Release 资产（同一份 tgz + sha256）
+        if: steps.guard.outputs.publish == 'true' && inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TGZ="${{ steps.pack.outputs.tgz }}"
+          PKG=$(node -p "require('./package.json').name")
+          VER=$(node -p "require('./package.json').version")
+          TAG="v$VER"
+          # 纪律：这里绝不创建 / 移动 / 删除 tag。远端没有这个 tag 就只报告、不建 Release。
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "::warning::远端没有 tag $TAG —— npm 已发布，但按纪律不在这里补 tag、也不建 Release"
+            exit 0
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -qx "$TGZ"; then
+              echo "::notice::Release $TAG 已有同名资产，跳过上传（不覆盖：资产字节必须等于首次发布那份）"
+            else
+              gh release upload "$TAG" "$TGZ" "$TGZ.sha256"
+            fi
+          else
+            gh release create "$TAG" "$TGZ" "$TGZ.sha256" --verify-tag --title "$TAG" \
+              --notes "npm：https://www.npmjs.com/package/$PKG/v/$VER —— npm 上的字节与本 Release 资产的字节来自同一次 npm pack。"
+          fi
