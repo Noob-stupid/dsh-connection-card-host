@@ -11,6 +11,7 @@
  * id 的来源见 client/row-map.ts。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { allocateLanes } from '../core/lane-allocator.js'
 import type { PermissionLevel } from '../types/index.js'
 import type { ConnectionCardHostClient } from '../client/host-client.js'
@@ -479,7 +480,7 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
   const width = bounds.right - bounds.left
   const height = bounds.bottom - bounds.top
 
-  return (
+  const svg = (
     <svg
       className="ccr-rail-overlay"
       aria-hidden="true"
@@ -490,17 +491,6 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
         width,
         height,
         pointerEvents: 'none',
-        /*
-         * ⚠️ z-index 从 5 提到 9999（2026-10-02）。
-         *
-         * 现场：用户装 `web-ui-skin-center` 时**看不到连线，却看得到拖拽线** ——
-         * 而拖拽线是 `z-index: 9999`、轨道原来是 `5`。
-         * **同一个界面里一个可见一个不可见，差别就是这个层级**：
-         * 皮肤的壁纸/叠加层落在 5 之上、9999 之下。
-         *
-         * 提到与拖拽线同级（两者不重叠：轨道只在会话列表区域，拖拽线是全程跟随）。
-         * `pointer-events: none` 已保证它不挡交互 —— 所以抬高只是"画得更靠前"。
-         */
         zIndex: 9999,
         // hidden（不是 visible）：画布已经是「内容 ∩ 列表可视区」，
         // 越界的形状（尤其滚出去的端点圆点）必须在这里被统一裁掉 ——
@@ -587,4 +577,28 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
       ))}
     </svg>
   )
+
+  /*
+   * ⚠️ **portal 到 `document.body`**（2026-10-02）—— 这是"线看不见"的真正修法。
+   *
+   * 为什么光抬 `z-index` 不够：**`z-index` 只在同一个堆叠上下文里可比**。
+   *
+   * 现场对比（同一界面，一个可见一个不可见）：
+   *   · 锚点 + 拖拽线 → 槽位 `conversation.input.left`（对话区）→ **可见**
+   *   · 轨道         → 槽位 `shell.overlay`（侧栏覆盖层）→ **不可见**
+   * 两者在**不同 DOM 容器**里 = 不同堆叠上下文 → 轨道那个上下文整体在
+   * 皮肤壁纸（`div.skin-wallpaper`）之下。**此时把 svg 自己的 z-index 抬到
+   * 9999 也没用** —— 它被自己容器的层级压着，比的是"容器 vs 容器"。
+   *
+   * 而且皮肤若用 `transform`/`filter`/`will-change` 造出新堆叠上下文，
+   * 任何 z-index 都可能失效。
+   *
+   * **所以：换宿主，而不是猜层级。** 挂到 `document.body` 之后，
+   * 轨道的堆叠直接相对 body，与"哪个槽位容器在上面"彻底解耦 ——
+   * 这也正是"**与可见者同宿**比猜一个 z-index 可靠"的落地。
+   *
+   * 坐标不受影响：svg 是 `position: fixed`，用的是 `getBoundingClientRect()`
+   * 的视口坐标，与父容器无关。
+   */
+  return typeof document === 'undefined' ? svg : createPortal(svg, document.body)
 }
