@@ -21,7 +21,7 @@ import { useDragLine } from '../ui/hooks/useDragLine.js'
 import { createHostClient, resolveRpcCaller } from './host-client.js'
 import { resolveSessions } from './sessions-bridge.js'
 import { createViewPrefs } from './view-prefs.js'
-import { sessionRowAtPoint } from './row-map.js'
+import { sessionRowHitAtPoint } from './row-map.js'
 import { injectStyles } from '../styles/tokens.js'
 import { safeCtxGet } from '../safe-ctx.js'
 
@@ -154,18 +154,27 @@ export function apply(ctx: ClientContext): void {
     const resolveDrop = useCallback(
       (x: number, y: number) => {
         const snap = sessions?.getSnapshot()
-        const hit = sessionRowAtPoint(x, y, snap ?? null)
+        /*
+         * 用 sessionRowHitAtPoint（**不再要求这一行在全量映射表里**）。
+         * 旧实现走 sessionRowAtPoint → 内部 `collectSessionRows(...).find(...)`，
+         * 落到"没有 data-ccr-session 标记"的行（文件夹行、或自插件加载起从未 idle 的
+         * 会话行）上就返回 null → 一律 no-row-under-cursor。
+         * 现场数字：ids=110 rows=23 marked=17 —— 有 6 行映射不上。
+         */
+        const hitInfo = sessionRowHitAtPoint(x, y, snap ?? null)
+        const hit = hitInfo.info
         // 起点优先用槽位给的 sessionId，快照 current 只作兜底
         const sourceId = sessionId ?? snap?.current ?? null
         const existing =
           hit && sourceId ? findExisting(connsRef.current, sourceId, hit.id) : undefined
         let reason: string
         if (!sessions) reason = 'no-sessions-bridge'
-        else if (!hit) reason = 'no-row-under-cursor'
+        else if (!hitInfo.hitRow) reason = 'no-row-under-cursor'
+        else if (!hit) reason = 'row-unresolved'
         else if (!sourceId) reason = 'no-current-session'
         else if (hit.id === sourceId) reason = 'same-session'
         else reason = 'ok'
-        return { hit, sourceId, reason, existing, idCount: snap?.ids?.length ?? 0 }
+        return { hit, sourceId, reason, existing, idCount: snap?.ids?.length ?? 0, hitInfo }
       },
       [sessions, sessionId, findExisting],
     )
@@ -205,9 +214,21 @@ export function apply(ctx: ClientContext): void {
      */
     const finishAt = useCallback(
       (x: number, y: number) => {
-        const { hit, sourceId, reason } = resolveDrop(x, y)
+        const r = resolveDrop(x, y)
+        const { hit, sourceId, reason } = r
         if (reason !== 'ok' || !hit || !sourceId) {
-          if (client) client.report(`dragEnd reason=${reason} hit=${hit?.id ?? 'none'}`)
+          if (client) {
+            client.report(
+              `dragEnd reason=${reason} hit=${hit?.id ?? 'none'} ` +
+                // 诊断：把"指针下到底是什么元素"打出来。
+                // 旧日志只有 reason，`no-row-under-cursor` 到底是"真没命中行"
+                // 还是"命中了行但认不出 id"分不清 —— 那正是这条链查不动的原因。
+                `at=[${r.hitInfo.elementDesc}] rowHit=${r.hitInfo.hitRow} ` +
+                (r.hitInfo.missReason ? `未解析=[${r.hitInfo.missReason}] ` : '') +
+                `rows=${document.querySelectorAll('[role="treeitem"]').length} ` +
+                `marked=${document.querySelectorAll('[data-ccr-session]').length}`,
+            )
+          }
           clearHighlight()
           return
         }
