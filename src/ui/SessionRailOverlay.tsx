@@ -21,6 +21,7 @@ import { collectSessionRows, type SessionRowInfo } from '../client/row-map.js'
 import type { ViewPrefsStore } from '../client/view-prefs.js'
 import { useConnections } from './hooks/useConnections.js'
 import { useSessionList } from './hooks/useSessionList.js'
+import { getOverlayHost } from './overlay-host.js'
 
 interface SessionRailOverlayProps {
   client: ConnectionCardHostClient | null
@@ -421,34 +422,18 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
   const railDiagRef = useRef(false)
 
   /**
-   * 轨道的专用宿主 —— **追加为 `document.body` 的最后一个子节点**。
+   * 共用覆盖层宿主的引用。
    *
-   * 见渲染末尾那段长注释：只 portal 到 `body` 不够（会被应用根节点盖住），
-   * 必须**排在应用根之后**（同层级后者胜）**且**带接近上限的 z-index。
+   * ⚠️ **两条线（轨道 + 拖拽）共用同一个宿主** —— 见 `overlay-host.ts`。
+   * 各建各的会在"谁是 body 最后一个子节点"上互相竞争（后者胜的规则下，
+   * 两者挂载顺序一变，层级就翻转），共用一个宿主后层内用 z-index 排定：
+   * 轨道 9998、拖拽 9999。
    *
-   * 这个宿主独立于 DSH 的任何槽位容器 —— 轨道的堆叠因此与"哪个槽位在上面"
-   * 彻底解耦，不会被别人的皮肤/叠加层按堆叠上下文压住。
+   * 宿主挂在 body 上 → 堆叠与"哪个槽位容器在上面"彻底解耦，
+   * 不会被别人的皮肤/叠加层按堆叠上下文压住（那正是"看不见线"的成因之一）。
    */
   const hostRef = useRef<HTMLDivElement | null>(null)
-  if (typeof document !== 'undefined' && !hostRef.current) {
-    const el = document.createElement('div')
-    el.className = 'ccr-rail-host'
-    // 宿主自己也要 fixed + 高 z-index：光抬 svg 的不够 ——
-    // 真正比的是"宿主所在上下文 vs 应用根所在上下文"。
-    el.style.cssText =
-      'position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:2147483000;'
-    document.body.appendChild(el)
-    hostRef.current = el
-  }
-  // 卸载时移除宿主：不留 DOM 垃圾，也避免热重载堆积多个宿主
-  useEffect(
-    () => () => {
-      hostRef.current?.remove()
-      hostRef.current = null
-    },
-    [],
-  )
-
+  if (!hostRef.current) hostRef.current = getOverlayHost()
   /** 视图偏好：整条轨道可以一键隐藏（只影响观感，连接本身不动）。 */
   const [railVisible, setRailVisible] = useState(() => prefs.get().railVisible)
   useEffect(
@@ -634,7 +619,8 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
         width,
         height,
         pointerEvents: 'none',
-        zIndex: 9999,
+        // 与拖拽线同在共用宿主内：轨道 9998、拖拽 9999（拖拽线应在最上）
+        zIndex: 9998,
         // hidden（不是 visible）：画布已经是「内容 ∩ 列表可视区」，
         // 越界的形状（尤其滚出去的端点圆点）必须在这里被统一裁掉 ——
         // 这就是"线永远不会画到列表之外"的最后一道保证。
@@ -666,7 +652,7 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
             y1={seg.y1 - bounds.top}
             x2={seg.x - bounds.left}
             y2={seg.y2 - bounds.top}
-            stroke="var(--ccr-rail-color, var(--ccr-flow-color, #60a5fa))"
+            stroke="var(--ccr-flow-color, #fff)"
             strokeWidth={5}
             strokeOpacity={0.14}
             strokeLinecap="round"
@@ -681,7 +667,7 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
             y1={seg.y1 - bounds.top}
             x2={seg.x - bounds.left}
             y2={seg.y2 - bounds.top}
-            stroke="var(--ccr-rail-color, var(--ccr-flow-color, #60a5fa))"
+            stroke="var(--ccr-flow-color, #fff)"
             strokeWidth={2}
             strokeOpacity={0.55}
             strokeLinecap="round"
@@ -692,7 +678,7 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
             y1={seg.y1 - bounds.top}
             x2={seg.x - bounds.left}
             y2={seg.y2 - bounds.top}
-            stroke="var(--ccr-rail-color, var(--ccr-flow-color, #60a5fa))"
+            stroke="var(--ccr-flow-color, #fff)"
             strokeWidth={1.2}
             strokeOpacity={0.45}
             strokeLinecap="round"

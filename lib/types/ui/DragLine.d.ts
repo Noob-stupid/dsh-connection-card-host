@@ -10,5 +10,5 @@ interface DragLineProps {
     /** 退出动效结束（父组件据此卸载）。 */
     onComplete?: () => void;
 }
-export declare function DragLine({ start, end, releasing, onComplete }: DragLineProps): import("react").JSX.Element;
+export declare function DragLine({ start, end, releasing, onComplete }: DragLineProps): string | number | boolean | import("react").JSX.Element | Iterable<import("react").ReactNode> | null | undefined;
 export {};

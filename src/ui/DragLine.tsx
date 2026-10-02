@@ -13,6 +13,8 @@
  * 时序：dragging → (松手) → shrinking(200ms) → pulsing(300ms) → onComplete
  */
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
+import { getOverlayHost } from './overlay-host.js'
 
 interface Point { x: number; y: number }
 
@@ -36,7 +38,19 @@ interface ParticleProfile {
   opacity: number
 }
 
-const FLOW_COLOR = 'var(--ccr-flow-color, #ffffff)'
+/*
+ * 拖拽线的颜色。
+ *
+ * ⚠️ 原来是 var(--ccr-flow-color, #ffffff) —— 那条链的最后一跳是
+ * DSH 的「文字色」令牌 --dsw-alias-label-primary，实测会解析成**纯白**，
+ * 白线落在**明亮壁纸**上 ＝ 隐形（用户报的「拉线看不见」正是这个）。
+ *
+ * 改用轨道同款的**中间调**令牌：中等明度的蓝在亮底与暗底上都够读。
+ * 主题仍可覆盖 --ccr-drag-color 换色。
+ *
+ * ⚠️ 用户裁定：可见性靠**选对颜色**解决，**不要**靠加粗/描边/黑边晕。
+ */
+const FLOW_COLOR = 'var(--ccr-drag-color, #60a5fa)'
 const BASE_SPEED = 300 // px/s
 const WATER_BASE_MS = 200
 const WATER_PULSE_MS = 300
@@ -135,7 +149,7 @@ export function DragLine({ start, end, releasing = false, onComplete }: DragLine
     transition: 'stroke-width 200ms ease, stroke-opacity 200ms ease',
   }
 
-  return (
+  const svg = (
     <svg
       className="ccr-drag-line"
       aria-hidden="true"
@@ -214,4 +228,24 @@ export function DragLine({ start, end, releasing = false, onComplete }: DragLine
         })}
     </svg>
   )
+
+  /*
+   * ⚠️ **portal 到共用覆盖层宿主**（2026-10-02）。
+   *
+   * 这是"**拉线看不见**"（用户实际报的症状）两个病因里的**结构那一个**。
+   *
+   * 拖拽线原先渲染在槽位 `conversation.input.left` 的容器里 ——
+   * 于是它的堆叠上下文就是**那个容器**。别人（皮肤/叠加层）只要把自己的容器
+   * 排在它之上，**元素自身的 `z-index: 9999` 一点用都没有**：比的是"容器 vs 容器"。
+   * 轨道线在同一个坑里栽过一次（读数：`div.skin-wallpaper` 在栈顶）。
+   *
+   * 挂到 `document.body` 的末子节点之后，堆叠直接相对 body，
+   * 与"哪个槽位容器在上面"彻底解耦。层内 z-index 9999（高于轨道的 9998）。
+   *
+   * 坐标不受影响：svg 是 `position: fixed; inset: 0`，用的是
+   * `MouseEvent.clientX/clientY` 的视口坐标，与父容器无关。
+   * 详见 `overlay-host.ts`。
+   */
+  const host = getOverlayHost()
+  return host ? createPortal(svg, host) : svg
 }
