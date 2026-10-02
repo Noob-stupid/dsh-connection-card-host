@@ -13,6 +13,8 @@
  * 时序：dragging → (松手) → shrinking(200ms) → pulsing(300ms) → onComplete
  */
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
+import { getOverlayHost } from './overlay-host.js'
 
 interface Point { x: number; y: number }
 
@@ -36,6 +38,17 @@ interface ParticleProfile {
   opacity: number
 }
 
+/*
+ * 拖拽线的颜色 —— **保持初版原样，不要动**。
+ *
+ * 用户明确裁定：「我们只是解决怎么显现，并不是颜色问题！」
+ * 所以"拉线看不见"要走**显现**那条路解决（宿主/堆叠，见文件末尾的 portal），
+ * **不是**改颜色。
+ *
+ * ⚠️ 我一度把它改成中间调蓝 —— 那是**没有证据就动手**：
+ * 我测过的是**轨道线**的颜色，从未测过拖拽线的颜色，却假设两者一样。
+ * 已回退。若将来真要判颜色，**先测这一条线的实际计算样式**再说。
+ */
 const FLOW_COLOR = 'var(--ccr-flow-color, #ffffff)'
 const BASE_SPEED = 300 // px/s
 const WATER_BASE_MS = 200
@@ -135,7 +148,7 @@ export function DragLine({ start, end, releasing = false, onComplete }: DragLine
     transition: 'stroke-width 200ms ease, stroke-opacity 200ms ease',
   }
 
-  return (
+  const svg = (
     <svg
       className="ccr-drag-line"
       aria-hidden="true"
@@ -214,4 +227,24 @@ export function DragLine({ start, end, releasing = false, onComplete }: DragLine
         })}
     </svg>
   )
+
+  /*
+   * ⚠️ **portal 到共用覆盖层宿主**（2026-10-02）。
+   *
+   * 这是"**拉线看不见**"（用户实际报的症状）两个病因里的**结构那一个**。
+   *
+   * 拖拽线原先渲染在槽位 `conversation.input.left` 的容器里 ——
+   * 于是它的堆叠上下文就是**那个容器**。别人（皮肤/叠加层）只要把自己的容器
+   * 排在它之上，**元素自身的 `z-index: 9999` 一点用都没有**：比的是"容器 vs 容器"。
+   * 轨道线在同一个坑里栽过一次（读数：`div.skin-wallpaper` 在栈顶）。
+   *
+   * 挂到 `document.body` 的末子节点之后，堆叠直接相对 body，
+   * 与"哪个槽位容器在上面"彻底解耦。层内 z-index 9999（高于轨道的 9998）。
+   *
+   * 坐标不受影响：svg 是 `position: fixed; inset: 0`，用的是
+   * `MouseEvent.clientX/clientY` 的视口坐标，与父容器无关。
+   * 详见 `overlay-host.ts`。
+   */
+  const host = getOverlayHost()
+  return host ? createPortal(svg, host) : svg
 }
