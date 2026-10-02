@@ -1,0 +1,174 @@
+name: CI
+
+# 预览线是**开发发生地** —— 每次 push 都该被门槛拦一次。
+# 门面那份同名工作流只在晋级时跑，覆盖不到日常提交。
+#
+# ⚠️ 本仓库**没有** publish-npm.yml：发布只在门面走（见 README 的发布流程）。
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ─────────────────────────────────────────────────────────────
+      # 1. 全量语法检查
+      #
+      # 不需要 npm ci：本仓库的 CI 门槛**不依赖任何 devDependency**
+      # （见第 4 步的说明）。node --check 是内置的。
+      # ─────────────────────────────────────────────────────────────
+      - name: 语法检查（node --check 全量）
+        run: |
+          set -euo pipefail
+          fail=0
+          count=0
+          while IFS= read -r f; do
+            case "$f" in
+              *.js|*.mjs|*.cjs) ;;
+              *) continue ;;
+            esac
+            count=$((count+1))
+            if ! node --check "$f"; then
+              echo "::error file=$f::语法检查失败"
+              fail=1
+            fi
+          done < <(git ls-files '*.js' '*.mjs' '*.cjs')
+          echo "已检查 $count 个 JS 文件"
+          # 自校验：一个文件都没扫到说明 glob 写错了，别让它变成假绿
+          if [ "$count" -eq 0 ]; then
+            echo "::error::没有扫到任何 JS 文件 —— 检查范围写错了（防假绿）"
+            exit 1
+          fi
+          exit $fail
+
+      # ─────────────────────────────────────────────────────────────
+      # 2. 测试
+      #
+      # `npm test` = node scripts/test-tool-scoping.mjs && node scripts/test-preempt.mjs
+      #   · 纯 Node ESM 脚本，**无测试框架、无 devDependency、无网络**
+      #   · 但它们 import 自 **lib/**（构建产物），而 lib/ 随仓库提交（170 个文件）
+      #     ⇒ 所以**不需要先构建**，但见第 3 步的过期检查
+      # ─────────────────────────────────────────────────────────────
+      - name: 测试（npm test）
+        run: npm test
+
+      # ─────────────────────────────────────────────────────────────
+      # 3. lib/ 与 src/ 的一致性（**本仓库特有的风险**）
+      #
+      # 测试跑的是 lib/（构建产物），不是 src/。
+      # 所以「改了 src 忘了构建」会让 CI **测到旧代码并通过** —— 假绿。
+      # 本机就实际发生过（self-heal.log 有 `lib/index.js 过期（src 修改晚于构建）`）。
+      #
+      # ⚠️ 已知局限：完整重建需要在 CI 里有 DSH checkout（scripts/build.sh 会
+      #    junction link 到 $DSH_CHECKOUT），公开 runner 上拿不到 —— 所以这里
+      #    做**能做的部分**：断言每个 src/**.ts 都有对应的 lib/**.js。
+      #    这能抓住"新增了源文件却完全没构建"，抓不住"改了内容没重建"。
+      #    后者靠本地 `npm run build` 与提交纪律（lib/ 必须与 src/ 同一次提交）。
+      # ─────────────────────────────────────────────────────────────
+      - name: lib/ 与 src/ 的对应关系
+        run: |
+          set -euo pipefail
+          missing=0
+          checked=0
+          while IFS= read -r f; do
+            case "$f" in
+              src/*.ts)
+                case "$f" in
+                  *.d.ts) continue ;;   # 纯类型声明不产出 js
+                esac
+                ;;
+              *) continue ;;
+            esac
+            checked=$((checked+1))
+            js="lib/${f#src/}"
+            js="${js%.ts}.js"
+            if [ ! -f "$js" ]; then
+              echo "::error file=$f::缺少构建产物 $js（改了 src 却没构建？）"
+              missing=1
+            fi
+          done < <(git ls-files 'src/*.ts')
+          echo "已核对 $checked 个源文件"
+          if [ "$checked" -eq 0 ]; then
+            echo "::error::没有扫到任何 src/*.ts —— 检查范围写错了（防假绿）"
+            exit 1
+          fi
+          exit $missing
+
+      # ─────────────────────────────────────────────────────────────
+      # 4. cordis.patch.yml 可解析 + 关键字段断言
+      #
+      # 这是插件被 loader 加载的入口声明，写坏了整插件装不上。
+      # 不需要 js-yaml（无 devDependency）：用 node 做**结构性断言**。
+      # ─────────────────────────────────────────────────────────────
+      - name: cordis.patch.yml 断言
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const t = fs.readFileSync("cordis.patch.yml", "utf8");
+            const fail = (m) => { console.error("::error::" + m); process.exit(1); };
+            if (!/^\s*-\s*id:\s*connection-card-host\s*$/m.test(t))
+              fail("cordis.patch.yml 缺少 id: connection-card-host —— 这一行【永远不要改】");
+            const m = t.match(/^\s*name:\s*(.+)$/m);
+            if (!m) fail("cordis.patch.yml 缺少 name:");
+            const name = m[1].trim().replace(/^[\x27"]|[\x27"]$/g, "");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            if (name !== pkg.name)
+              fail(`cordis.patch.yml 的 name(${name}) 与 package.json 的 name(${pkg.name}) 不一致`);
+            if (!pkg.dsh || !pkg.dsh.client || pkg.dsh.client.platform !== "web")
+              fail("package.json 缺少 dsh.client.platform=web —— 客户端面板挂不上");
+            console.log("cordis.patch.yml ok:", name);
+          '
+
+      # ─────────────────────────────────────────────────────────────
+      # 5. 本机路径扫描（防把开发机的绝对路径提交上去）
+      #
+      # ⚠️ 模式经过修正 —— 朴素写法 `[A-Za-z]:[\\/]` 会**匹配所有 URL**：
+      #    `https:` 的 s:、`http:` 的 p:、SVG 的 `xmlns="http://…"` 的 p:
+      #    实测在本仓库 15 个文件上全部误报、无一真泄漏。
+      # 正确写法：**盘符后必须紧跟反斜杠**（URL 跟的是 //）→ 天然区分。
+      # ─────────────────────────────────────────────────────────────
+      - name: 本机路径扫描
+        run: |
+          set -euo pipefail
+          # 允许的示例路径（文档里的示意值，不是真机路径）
+          ALLOW='D:\\my-cards\\monitor-card|D:\\downloads\\monitor-card-1\.0\.0\.tgz|C:\\Users\\<user>'
+          fail=0
+          scanned=0
+          while IFS= read -r f; do
+            case "$f" in
+              *.png|*.jpg|*.jpeg|*.gif|*.mp4|*.ico|*.tgz) continue ;;
+            esac
+            scanned=$((scanned+1))
+            hits=$(grep -nE '(^|[^A-Za-z0-9+.-])[A-Za-z]:\\|file:///[A-Za-z]:|花火|huahuo' "$f" \
+                   | grep -vE "$ALLOW" || true)
+            if [ -n "$hits" ]; then
+              echo "::error file=$f::疑似本机路径/身份泄漏"
+              echo "$hits"
+              fail=1
+            fi
+          done < <(git ls-files)
+          echo "已扫描 $scanned 个文件"
+          if [ "$scanned" -lt 50 ]; then
+            echo "::error::扫描文件数异常偏少（$scanned）—— 防假绿"
+            exit 1
+          fi
+          # 自校验：确认模式**既有效又不误伤**。
+          #
+          # ⚠️ 这段曾经内联在 workflow 里、用 `printf 'D:\\tmp\\x'` 做样本 ——
+          #    结果被 shell 的转义解释吃掉（\t 变制表符、\x 直接报错），
+          #    自校验**自己坏了**，报出"命不中"的假失败。
+          #    现在抽成独立脚本：它无参数、无引用层、本地与 CI 跑的是同一份。
+          #    修改模式时**必须同步** scripts/selfcheck-localscan.sh 里的 PATTERN。
+          bash scripts/selfcheck-localscan.sh
+          exit $fail
