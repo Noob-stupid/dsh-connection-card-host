@@ -406,37 +406,69 @@ export function sessionRowHitAtPoint(
 
   if (!row) {
     /*
-     * 栈里一个会话行都没有 —— H1/H2 的现场。
+     * 栈里一个会话行都没有 —— 最深那一层的现场。
      *
-     * 诊断要能一眼区分两种可能，所以除栈顶三层的 `pointer-events` 外，
-     * 还给出**最近的已知行离指针多远**：
-     *   · 距离 ≈ 0（指针就在某行矩形里）→ 行在正确位置却不进栈
-     *     → **H1**：皮肤把真实 UI 的 pointer-events 关了（或视觉副本顶掉了它）
-     *   · 所有行都离得很远 → **H2 的极端情形**：真实行被 display:none / 移走
-     *     → 那属于皮肤侧必须修（不得替换/隐藏真实交互 DOM）
+     * 诊断给全 **指针坐标 / 最近行的矩形与方向 / 已知行的视口可见比例**，
+     * 因为这三样合起来才能区分剩下的几种可能：
+     *
+     *   · 最近行距离 ≈ 0（指针就在某行矩形里）却不进栈
+     *     → **H1**：皮肤把真实 UI 的 pointer-events 关了（配 `pe=` 一起看）
+     *   · 距离很大（半屏以上）、栈里是输入框/markdown 之类
+     *     → **指针根本不在会话列表上**（用户在别处松手），或
+     *       **H2 的位置变体**：皮肤改写了布局，插件认识的行与用户看到的位置不重合
+     *   · 视口内行 ≈ 0/N（行全零尺寸或全在视口外）
+     *     → 行被藏起来/被挪走了 → 属于**皮肤侧必须修**
      */
     let nearest = 'n/a'
+    let visible = 'n/a'
     if (mapped.length > 0) {
       let best = Infinity
       let bestId = ''
+      let bestRect = ''
+      let bestDir = ''
       for (const r of mapped) {
-        const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0
-        const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0
-        const d = Math.round(Math.hypot(dx, dy))
+        const dxL = r.left - x
+        const dxR = x - r.right
+        const dyT = r.top - y
+        const dyB = y - r.bottom
+        const dx = dxL > 0 ? dxL : dxR > 0 ? dxR : 0
+        const dy = dyT > 0 ? dyT : dyB > 0 ? dyB : 0
+        const d = Math.hypot(dx, dy)
         if (d < best) {
           best = d
           bestId = r.id
+          bestRect = `{x:${Math.round(r.left)},y:${Math.round(r.top)},w:${Math.round(
+            r.right - r.left,
+          )},h:${Math.round(r.bottom - r.top)}}`
+          const vs = dyT > 0 ? '上' : dyB > 0 ? '下' : ''
+          const hs = dxL > 0 ? '左' : dxR > 0 ? '右' : ''
+          bestDir = `${vs}${hs}` || '内'
         }
       }
-      nearest = `${bestId.slice(0, 8)} 距 ${best}px`
+      nearest = `${bestId.slice(0, 8)} rect=${bestRect} 距 ${Math.round(best)}px(向:${bestDir})`
+
+      // 视口可见比例：区分"行被藏起来"与"行在别处"
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      let vis = 0
+      for (const r of mapped) {
+        const w = r.right - r.left
+        const h = r.bottom - r.top
+        if (w <= 0 || h <= 0) continue
+        if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) continue
+        vis++
+      }
+      visible = `${vis}/${mapped.length}`
     }
+    const head = `xy=(${Math.round(x)},${Math.round(y)})`
     return {
       info: null,
       hitRow: false,
       elementDesc:
         stack.length > 0
-          ? `栈 ${stack.length} 层均非行(命中行 ${inside.length} 个) [${top3}] 最近行=${nearest}`
-          : '空栈',
+          ? `${head} 栈 ${stack.length} 层均非行(命中行 ${inside.length} 个) [${top3}] ` +
+            `最近行=${nearest} 视口内行=${visible}`
+          : `${head} 空栈 视口内行=${visible}`,
     }
   }
 
