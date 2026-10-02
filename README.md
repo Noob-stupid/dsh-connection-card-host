@@ -296,36 +296,55 @@ B 端硬调它 → 拒绝     「这张卡片只对 A 端可见（你在 B 端�
 
 ## 安装
 
-**本插件不上 npm**（DSH 的 peer 依赖不在公开 registry 上，`npm install` 必然失败 —— 实测过）。
-走 GitHub：
+> **你正在看的是预览线仓库。** 对外发布走[稳定门面](https://github.com/Noob-stupid/dsh-connection-card-host)。
+> 下面第一、二条对两个仓库都成立（npm 包与门面同源）。
+
+**npm（推荐，可锁版本）**：
 
 ```sh
-# 预览线（最新开发版，就是你正在看的这个仓库）
-dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host-preview
-
-# 稳定线（对外门面，只在发版时同步）
-dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
-
-# 或指定版本的 tgz（从 Releases 页取附件地址）
-dsh plugin --profile web add https://github.com/…/releases/download/v1.0.0/dsh-external-dsh-connection-card-host-1.0.0.tgz
+dsh plugin --profile web add @noob-stupid/dsh-connection-card-host
 ```
 
-> **实测可用的三种写法**（装完 `lib` 161 个文件，`pnpm` 用 profile 同款配置
-> `autoInstallPeers: false`）：
->
-> | 写法 | 结果 |
-> |:---|:---|
-> | `github:user/repo` | ✅ 10.5s |
-> | `user/repo`（GitHub 简写，可省 `github:`） | ✅ 8.5s |
-> | tgz 路径 / 地址 | ✅ 1.8s |
-> | **裸包名**（无斜杠，走 npm registry） | ❌ **404 —— 别用** |
->
-> `dsh-connection-card-host` 与 `@dsh-external/dsh-connection-card-host` 在 npm 上都不存在。
-> **本插件不上 npm**：DSH 的 peer 依赖不在公开 registry 上，`npm install` 必然失败
-> （报 `notarget ... @deepseek-ai/dsh-client-runtime`）。
+**GitHub 直装**（装**默认分支最新提交**，不是固定版本）：
+
+```sh
+# 稳定线
+dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
+
+# 预览线（最新开发版，就是本仓库）
+dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host-preview
+
+# 同上，GitHub 简写（可省 github:）—— 带斜杠就走 GitHub 仓库
+dsh plugin --profile web add Noob-stupid/dsh-connection-card-host
+```
+
+**固定版本：用 Releases 的 tgz 附件**：
+
+```sh
+dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.2/noob-stupid-dsh-connection-card-host-1.0.2.tgz
+```
+
+- ⚠️ `github:` 与简写装的是**默认分支的最新提交**，**不是固定版本**；要固定版本请用
+  npm 的版本号（`@noob-stupid/dsh-connection-card-host@1.0.2`）或上面的 Releases tgz。
+- `lib/` 已随仓库提交（npm 包里也带上）：装完即可用，不需要构建步骤。
+
+**判据**：**带斜杠 → 当 GitHub 仓库；不带斜杠 → 当 npm 包名。**
+（`dsh-connection-card-host` 这个不带斜杠的裸名在 npm 上不存在，会 404 —— 别用。）
 
 **兼容性**：`peerDependencies` 声明 `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0` ——
 DSH 会在安装时**按版本门控**，不匹配会明确拒绝并说明原因（而不是装上再崩）。
+
+这四个 peer 还都标了 `peerDependenciesMeta.optional`。原因有两条，都实测过：
+
+- `@deepseek-ai/dsh-client-runtime` 在公开 registry 上**没有**满足区间的版本
+  （最高停在 `0.1.1-rc.2`）—— 不标 optional，pnpm 直接
+  `ERR_PNPM_NO_MATCHING_VERSION`，**装不上**；
+- 只标那一个也不行：pnpm 会把**整棵 `@deepseek-ai/dsh` 依赖树（602 个包）**
+  装进你的 profile（实测 1 分 36 秒），而那正是 `autoInstallPeers: false` 要避免的事。
+  四个全标之后实测 **612ms / 只增加 1 个包**。
+
+**门控不受影响**：`@deepseek-ai/**` 全树 0 处读 `peerDependenciesMeta`，
+DSH 的版本门控只读 `peerDependencies`。
 
 ---
 

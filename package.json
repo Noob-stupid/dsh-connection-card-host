@@ -1,6 +1,6 @@
 {
-  "name": "@dsh-external/dsh-connection-card-host",
-  "version": "1.0.1",
+  "name": "@noob-stupid/dsh-connection-card-host",
+  "version": "1.0.3",
   "description": "会话连接卡片宿主：在DSH会话间建立有状态连接，挂载连接级卡片插件",
   "type": "module",
   "repository": {
@@ -27,11 +27,18 @@
     "cordis.patch.yml"
   ],
   "license": "BSD-3-Clause",
+  "author": "Noob-stupid (https://github.com/Noob-stupid)",
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.1 <4.1.0",
     "@deepseek-ai/dsh": ">=0.2.0-rc.1 <0.3.0",
     "@deepseek-ai/dsh-client-ui-slots": ">=0.2.0-rc.1 <0.3.0",
     "@deepseek-ai/dsh-client-runtime": ">=0.2.0-rc.1 <0.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": { "optional": true },
+    "@deepseek-ai/dsh": { "optional": true },
+    "@deepseek-ai/dsh-client-ui-slots": { "optional": true },
+    "@deepseek-ai/dsh-client-runtime": { "optional": true }
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

@@ -112,12 +112,30 @@ function sessionListRect(): { top: number; left: number; right: number; bottom: 
   }
 
   const own = scrollable ?? clipping ?? viewport
-  return {
+  const merged = {
     top: Math.max(own.top, viewport.top),
     left: Math.max(own.left, viewport.left),
     right: Math.min(own.right, viewport.right),
     bottom: Math.min(own.bottom, viewport.bottom),
   }
+
+  /*
+   * ⚠️ 退化护栏（2026-10-02 加）。
+   *
+   * `own` 可能是**零宽/零高**，或者整个跑到屏幕外 —— 那时 `merged` 会**反向**
+   * （right < left 或 bottom < top）。反向的 clip 会把**每一条**线段都判成
+   * "裁没了"或"横向出界"，而下游还会因为 `bounds` 退化成 < 1 而返回 null
+   * —— 表现就是**连接都在、行也都在、却一条线都不画**，
+   * 正好是 2026-10-02 那 1806 条 `conns=3 rows=18 segments=0 missing=[无]`。
+   *
+   * 拿不准就退回 viewport：宁可画到列表外（有 overflow:hidden 兜着），
+   * 也不要整层空白。
+   */
+  if (merged.right - merged.left < 1 || merged.bottom - merged.top < 1) {
+    return viewport
+  }
+
+  return merged
 }
 
 export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverlayProps) {
@@ -231,12 +249,34 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
       bottomTip: string
       broken: boolean
     }[] = []
+
+    /**
+     * 被跳过的连接及其**原因**。
+     *
+     * 为什么要有它：原来诊断只报 `segments=0`，但**五个 `continue` 哪个中的无从得知** ——
+     * 2026-10-02 那份 1806 条 `conns=3 rows=18 segments=0 missing=[无]` 的日志
+     * 就是这个毛病：证据齐全、但指不出病灶，只能靠猜。
+     *
+     * 现在把每条被跳过的连接连同**判定时的实际数字**记下来
+     * （clip / x / yTop / yBot），下次出现就能直接定位。
+     */
+    const skips: string[] = []
+    const shortId = (s: string) => s.replace(/^session-/, '').slice(0, 8)
+
     for (const conn of connections) {
       const assignment = layout.connections.get(conn.id)
-      if (!assignment) continue
+      if (!assignment) {
+        skips.push(`${shortId(conn.id)}:未分到 lane`)
+        continue
+      }
       const a = rowById.get(conn.sessionA)
       const b = rowById.get(conn.sessionB)
-      if (!a || !b) continue
+      if (!a || !b) {
+        skips.push(`${shortId(conn.id)}:行未映射(${a ? '' : shortId(conn.sessionA)}${
+          !a && !b ? '+' : ''
+        }${b ? '' : shortId(conn.sessionB)})`)
+        continue
+      }
 
       const rawY1 = (a.top + a.bottom) / 2
       const rawY2 = (b.top + b.bottom) / 2
@@ -249,9 +289,21 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
       yTop = Math.max(yTop, clip.top)
       yBot = Math.min(yBot, clip.bottom)
       // 裁没了就整段丢弃 —— 这正是不该画到列表外的那些
-      if (yBot - yTop < 1) continue
+      if (yBot - yTop < 1) {
+        skips.push(
+          `${shortId(conn.id)}:纵向裁没(y=${Math.round(rawY1)}→${Math.round(rawY2)} ` +
+            `clip=${Math.round(clip.top)}~${Math.round(clip.bottom)})`,
+        )
+        continue
+      }
       // 水平方向同理：lane 排到可视区外（列表横向滚过）也不画
-      if (x < clip.left - 8 || x > clip.right + 8) continue
+      if (x < clip.left - 8 || x > clip.right + 8) {
+        skips.push(
+          `${shortId(conn.id)}:横向出界(x=${Math.round(x)} ` +
+            `clip=${Math.round(clip.left)}~${Math.round(clip.right)})`,
+        )
+        continue
+      }
 
       const upward = rawY1 <= rawY2
       const y1 = upward ? yTop : yBot
@@ -316,9 +368,17 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
       bottom: Math.min(Math.max(...segments.map((s) => s.dotBottom)) + MARGIN, clip.bottom),
     }
     // 内容与可视区完全不相交（全滚出去了）：不必渲染
-    if (bounds.bottom - bounds.top < 1 || bounds.right - bounds.left < 1) return null
+    if (bounds.bottom - bounds.top < 1 || bounds.right - bounds.left < 1) {
+      /*
+       * ⚠️ 这里返回 null，而诊断读的是 `rail?.segments.length ?? 0` ——
+       * 所以 **null 和"线段数组为空"在日志里长得一模一样**（都是 segments=0）。
+       * 那正是 2026-10-02 那批日志指不出病灶的原因之一：把 `skips` 一起带出去，
+       * 至少能区分"被逐条跳过"和"算出来了但边界退化"。
+       */
+      return { segments: [], bounds: null, skips: [...skips, `边界退化(bounds=${Math.round(bounds.left)}~${Math.round(bounds.right)},${Math.round(bounds.top)}~${Math.round(bounds.bottom)} clip=${Math.round(clip.left)}~${Math.round(clip.right)})`] }
+    }
 
-    return { segments, bounds }
+    return { segments, bounds, skips }
   }, [rows, connections])
 
   // 诊断：**只在出问题时上报**。
@@ -345,6 +405,8 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
     client.report(
       `rail 异常 conns=${connections.length} rows=${rows.length} segments=${segments} ` +
         `missing=[${missing.map(short).join(',') || '无'}] ` +
+        // 关键：把"为什么画不出来"一起报出去（原来只有数字，指不出病灶）
+        `skips=[${(rail?.skips ?? []).join(' | ') || '无'}] ` +
         `mapped=[${rows.map((r) => short(r.id)).join(',')}]`,
     )
   }, [rail, rows, connections, client])
@@ -360,6 +422,8 @@ export function SessionRailOverlay({ client, sessions, prefs }: SessionRailOverl
   if (!rail) return null
 
   const { segments, bounds } = rail
+  // bounds 为 null = 边界退化（见 useMemo 里的说明）→ 没东西可画
+  if (!bounds) return null
   const width = bounds.right - bounds.left
   const height = bounds.bottom - bounds.top
 
