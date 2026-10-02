@@ -4,7 +4,7 @@
 
 > **Makes a *connection* a first-class object in DSH: sessions are nodes, a connection is the container, cards are connection-scoped plugins — a "connection-level plugin host".**
 
-**Why this one**: other plugins hard-code their capabilities inside the plugin; this one turns
+**Why this plugin**: other plugins hard-code their capabilities inside the plugin; this one turns
 capability into **cards you install on a connection** — mounting, unmounting and isolation are
 all at **connection granularity**.
 
