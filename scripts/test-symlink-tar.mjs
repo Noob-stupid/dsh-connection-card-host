@@ -20,9 +20,17 @@
  *
  * 跑法：node scripts/test-symlink-tar.mjs
  */
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  mkdtempSync,
+  readFileSync,
+  readlinkSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { gzipSync } from 'node:zlib'
 
 import { installCard, uninstallCard, findEscapingEntry } from '../lib/card-host/installer.js'
@@ -79,13 +87,40 @@ try {
   const r = await installCard(tgz, cardsRoot, () => {})
 
   ok(r.ok, '装上了（**不因 tar 的退出码非零而失败**）')
-  ok(Boolean(r.warning), `带上了警告：${r.warning ?? '(没有警告 —— 那是漏报)'}`)
-  ok(/退出码/.test(r.warning ?? ''), '警告里说明了是 tar 的退出码')
+  /**
+   * ⚠️ **平台差异不是失败**（门面 CI 在 ubuntu / GNU tar 上抓到的）。
+   *
+   * 同一个归档：
+   *   · **Windows 的 bsdtar**：跳过符号链接条目 ⇒ 退出码非零 ⇒ 我们带上"退出码"那类警告 ✓
+   *   · **GNU tar（ubuntu）**：**能正常解出**相对符号链接 ⇒ 退出码 0 ⇒ **没有警告** ✓
+   *
+   * 两者**都正确** ✓ —— 而原断言要求"必须有警告"✗，等于把 **Windows 的行为当成跨平台契约** ✗。
+   * 这正是本文件 docstring 自己写的那条规矩：**断言要行为级，不要平台特有文本** ✓
+   * （同族：负控证明"该报时还会报"；这里要证明的是"**平台差异不该被当成失败**" ✓）。
+   *
+   * ⇒ 只钉"有警告的话，必须是退出码那类" ✓，不再要求"必须有警告" ✓。
+   */
+  ok(
+    r.warning === undefined || /退出码/.test(r.warning),
+    `若有警告，必须是"退出码"那类（平台差异不该被当成失败）：${r.warning ?? '(无警告 —— GNU tar 能解出相对链接，这是正确的)'}`,
+  )
 
   if (r.ok && r.dir) {
     const lib = readdirSync(join(r.dir, 'lib'))
     ok(lib.includes('index.js'), '正常条目**确实落地了**（这才是不该报失败的原因）')
-    ok(!lib.includes('link.js'), '符号链接条目被跳过（预期行为，Windows 上建不了链接）')
+    /**
+     * 同上：**不能**断言"符号链接一定不存在"✗ —— GNU tar 会把它解出来 ✓。
+     * 真正该钉的是**安全性质**（与平台无关 ✓）：**它没逃出卡片目录** ✓。
+     */
+    if (lib.includes('link.js')) {
+      const target = resolve(join(r.dir, 'lib'), readlinkSync(join(r.dir, 'lib', 'link.js')))
+      ok(
+        target.startsWith(resolve(r.dir)),
+        `GNU tar 解出了符号链接 ⇒ 必须**仍在卡片目录内**（实测 ${target}）`,
+      )
+    } else {
+      ok(true, 'Windows 的 bsdtar 跳过了符号链接条目（平台行为，不是失败）')
+    }
     uninstallCard(r.cardId, cardsRoot)
   }
 

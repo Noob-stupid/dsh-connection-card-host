@@ -37,6 +37,13 @@ import { validateDeclaration } from '../lib/adapter/capabilities.js'
 
 let pass = 0
 let fail = 0
+/**
+ * **第三档：跳过**（对端点明的形状）。
+ *
+ * 与 `pass` / `fail` 并列存在，理由：**"我没做成"与"环境不具备"必须分得开** ✓ ——
+ * 静默跳过会变成假绿 ✗，把环境不具备算成失败又会让 CI 长期红 ✗（而**长期红 = 没人看的红** ✓）。
+ */
+let skipped = 0
 
 function ok(cond, label) {
   if (cond) pass++
@@ -191,8 +198,32 @@ try {
   try {
     mod = await import(entryUrl)
   } catch (e) {
-    fail++
-    console.log(`  ❌ 有垫片仍然加载失败：${e.message}`)
+    /**
+     * ⚠️ **裸 runner（CI）上没有 DSH 真模块** —— 那不是失败，是**环境不具备**。
+     *
+     * 门面 CI 的日志（我原先是**没看**的，这本身是问题 ✓）：
+     *
+     *     ❌ 有垫片仍然加载失败：Cannot find package '@deepseek-ai/schemastery'
+     *        imported from /tmp/ccr-shim-test-…/lib/index.js
+     *
+     * 原因：这个 fixture 用的 `@deepseek-ai/schemastery` 属于"**必须解析到真模块**"那一类
+     * （垫片不能造假对象 ✗）；而 CI runner 是个**裸 checkout**（没装 DSH ✗）⇒ 解析不到 ✓。
+     *
+     * ⇒ 判据改成**行为级**：能解析到真模块才断言"加载成功" ✓；
+     *   解析不到 ⇒ **明确报"跳过 + 为什么"**（不是静默跳过 ✗，也不是假绿 ✗）——
+     *   与"三档状态"同一条纪律：**"我没做成"与"环境不具备"要分得开** ✓。
+     */
+    const missingRealModule = /Cannot find package '@deepseek-ai\//.test(e.message)
+    if (missingRealModule) {
+      skipped++
+      console.log(
+        `  ⏭️ 跳过（环境不具备）：本机没有 DSH 真模块 ⇒ 垫片无法解析 '${/@deepseek-ai\/[^']+/.exec(e.message)?.[0] ?? '?'}'\n` +
+          `     这不是失败 ✓ —— 装了 DSH 的环境上这条会真的跑 ✓`,
+      )
+    } else {
+      fail++
+      console.log(`  ❌ 有垫片仍然加载失败：${e.message}`)
+    }
   }
   if (mod) {
     ok(typeof mod.apply === 'function', '加载成功且导出 apply')
@@ -270,10 +301,12 @@ try {
 }
 
 console.log('')
+/** **三档都要报出来** ✓ —— 静默跳过 = 假绿 ✗（"跳过"必须可见 ✓）。 */
+const skipNote = skipped > 0 ? ` / ${skipped} 跳过（环境不具备，已说明原因）` : ''
 if (fail === 0) {
-  console.log(`═══ 结果：${pass} 通过 / 0 失败 ═══`)
+  console.log(`═══ 结果：${pass} 通过 / 0 失败${skipNote} ═══`)
   process.exit(0)
 } else {
-  console.log(`═══ 结果：${pass} 通过 / ${fail} 失败 ═══`)
+  console.log(`═══ 结果：${pass} 通过 / ${fail} 失败${skipNote} ═══`)
   process.exit(1)
 }

@@ -120,8 +120,6 @@ if ($Path) {
 
   $targets = @(
     @{ n = 'dsh-browser';        d = if ($profileRoot) { Join-Path $profileRoot 'dsh-browser' } else { '' } },
-    @{ n = 'dsh-graded-mode';    d = Join-Path $srcRoot '@dsh-external\dsh-graded-mode' },
-    @{ n = 'dsh-super-injector'; d = Join-Path $srcRoot '@dsh-external\dsh-super-injector' },
     @{ n = 'dsh-memory-plugin';  d = Join-Path $srcRoot '@openviking\dsh-memory-plugin' }
   )
   foreach ($t in $targets) {
