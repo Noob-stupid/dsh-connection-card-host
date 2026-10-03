@@ -22,6 +22,8 @@ src/card-host/installer.ts:findEscapedLinks
 src/card-host/installer.ts:removeFileQuiet
 src/card-host/package-check.ts:ADAPTER_DEFAULT_CAPABILITIES
 src/card-host/sandbox.ts:importCardModule
+src/card-host/suitability.ts:looksLikeSourceOnly  # at=2026-10-03
+src/card-host/suitability.ts:readIfExists  # at=2026-10-03
 src/card-host/updates.ts:checkCardUpdate
 src/card-host/updates.ts:currentDirName
 src/card-host/updates.ts:readSourceRecord

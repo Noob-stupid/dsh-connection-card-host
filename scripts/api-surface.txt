@@ -156,6 +156,11 @@ src/card-host/registry.ts:CardRegistry/n
 src/card-host/registry.ts:CardTemplate/n
 src/card-host/sandbox.ts:importCardModule/2
 src/card-host/sandbox.ts:resolveCardEntry/2
+src/card-host/suitability.ts:CardSuitability/n
+src/card-host/suitability.ts:analyzeSuitability/2
+src/card-host/suitability.ts:looksLikeSourceOnly/1
+src/card-host/suitability.ts:readIfExists/1
+src/card-host/suitability.ts:suitabilityBadge/1
 src/card-host/updates.ts:UpdateCheck/n
 src/card-host/updates.ts:checkCardUpdate/2
 src/card-host/updates.ts:currentDirName/2

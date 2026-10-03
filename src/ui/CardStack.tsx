@@ -356,10 +356,42 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
                 <span className="ccr-card-option__name">
                   {t.name}
                   {ad && <span className="ccr-badge ccr-badge--adapter">适配</span>}
+                  {/*
+                    适格性标注（用户点出的第三条判据轴）：**星多 ≠ 适合当卡片**。
+                    `全局` 型（替换/接管整个侧栏那种）是为"装到 App 上"生的 ✗ ——
+                    挂到某条连接上没意义，所以**提前**标出来，别让用户逐个试。
+                    ⚠️ 只标注、不阻断：用户仍可以挂（它是启发式）。
+                  */}
+                  {t.suitability && (
+                    <span
+                      className={`ccr-badge ccr-badge--scope${
+                        t.suitability.scope === 'global' ? ' ccr-badge--warn' : ''
+                      }`}
+                      title={t.suitability.why}
+                    >
+                      {/*
+                        ⚠️ 徽标文案**写在这里**，不 import 宿主那个模块 ——
+                        判定与文案若分散会"标注与实际行为脱节" ✗，
+                        但宿主的 `suitability.ts` 依赖 `node:fs` ✗，
+                        UI import 它会把 Node 内置模块带进浏览器包 ✗。
+                        ⇒ 折中：**判定**只有一处（宿主 ✓），**文案**是纯展示、就地映射 ✓。
+                      */}
+                      {t.suitability.scope === 'capability'
+                        ? '能力'
+                        : t.suitability.scope === 'local'
+                          ? '局部'
+                          : t.suitability.scope === 'global'
+                            ? '全局'
+                            : '未判定'}
+                    </span>
+                  )}
                 </span>
                 <span className="ccr-card-option__meta">
                   {t.source === 'builtin' ? '内置' : '已安装'} · v{t.version}
                   {t.events.length > 0 && ` · ${t.events.length} 事件`}
+                  {/* 适格性的一句话理由（与徽标同源，避免"标注与判定脱节"） */}
+                  {t.suitability?.scope === 'global' && ' · 全局 UI，不建议当卡片'}
+                  {t.suitability?.scope === 'unclear' && ' · 作用域未判定'}
                   {/* 模板自己钉死了范围的话，用户选什么都会被覆盖 —— 提前说清 */}
                   {t.scope && ` · 固定仅${t.scope === 'a' ? 'A' : 'B'}端`}
                   {/* 适配卡的能力清单：让"它能给这条连接带来什么"在选择前就可见 */}

@@ -29,6 +29,7 @@ import { createCardApi } from './card-api.js'
 import { createShimElement } from './dom-shim.js'
 import { adapterStatusOf } from '../adapter/status.js'
 import { readClientArtifact } from './client-artifact.js'
+import { analyzeSuitability, type CardSuitability } from './suitability.js'
 import { pruneStaleCardDirs } from './installer.js'
 import { sourceRecordName, type CardSourceRecord } from './card-paths.js'
 
@@ -88,6 +89,12 @@ export interface CardTemplateInfo {
   events: string[]
   /** 是否提供面板 UI。 */
   hasPanel: boolean
+  /**
+   * **适格性**：这张卡是不是"当卡片的材料"（用户点出的第三条判据轴）。
+   *
+   * ⚠️ **启发式，只用来标注**（"不建议"），**不阻断** —— 用户仍可以挂 ✓。
+   */
+  suitability?: CardSuitability
   /** 模板自己钉死的可见范围（有则用户不可改）。 */
   scope?: CardScope
   /**
@@ -367,6 +374,14 @@ export class CardHost {
         },
         events: Array.isArray(t.manifest.events) ? t.manifest.events : [],
         hasPanel: Boolean(t.manifest.ui?.panel) || true,
+        /**
+         * **适格性标注**（用户点出的第三条判据轴："星多 ≠ 适合当卡片"）。
+         *
+         * 只读判定（不动磁盘、不挂载）⇒ 候选列表里就能标出
+         * 「能力」/「局部」/「全局」/「未判定」✓，用户不必逐个试 ✓。
+         * ⚠️ 它是**启发式**，只用来标注（"不建议"），**不阻断** ✓。
+         */
+        suitability: analyzeSuitability(t.dir, Boolean(t.manifest.ui?.panel)),
         // 模板若自己钉死了范围，界面要显示出来并禁用选择器
         ...(t.manifest.scope ? { scope: t.manifest.scope } : {}),
         /*

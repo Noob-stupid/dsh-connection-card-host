@@ -2,6 +2,7 @@ import type { CardInstance, CardAPI, CardScope } from '../types/index.js';
 import type { ConnectionManager } from '../core/connection-manager.js';
 import type { ConnectionEventBus } from '../core/event-bus.js';
 import type { DSHAdapter } from '../adapter/dsh-adapter.js';
+import { type CardSuitability } from './suitability.js';
 /**
  * 适配宿主的**最小接口**（避免卡片宿主反向依赖适配层内部）。
  *
@@ -61,6 +62,12 @@ export interface CardTemplateInfo {
     events: string[];
     /** 是否提供面板 UI。 */
     hasPanel: boolean;
+    /**
+     * **适格性**：这张卡是不是"当卡片的材料"（用户点出的第三条判据轴）。
+     *
+     * ⚠️ **启发式，只用来标注**（"不建议"），**不阻断** —— 用户仍可以挂 ✓。
+     */
+    suitability?: CardSuitability;
     /** 模板自己钉死的可见范围（有则用户不可改）。 */
     scope?: CardScope;
     /**

@@ -32,8 +32,27 @@ export interface ClientArtifact {
   reason?: string
 }
 
-/** 单文件大小上限：客户端制品通常几十到几百 KB，超过这个量级多半不对。 */
-const MAX_BYTES = 4 * 1024 * 1024
+/**
+ * 单文件大小上限。
+ *
+ * ## ⚠️ 原先是 4 MB —— 它把**真插件的 UI** 挡在门外（对端真机实测，根因 5）
+ *
+ * 证据：`Ayase34/gal-view`（194★, MIT）是当时**全生态唯一同时过两道门的 UI 插件** ✓，
+ * 它的 `.dsh-plugin/client.js` = **5,915,546 字节**（自包含 bundle，内联字体/素材 ✓），
+ * 并且**确实 `slots.register` ×2** ✓ —— 也就是说：
+ *
+ *     **挂得上、槽位也注册了，却因为一个 4 MB 常量拿不到源码 ⇒ UI 永远出不来** ✗
+ *
+ * 同量级：`@nagi-ovo/dsh-ads` 的 client.js = **7,031,124 字节**（同样会被拒）。
+ *
+ * ⇒ 自包含 bundle 到这个量级是**正常的**（内联素材），不是"多半不对" ✗ ——
+ * 原先那句注释的假设是错的 ✓。32 MB 覆盖实测最大值并留出余量 ✓。
+ *
+ * ⚠️ 仍待办（对端点明，我认同）：**改成流式/分片** ——
+ * 单次 JSON 传 6 MB 字符串会顶到 webServer 的 body 上限 ✗。
+ * 先做这一行（立刻见效），分片排后面 ✓。
+ */
+const MAX_BYTES = 32 * 1024 * 1024
 
 /** 从 package.json 的 exports 里取 `./client`。 */
 function clientExportOf(pkg: { exports?: unknown }): string | undefined {
