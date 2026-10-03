@@ -374,6 +374,20 @@ try {
     /** 被信号杀死（我们只在超时路径上设 killSignal，所以这个归因是有依据的）。 */
     eq(classifyCurlExit({ signal: 'SIGKILL' }).kind, 'aborted', '被信号杀死 ⇒ aborted（**主动中止**，不落进 unknown）')
 
+    /**
+     * ⚠️ **输出撑爆 `maxBuffer`**（`execFile` 默认只有 1 MiB）——
+     * 现象像"下载失败"，真因是"子进程话太多被我们自己杀了"。
+     * 对本项目**不是理论风险**：Windows 上 tar 遇符号链接会每条目打一行告警，
+     * 几百条目就能顶破。所以它必须**单独一类**，不能掉进 unknown/aborted。
+     */
+    eq(classifyCurlExit({ overflow: true }).kind, 'output-overflow', '输出撑爆 ⇒ output-overflow（单独一类）')
+    ok(/不是网络\/包的问题/.test(classifyCurlExit({ overflow: true }).note), '文案点明"不是网络或包的问题"')
+    eq(
+      classifyCurlExit({ overflow: true, signal: 'SIGKILL' }).kind,
+      'output-overflow',
+      'overflow 优先于 aborted（都是"我们杀的"，但原因不同，不能混）',
+    )
+
     /** fetch 侧同样只用结构化字段：`cause.code`，不解析 message。 */
     eq(
       classifyFetchError({ cause: { code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' } }).kind,

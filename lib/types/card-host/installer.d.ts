@@ -120,13 +120,17 @@ export type DownloadFailureKind = 'dns' | 'connect' | 'http-status' | 'timeout' 
 /** URL 本身不合法（我们拼错了，或用户贴错了）。 */
  | 'bad-url'
 /** **我们自己主动中止的**（超时杀进程 / 用户取消）—— 与"未知故障"必须分开。 */
- | 'aborted' | 'unknown';
+ | 'aborted'
+/** **输出撑爆 `maxBuffer` 被 Node 杀掉** —— 与"下载失败"完全不同的原因，必须分开。 */
+ | 'output-overflow' | 'unknown';
 /** 结构化输入 —— 只有这些字段参与判类。 */
 export interface DownloadFailureInput {
     /** curl 退出码（`execFile` 回调里是 `error.code`；**超时被杀时是 `null`**）。 */
     code?: number | string | null | undefined;
     /** 被信号杀死时的信号名（`error.signal`）。 */
     signal?: string | null | undefined;
+    /** 子进程输出撑爆 `maxBuffer` 被 Node 杀掉（**与"下载失败"完全不同的原因**）。 */
+    overflow?: boolean | undefined;
     /** stderr 尾部 —— **仅用于展示**。 */
     stderrTail?: string | null | undefined;
 }
