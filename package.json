@@ -1,6 +1,6 @@
 {
   "name": "@noob-stupid/dsh-connection-card-host",
-  "version": "1.0.57",
+  "version": "1.0.58",
   "description": "会话连接卡片宿主：在DSH会话间建立有状态连接，挂载连接级卡片插件",
   "type": "module",
   "repository": {

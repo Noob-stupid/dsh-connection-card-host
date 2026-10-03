@@ -171,11 +171,42 @@ export async function mountPlugin(
   const plan = planShims(pluginDir, shimRoot, request.depSourceDir)
   const unresolved = unresolvedOf(plan)
   if (unresolved.length > 0) {
-    throw new MountRefused(
-      'unresolved-deps',
-      `插件「${pluginId}」有无法解析的依赖，拒绝挂载：\n  · ${unresolved.join('\n  · ')}\n` +
-        `DSH 包需要真模块或能力门面（白名单见 shim.ts）；第三方包需要能解析到真实副本。`,
-    )
+    /**
+     * ⚠️ **两类分开说，而且致命的那类排最前**（对端建议，用户实测时读不懂混在一起的文案）。
+     *
+     *   · **致命**：`@deepseek-ai/*` 缺真模块/门面 ⇒ **就算补齐第三方依赖也过不了**
+     *     ⇒ 归属：**卡片作者改设计**（换掉对宿主能力的依赖，或改用适配层提供的能力面）
+     *   · **可选**：其它第三方包 ⇒ 归属：**用户或作者提供**（我们不跑 pnpm、不替你装 ✗）
+     *
+     * 判据（对端给的）：**拒绝文案的价值 = 让用户知道"下一步该不该做"** ——
+     * 不分开说，用户只会换个说法再试一次 ✗。
+     */
+    const isDsh = (s: string): boolean => s.startsWith('@deepseek-ai/') || s === 'cordis'
+    const fatal = unresolved.filter(isDsh)
+    const optional = unresolved.filter((s) => !isDsh(s))
+
+    const lines: string[] = [`插件「${pluginId}」无法挂载：`]
+    if (fatal.length > 0) {
+      lines.push(
+        ``,
+        `**致命：宿主能力缺 ${fatal.length} 个**（补齐第三方依赖也过不了 —— 要改卡片设计）：`,
+        `  · ${fatal.join('\n  · ')}`,
+        `  → 归属：**卡片作者**。适配层提供的能力面是 tools / effect / llm / prompt；`,
+        `    上面这些要的是别的东西（宿主服务或客户端服务），本版本没有。`,
+      )
+    }
+    if (optional.length > 0) {
+      lines.push(
+        ``,
+        `**可选：第三方依赖缺 ${optional.length} 个**（本卡片不会替你安装依赖 —— 我们不跑 pnpm）：`,
+        `  · ${optional.join('\n  · ')}`,
+        `  → 归属：**用户或作者**（把依赖随包带上、或换成不需要它的实现）。`,
+      )
+    }
+    if (fatal.length === 0 && optional.length > 0) {
+      lines.push(``, `（**这条只要补上依赖就还有救** —— 与上面那种"改设计"不是一回事。）`)
+    }
+    throw new MountRefused('unresolved-deps', lines.join('\n'))
   }
   const writeResult = writeShims(plan, facadeBaseDir)
   audit(
