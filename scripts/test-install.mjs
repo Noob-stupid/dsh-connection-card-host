@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { checkPackage, ensureAdapterManifest, looksLikeDshPlugin } from '../lib/card-host/package-check.js'
-import { installCard, uninstallCard } from '../lib/card-host/installer.js'
+import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor } from '../lib/card-host/installer.js'
 
 let pass = 0
 let fail = 0
@@ -235,6 +235,33 @@ try {
     !existsSync(join(cardsRoot, 'my-capability-plugin.current')),
     '卸载后指针没了（卡片从列表消失）',
   )
+
+  /* ═══════════ 4. GitHub 链接：规范化到 codeload + 通道表 ═══════════ */
+
+  console.log('── 4. GitHub 链接处理（codeload 直取）')
+
+  eq(
+    toCodeloadUrl('https://github.com/o/r/archive/refs/heads/main.tar.gz'),
+    'https://codeload.github.com/o/r/tar.gz/refs/heads/main',
+    'archive/heads → codeload',
+  )
+  eq(
+    toCodeloadUrl('https://github.com/o/r/archive/refs/tags/v1.2.3.tar.gz'),
+    'https://codeload.github.com/o/r/tar.gz/refs/tags/v1.2.3',
+    'archive/tags → codeload（可按 tag 钉版本）',
+  )
+  eq(toCodeloadUrl('https://example.com/x.tgz'), undefined, '非 GitHub 链接不转换')
+  eq(toCodeloadUrl('https://github.com/o/r'), undefined, '不是 archive 链接就不猜')
+
+  {
+    const chs = downloadChannelsFor('https://github.com/o/r/archive/refs/heads/main.tar.gz')
+    eq(chs.map((c) => c.name), ['codeload', 'ghproxy', 'github-direct'], 'GitHub：codeload 优先，镜像兜底，最后直连')
+    ok(chs[0].url.startsWith('https://codeload.github.com/'), '首选通道是 codeload（无重定向、无 API 配额）')
+    ok(chs[1].url.startsWith('https://ghproxy.net/https://github.com/'), '镜像通道形态正确（可失败后继续）')
+
+    const plain = downloadChannelsFor('https://registry.npmjs.org/x/-/x-1.0.0.tgz')
+    eq(plain.map((c) => c.name), ['direct'], '非 GitHub：只有直连一条通道')
+  }
 } finally {
   rmSync(root, { recursive: true, force: true })
 }

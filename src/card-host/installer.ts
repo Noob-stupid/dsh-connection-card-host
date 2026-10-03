@@ -25,7 +25,7 @@
  * npm 走 registry **tarball**（一次 HTTPS GET），**不引 pnpm**
  * —— 为了装一张卡片把包管理器拖进来不值得，而且 pnpm 会改写 profile。
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, copyFileSync, writeFileSync, statSync, unlinkSync, rmdirSync, type Dirent } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, copyFileSync, writeFileSync, statSync, unlinkSync, rmdirSync, renameSync, type Dirent } from 'node:fs'
 import { join, basename, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
@@ -145,56 +145,169 @@ function extractTgz(tgzPath: string, destDir: string): void {
 }
 
 /**
- * 下载一个文件到本地 —— **两条路，按顺序试**。
+ * 把 GitHub 的 archive 链接规范化成 **codeload** 链接。
  *
- * ## 为什么不能只用 Node 的 `fetch`（实测）
+ *     https://github.com/<owner>/<repo>/archive/refs/heads/<branch>.tar.gz
+ *   → https://codeload.github.com/<owner>/<repo>/tar.gz/refs/heads/<branch>
  *
- * 受限网络里（有 TLS 中间设备 / 拉不到吊销列表），Node 对 `github.com` 与
- * `raw.githubusercontent.com` 直接报 `UNABLE_TO_VERIFY_LEAF_SIGNATURE`；
- * 而**系统 TLS 栈能连**（`curl --ssl-no-revoke` 实测可下）。
- * 也就是说：只用 fetch 的话，**用户从 GitHub 装插件一律失败** —— 而 GitHub 正是
- * 最自然的来源。
+ * ## 为什么要换（对端真机结论，我们照做）
  *
- * ## 兜底用 curl，并显式 `--ssl-no-revoke`
+ *   · **官方 codeload 无重定向、无 API 配额**（`github.com/.../archive/...` 会 302 到它，
+ *     而 `api.github.com/.../tarball/...` 未认证只有 60 次/小时）
+ *   · 对端在**本机实测 codeload `200` 可用**，所以这是主通道而不是备选
  *
- * `--ssl-no-revoke` 只跳过**吊销状态检查**（CRL/OCSP），证书链本身照验 ——
- * 这是受限网络下的标准做法；不加它会报 `CRYPT_E_NO_REVOKE_CHECK`。
- * 走了哪条路会写进审计，便于排查。
+ * 认不出形态就返回 undefined（原样走原 URL，不做猜测）。
+ */
+export function toCodeloadUrl(url: string): string | undefined {
+  const m = /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/archive\/refs\/(heads|tags)\/(.+)\.tar\.gz$/i.exec(
+    url.trim(),
+  )
+  if (!m) return undefined
+  const [, owner, repo, kind, ref] = m
+  return `https://codeload.github.com/${owner}/${repo}/tar.gz/refs/${kind}/${ref}`
+}
+
+/** 一个下载通道：名字（写审计用）+ 真实 URL。 */
+interface DownloadChannel {
+  name: string
+  url: string
+}
+
+/**
+ * 为一个 URL 排出**下载通道表**（按可信度排序）。
+ *
+ * GitHub 类：codeload（官方、无重定向、无配额）→ ghproxy（镜像兜底，**可能 0 B/s**）→ 原 URL。
+ * 其它：原 URL 直连。
+ *
+ * ⚠️ 镜像**不能硬编码成唯一出路**：对端记录 `mirror.ghproxy.com` 早已失效并被停放页接管 ——
+ * 所以镜像只做**兜底**，且必须能失败后继续（见 downloadTo 的逐通道重试）。
+ */
+export function downloadChannelsFor(url: string): DownloadChannel[] {
+  const trimmed = url.trim()
+  const codeload = toCodeloadUrl(trimmed)
+  if (codeload) {
+    return [
+      { name: 'codeload', url: codeload },
+      { name: 'ghproxy', url: `https://ghproxy.net/${trimmed}` },
+      { name: 'github-direct', url: trimmed },
+    ]
+  }
+  return [{ name: 'direct', url: trimmed }]
+}
+
+/** `curl.exe` 是否存在（Windows 上必须显式带 .exe —— 见 downloadTo 的说明）。 */
+let curlChecked = false
+let curlAvailable = false
+function hasCurl(): boolean {
+  if (curlChecked) return curlAvailable
+  curlChecked = true
+  try {
+    execFileSync(CURL_BIN, ['--version'], { stdio: 'pipe', timeout: 10_000 })
+    curlAvailable = true
+  } catch {
+    curlAvailable = false
+  }
+  return curlAvailable
+}
+
+/**
+ * ⚠️ **必须显式 `curl.exe`**：在 PowerShell 里 `curl` 是 `Invoke-WebRequest` 的别名，
+ * 直接调 `curl` 可能拿到一个完全不同的东西（对端特别提醒过）。
+ * Node 的 execFileSync 不走 shell，但仍显式写全名以免歧义。
+ */
+const CURL_BIN = process.platform === 'win32' ? 'curl.exe' : 'curl'
+
+/**
+ * 下载一个文件到本地 —— **通道表 + 逐通道重试**。
+ *
+ * ## 为什么 curl 优先，而不是 Node 的 fetch（对端真机结论，与我们实测一致）
+ *
+ *     Node fetch（自带/打包 CA）→ github：UNABLE_TO_VERIFY_LEAF_SIGNATURE
+ *     系统 curl（schannel）    → 只差吊销检查，--ssl-no-revoke 即过
+ *
+ * 也就是说：在这台机器上 **curl 是唯一稳的那条**，fetch 只是备选。
+ * 反过来写（fetch 优先）等于**每次都先白等一轮证书失败** —— 我们最初就是这么写的。
+ *
+ * ## 停滞按**字节增长**判，不只看总超时
+ *
+ * `--speed-limit 1 --speed-time 45`：**45 秒内平均速率低于 1 B/s 就中止** ——
+ * 这正是"卡死"的形态（对端记录 ghproxy 卡死是精确的 0 B/s）。
+ * 只靠总超时会把白等拉长，而且大包正常下载也会被误杀。
+ *
+ * ## 落盘用临时文件 + rename
+ *
+ * 半截包最坑：直接写目标文件，一次失败就留下一个"看起来装好了"的残包。
  */
 async function downloadTo(
   url: string,
   destPath: string,
   auditLog: (msg: string) => void,
-): Promise<{ ok: boolean; via?: 'fetch' | 'curl'; reason?: string }> {
-  let fetchError = ''
-  try {
-    const resp = await fetch(url)
-    if (!resp.ok) return { ok: false, reason: `下载失败（HTTP ${resp.status}）` }
-    writeFileSync(destPath, Buffer.from(await resp.arrayBuffer()))
-    return { ok: true, via: 'fetch' }
-  } catch (e) {
-    fetchError = e instanceof Error ? e.message : String(e)
+): Promise<{ ok: boolean; via?: string; reason?: string }> {
+  const channels = downloadChannelsFor(url)
+  const errors: string[] = []
+
+  for (const ch of channels) {
+    const partPath = `${destPath}.part`
+
+    // ① curl（系统 TLS 栈）—— 首选
+    if (hasCurl()) {
+      try {
+        execFileSync(
+          CURL_BIN,
+          [
+            '-sSL',
+            '--ssl-no-revoke',
+            '--connect-timeout', '15',
+            '--max-time', '300',
+            '--speed-limit', '1',
+            '--speed-time', '45',
+            '-o', partPath,
+            ch.url,
+          ],
+          { stdio: 'pipe', timeout: 330_000, killSignal: 'SIGKILL' },
+        )
+        if (existsSync(partPath) && statSync(partPath).size > 0) {
+          renameSync(partPath, destPath)
+          if (ch.name !== 'direct') auditLog(`下载走 ${ch.name}（curl）`)
+          return { ok: true, via: `curl:${ch.name}` }
+        }
+        errors.push(`${ch.name}: curl 下到空文件`)
+      } catch (e) {
+        errors.push(`${ch.name}: curl ${e instanceof Error ? e.message.slice(0, 90) : String(e)}`)
+      }
+    }
+
+    // ② Node fetch —— 备选（registry 类通常走这条没问题）
+    try {
+      const resp = await fetch(ch.url)
+      if (!resp.ok) {
+        errors.push(`${ch.name}: HTTP ${resp.status}`)
+      } else {
+        const buf = Buffer.from(await resp.arrayBuffer())
+        if (buf.length === 0) {
+          errors.push(`${ch.name}: fetch 下到空文件`)
+        } else {
+          writeFileSync(partPath, buf)
+          renameSync(partPath, destPath)
+          auditLog(`下载走 ${ch.name}（fetch）`)
+          return { ok: true, via: `fetch:${ch.name}` }
+        }
+      }
+    } catch (e) {
+      errors.push(`${ch.name}: fetch ${e instanceof Error ? e.message.slice(0, 90) : String(e)}`)
+    }
   }
 
-  // 兜底：系统 curl（Windows 10+ 自带）
-  try {
-    execFileSync('curl', ['-sSL', '--ssl-no-revoke', '--max-time', '180', '-o', destPath, url], {
-      stdio: 'pipe',
-    })
-    if (existsSync(destPath) && statSync(destPath).size > 0) {
-      auditLog(`下载改走系统 curl（Node fetch 失败：${fetchError.slice(0, 120)}）`)
-      return { ok: true, via: 'curl' }
-    }
-    return { ok: false, reason: `curl 下到空文件（Node fetch 失败：${fetchError.slice(0, 120)}）` }
-  } catch (e) {
-    const curlError = e instanceof Error ? e.message : String(e)
-    return {
-      ok: false,
-      reason:
-        `下载失败。Node fetch：${fetchError.slice(0, 160)}；` +
-        `系统 curl：${curlError.slice(0, 160)}。` +
-        `（受限网络下常见；本地目录或 npm 包名通常仍然可用）`,
-    }
+  return {
+    ok: false,
+    reason:
+      `下载失败，已试过 ${channels.length} 个通道：` +
+      errors.map((e) => `\n    · ${e}`).join('') +
+      `\n  可执行的下一步（按可信度排序）：` +
+      `\n    1) 若能拿到 codeload 链接，直接用它（官方通道，无重定向、无 API 配额）` +
+      `\n    2) 若这是 npm 包，改用包名安装（走 registry）` +
+      `\n    3) 镜像兜底：在 GitHub 链接前加 https://ghproxy.net/（镜像可能不稳，需自行探活）` +
+      `\n  若你所在机器上"Node 的网络被拦、而 curl/系统 git 仍可用"，上面第 1/3 条通常能过。`,
   }
 }
 
