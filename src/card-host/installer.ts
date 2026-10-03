@@ -38,6 +38,7 @@ import {
   sourceRecordName,
   type CardSourceRecord,
 } from './card-paths.js'
+import { checkPackage, ensureAdapterManifest } from './package-check.js'
 
 export interface InstallResult {
   ok: boolean
@@ -214,56 +215,6 @@ async function fetchNpm(name: string, workDir: string): Promise<string> {
   return existsSync(pkgRoot) ? pkgRoot : outDir
 }
 
-/** 校验一个目录是不是合法的卡片包；返回清单信息或失败原因。 */
-function validateCardPackage(dir: string): {
-  ok: boolean
-  reason?: string
-  id?: string
-  name?: string
-  version?: string
-  entry?: string
-} {
-  const pkgPath = join(dir, 'package.json')
-  if (!existsSync(pkgPath)) return { ok: false, reason: '包里没有 package.json' }
-
-  let pkg: {
-    name?: string
-    version?: string
-    main?: string
-    dshCard?: { id?: string; name?: string; entry?: string }
-  }
-  try {
-    pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
-  } catch (e) {
-    return { ok: false, reason: `package.json 不是合法 JSON：${String(e)}` }
-  }
-
-  if (!pkg.dshCard || typeof pkg.dshCard !== 'object') {
-    return {
-      ok: false,
-      reason:
-        'package.json 里没有 dshCard 字段 —— 这不是一张卡片包' +
-        '（卡片包必须在 dshCard 里声明 id/name/entry）',
-    }
-  }
-
-  const id = pkg.dshCard.id || pkg.name
-  if (!id) return { ok: false, reason: 'dshCard.id 与 package.json 的 name 都缺失，无法确定卡片 id' }
-
-  // 入口：dshCard.entry 优先，其次 package.json.main，再次 index.js
-  const entry = pkg.dshCard.entry || pkg.main || 'index.js'
-  if (!existsSync(join(dir, entry))) {
-    return { ok: false, reason: `入口文件不存在：${entry}` }
-  }
-
-  return {
-    ok: true,
-    id: String(id),
-    name: pkg.dshCard.name || pkg.name || String(id),
-    version: pkg.version,
-    entry,
-  }
-}
 
 /**
  * 安装一张卡片到 cardsRoot/<id>/。
@@ -306,7 +257,11 @@ export async function installCard(
     }
 
     // ── 先校验来源，再动目标目录 ──
-    const check = validateCardPackage(sourceDir)
+    //
+    // 两种来源都接受（见 package-check.ts）：卡片包，以及**普通 DSH 插件包**
+    // （后者由安装器合成适配清单 —— 用户明确要求能装这类，因为
+    // "会话能力相关的基本都是普通插件包"）。
+    const check = checkPackage(sourceDir)
     if (!check.ok || !check.id) {
       auditLog(`卡片安装被拒（${raw}）：${check.reason}`)
       return { ok: false, reason: check.reason }
@@ -340,6 +295,30 @@ export async function installCard(
       skipped = true
     } else {
       copyDirRecursive(sourceDir, destDir)
+    }
+
+    /**
+     * 普通 DSH 插件包：把合成的适配清单写进**副本**。
+     *
+     * ⚠️ 两处刻意的设计：
+     *   1. **只动副本，不碰来源** —— 原始包一个字节都不改
+     *   2. **即使 skipped 也要跑** —— 老版本装下的副本可能还没合成过清单，
+     *      这时只跳过拷贝、补写清单即可（幂等；已是适配卡则不动）
+     */
+    if (check.kind === 'dsh-plugin') {
+      const patched = ensureAdapterManifest(destDir, {
+        id: cardId,
+        name: check.name ?? cardId,
+        entry: check.entry ?? 'lib/index.js',
+      })
+      if (patched.patched) {
+        auditLog(
+          `[adapter] ${cardId}：这是**普通 DSH 插件包**，已为它合成适配清单` +
+            `（能力面默认 tools/effect；需要更多能力时装载阶段会明确拒绝并说明缺什么）`,
+        )
+      } else if (patched.reason) {
+        auditLog(`[adapter] ${cardId}：合成适配清单失败（不影响安装本身）：${patched.reason}`)
+      }
     }
 
     // 改指针（内容极小，不会被锁）
