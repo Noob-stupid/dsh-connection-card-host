@@ -28,6 +28,9 @@
   ],
   "license": "BSD-3-Clause",
   "author": "Noob-stupid (https://github.com/Noob-stupid)",
+  "engines": {
+    "node": ">=20 <25"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.1 <4.1.0",
     "@deepseek-ai/dsh": ">=0.2.0-rc.1 <0.3.0",
