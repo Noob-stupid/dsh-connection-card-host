@@ -98,7 +98,7 @@
 ## 8. 自测
 
 ```powershell
-cd D:\dsh\our-cards\connection-etiquette
+cd <卡片目录>          # 例如包内的 cards/connection-etiquette/
 node --check index.js
 node -e "console.log(require('./package.json').dshCard.id)"
 node test.mjs

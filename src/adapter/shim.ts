@@ -186,10 +186,21 @@ export function scanBareSpecifiers(
       } catch {
         continue
       }
-      // 静态 import / export ... from / 动态 import('...') / require('...')
-      const re = /(?:^|[\s;{(])(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|require\s*\(\s*['"]([^'"]+)['"]\s*\)/g
+      /**
+       * 静态 import（含 `from`）/ **副作用导入**（无 `from`）/ 动态 import / require。
+       *
+       * ⚠️ **副作用导入必须单独一条**（`import '@pkg/x'`）——
+       * 第一版的三条分支全都要求 `from '...'` 或括号形式 ✗ ⇒ **这种写法被整类漏掉** ✗。
+       * 这不是理论风险：库里到处都是 `import 'core-js/stable'` 这类写法 ✓。
+       *
+       * 抓出来的方式值得一提：是**负控**（"应当不通过"的样本）把它照出来的 ——
+       * 正控当时全绿 ✓。⇒ **对端点明的纪律当场见效**：
+       * 只证明"它这次没报错"是不够的，还要证明"**它该报的时候还会报**"。
+       */
+      const re =
+        /(?:^|[\s;{(])(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|(?:^|[\s;{(])import\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|require\s*\(\s*['"]([^'"]+)['"]\s*\)/g
       for (const m of text.matchAll(re)) {
-        const spec = m[1] ?? m[2] ?? m[3]
+        const spec = m[1] ?? m[2] ?? m[3] ?? m[4]
         if (spec) found.add(spec)
       }
     }
