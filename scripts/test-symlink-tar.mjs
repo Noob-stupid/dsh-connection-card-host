@@ -162,7 +162,9 @@ try {
   writeFileSync(sentinel, 'SENTINEL-UNTOUCHED')
 
   const evilRoot = join(work, 'cards-evil')
-  const evilRes = await installCard(evilPath, evilRoot, () => {})
+  /** 收集审计行 —— 用来断言"被拒之后又销毁了不可信字节 + 记了哈希"。 */
+  const audit = []
+  const evilRes = await installCard(evilPath, evilRoot, (m) => audit.push(String(m)))
 
   ok(!evilRes.ok, '含逃逸条目的包 ⇒ **拒绝安装**')
   ok(/拒绝解压|目标目录之外/.test(evilRes.reason ?? ''), '拒绝理由说清是"会写到目标目录之外"')
@@ -178,6 +180,16 @@ try {
     readFileSync(sentinel, 'utf8') === 'SENTINEL-UNTOUCHED',
     '**哨兵内容未变**（比"文件不存在"更强：连"写了又删"都能抓到）',
   )
+  /**
+   * ⚠️ **被拒的字节要被销毁**（对端点明）：它已被判定不可信，
+   * 留在临时目录里，下次"重试/复用缓存"就又有机会被解压到。
+   * 审计里还要留下**内容哈希**，让"同一个包再被尝试"一眼可查。
+   */
+  const auditLines = audit.join('\n')
+  ok(/安全策略\*\*拒绝/.test(auditLines), '审计里记了"被安全策略拒绝"')
+  ok(/sha256:[0-9a-f]{16}/.test(auditLines), '审计里记了**内容哈希**（同一坏包再试一眼可查）')
+  ok(/violations=\[/.test(auditLines), '审计里记了命中的条目（violations）')
+  ok(/已销毁被拒归档/.test(auditLines), '审计里记了"已销毁不可信字节"')
 
   /* ═══════════ 链接目标逃逸：条目名正常，**目标**指向目录外 ═══════════ */
 
