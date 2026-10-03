@@ -115,9 +115,85 @@ const uncovered = exportsList
  */
 const BASELINE = join(TESTS, 'export-coverage-baseline.txt')
 
+/**
+ * ⚠️ **收缩式基线自身的失效模式**（对端点明，已加两道保护）
+ *
+ * 它把"参考数据"从规矩变成了**文件里的当前状态** ⇒ 基线文件本身成了**事故面**：
+ * 一次 `--update`（或采集器出 bug）就可能把基线**整体重写**（77 → 3、甚至 → 0），
+ * 而它**看起来仍然是绿的**（"新增未覆盖导出"当然一个都没有了）✓ **假绿回来了**。
+ *
+ * 保护 ①（写入侧下限 + 变动幅度）：登记数**下降超过 20% 或清空**时，
+ *   必须显式加 `--allow-shrink` 才写；否则**拒绝并打印将被删掉的条目**。
+ *   （采集侧已有的"扫不到 ⇒ exit 2"是同一个判据，这里把它套到**写入侧**。）
+ *
+ * 保护 ②（每条留痕）：条目格式 `符号  # at=日期 理由`。
+ *   因为 `--update` 是"**我知道它没测**"的**决定** —— 决定要留痕，
+ *   否则三个月后没人知道那些行是"有意放过"还是"当时没人管"。
+ */
+const SHRINK_RATIO = 0.8
+
 if (process.argv.includes('--update')) {
-  writeFileSync(BASELINE, uncovered.join('\n') + '\n', 'utf8')
-  console.log(`已登记 ${uncovered.length} 个"当前未覆盖"的导出 → scripts/export-coverage-baseline.txt`)
+  /**
+   * ⚠️ **这里自己读一次基线**，不复用下面那个 `known` ——
+   * 它声明在本块**之后**，直接引用会踩 **TDZ**（`Cannot access 'known' before initialization`）✗。
+   * 第一版就是这么写的：`--update` 一跑就崩，而崩在"保护"代码里 ——
+   * **防事故的代码自己出了事故**（和之前"防假绿的演练抓到护栏自己崩"同一个形状）。
+   */
+  let knownLines = []
+  try {
+    knownLines = readFileSync(BASELINE, 'utf8')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'))
+      /** `#` 之后是留痕注释（`at=日期 理由`），不参与比对。 */
+      .map((l) => l.split('#')[0].trim())
+      .filter(Boolean)
+  } catch {
+    knownLines = []
+  }
+  const oldSymbols = new Set(knownLines)
+  const removedByUpdate = [...oldSymbols].filter((s) => !uncovered.includes(s))
+  const allowShrink = process.argv.includes('--allow-shrink')
+  const wouldEmpty = uncovered.length === 0 && oldSymbols.size > 0
+  const shrinksTooMuch =
+    oldSymbols.size > 0 && uncovered.length < Math.floor(oldSymbols.size * SHRINK_RATIO)
+
+  if ((wouldEmpty || shrinksTooMuch) && !allowShrink) {
+    console.log(
+      JSON.stringify({
+        status: 'refused',
+        exports: exportsList.length,
+        uncovered: [],
+        wouldRemove: removedByUpdate.length,
+        before: oldSymbols.size,
+        after: uncovered.length,
+      }),
+    )
+    console.log(
+      `❌ **拒绝写入基线**：登记数将从 ${oldSymbols.size} 变成 ${uncovered.length}` +
+        `（下降超过 ${Math.round((1 - SHRINK_RATIO) * 100)}% 或清空）`,
+    )
+    console.log('   这几乎总是**采集器出问题**，而不是"这些导出突然都有测试了"。')
+    console.log('   将被删掉的条目（最多列 10 条）：')
+    for (const s of removedByUpdate.slice(0, 10)) console.log(`     - ${s}`)
+    console.log('')
+    console.log('   确认确实要缩小 ⇒ 加 --allow-shrink 再跑一次。')
+    process.exit(1)
+  }
+
+  const today = new Date().toISOString().slice(0, 10)
+  /** 已有条目**保留原留痕**（含理由）；新条目带上登记日期。 */
+  const oldBySymbol = new Map()
+  for (const sym of knownLines) {
+    /** 原始行（带留痕）要保留 ⇒ 从文件里取回完整那一行。 */
+    oldBySymbol.set(sym, sym)
+  }
+  const lines = uncovered.map((s) => oldBySymbol.get(s) ?? `${s}  # at=${today}`)
+  writeFileSync(BASELINE, lines.join('\n') + '\n', 'utf8')
+  console.log(
+    `已登记 ${lines.length} 个"当前未覆盖"的导出 → scripts/export-coverage-baseline.txt` +
+      (removedByUpdate.length > 0 ? `（移除了 ${removedByUpdate.length} 条）` : ''),
+  )
   process.exit(0)
 }
 
@@ -126,7 +202,10 @@ try {
   known = new Set(
     readFileSync(BASELINE, 'utf8')
       .split('\n')
+      /** `#` 之后是**留痕注释**（`at=日期 理由`），不参与比对 —— 见"保护 ②"。 */
       .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'))
+      .map((l) => l.split('#')[0].trim())
       .filter(Boolean),
   )
 } catch {
