@@ -51,6 +51,8 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
     Record<string, { hasUpdate?: boolean; latestVersion?: string; reason?: string }>
   >({})
   const [updBusy, setUpdBusy] = useState<string | null>(null)
+  /** 卸载进行中的模板 id（与 updBusy 分开：两个入口可以同时在跑，不要互相盖掉）。 */
+  const [unBusy, setUnBusy] = useState<string | null>(null)
   /**
    * 哪些卡片实例的面板是展开的。
    *
@@ -134,6 +136,34 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
    *
    * 结论**原样保留 `reason`** —— 面板会区分"有更新 / 已是最新 / 无法检查"三态。
    */
+  /**
+   * **卸载一张已安装的卡片**（用户报的缺口：能力一直在，入口没给 ✗）。
+   *
+   * 三条都要做到（缺一条就是"半吊子入口" ✗）：
+   *   ① 调既有 RPC ✓（不新增通道）
+   *   ② 结果**如实回报** —— 宿主侧文案会说清"清了什么 / 什么被占用没清掉" ✓
+   *   ③ **卸载后立刻刷新列表** ✓ —— 否则用户会对着已经删掉的项再点一次 ✗
+   *      （这一步容易被漏：RPC 成功 ≠ 界面更新 ✓）
+   */
+  const doUninstall = useCallback(
+    async (templateId: string) => {
+      if (!client) return
+      setUnBusy(templateId)
+      setInstallMsg(null)
+      try {
+        const r = await client.uninstallCard(templateId)
+        setInstallMsg(r.ok ? (r.reason ?? `已卸载「${templateId}」✓`) : `卸载失败：${r.reason ?? '未说明'}`)
+        /** ③ 无论成败都刷新：成功的要消失 ✓；失败的也可能已经部分清掉 ✓。 */
+        await load()
+      } catch (e) {
+        setInstallMsg(`卸载出错：${e instanceof Error ? e.message : String(e)}`)
+      } finally {
+        setUnBusy(null)
+      }
+    },
+    [client, load],
+  )
+
   const doCheckUpdate = useCallback(
     async (templateId: string) => {
       if (!client) return
@@ -424,6 +454,39 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
                         : upd[t.templateId]
                           ? '已是最新'
                           : '检查更新'}
+                </span>
+              )}
+              {/*
+                「卸载」入口（用户报的缺口）。
+
+                ## 缺口的形状：**能力在、入口没给** ✗
+
+                `cards/uninstall` 这个 RPC **一直是有的** ✓（复验轮就是靠它卸干净的 ✓），
+                但候选列表里**只有「检查更新」** ✗ ⇒ 用户看到的是"**装上了就删不掉**" ✗。
+
+                ⇒ 与"沉默的失败"**同族**：**能力面没被真实使用路径校准过** ✓
+                （真实路径就是：装错了想删 / 装重了想清 ✓）。
+
+                · **只对 `installed` 显示** ✓ —— 内置卡随插件分发，删了下次升级又回来，
+                  给按钮只会让用户白点 ✗
+                · **点击前确认一次** ✓，并在确认文案里写清"**会连同它的挂载实例一起移除**" ✓
+                  （卸载是有后果的动作，用户有权在点之前知道后果 ✓）
+                · 卸载结果**如实回报**（清了什么 / 什么没清掉 ✓）—— 文案由宿主侧承担 ✓
+              */}
+              {t.source === 'installed' && (
+                <span
+                  className="ccr-card-option__upd ccr-card-option__del"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const mounted = t.loadedCount > 0 ? `\n它当前挂在 ${t.loadedCount} 条连接上，` : '\n'
+                    const yes = window.confirm(
+                      `卸载「${t.name}」？${mounted}卸载会连同它的卡片实例一起移除。\n` +
+                        `（模板目录与来源记录会一并清掉；清不掉的会如实告诉你。）`,
+                    )
+                    if (yes) void doUninstall(t.templateId)
+                  }}
+                >
+                  {unBusy === t.templateId ? '…' : '卸载'}
                 </span>
               )}
               </button>

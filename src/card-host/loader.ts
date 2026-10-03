@@ -381,7 +381,16 @@ export class CardHost {
          * 「能力」/「局部」/「全局」/「未判定」✓，用户不必逐个试 ✓。
          * ⚠️ 它是**启发式**，只用来标注（"不建议"），**不阻断** ✓。
          */
-        suitability: analyzeSuitability(t.dir, Boolean(t.manifest.ui?.panel)),
+        /**
+         * ⚠️ **不要拿 `ui.panel` 当"有客户端"**（用户报的：内置三张卡显示「未判定」✗）。
+         *
+         * `ui.panel` 指的是**卡片自己的面板入口文件**（宿主侧渲染用的 ✓），
+         * 而"有没有客户端 UI"要看**有没有客户端制品**（`dsh.client` / `exports['./client']` ✓）。
+         * 内置三张卡有 `ui.panel`、**没有客户端制品** ⇒ 它们其实是**能力型** ✓，
+         * 传了 `hasClient=true` 会让判定器去找一个不存在的客户端产物 ⇒ 判成 `unclear` ✗。
+         * ⇒ 让判定器自己按客户端制品判断 ✓（这一处**只负责传目录** ✓）。
+         */
+        suitability: analyzeSuitability(t.dir),
         // 模板若自己钉死了范围，界面要显示出来并禁用选择器
         ...(t.manifest.scope ? { scope: t.manifest.scope } : {}),
         /*
