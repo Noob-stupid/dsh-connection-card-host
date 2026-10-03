@@ -60,7 +60,14 @@ export declare class UnsafeArchiveError extends Error {
     readonly kind = "unsafe-archive";
     /** 命中的具体条目（给用户看的证据）。 */
     readonly violations: string[];
-    constructor(message: string, violations?: string[]);
+    /** **哪一层判据拦下的**：`name-scan` / `link-scan` / `post-extract`（让日志可行动）。 */
+    readonly layer: 'name-scan' | 'link-scan' | 'post-extract';
+    /** 判据扫到第几个条目时命中（大归档里能立刻分清"开头就坏"还是"末尾混入"）。 */
+    readonly entryIndex: number;
+    constructor(message: string, violations?: string[], where?: {
+        layer: UnsafeArchiveError['layer'];
+        entryIndex?: number;
+    });
 }
 /**
  * 逃逸判据的**版本号** —— 与内容哈希一起记进审计。

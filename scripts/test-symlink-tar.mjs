@@ -189,6 +189,14 @@ try {
   ok(/安全策略\*\*拒绝/.test(auditLines), '审计里记了"被安全策略拒绝"')
   ok(/sha256:[0-9a-f]{16}/.test(auditLines), '审计里记了**内容哈希**（同一坏包再试一眼可查）')
   ok(/judgementVersion=\d+/.test(auditLines), '审计里记了**判据版本**（将来做快拒时防"误伤被永久缓存"）')
+  /**
+   * ⚠️ 这两格**让日志从"记录"变成"线索"**（对端点明）：
+   *   `rejectedAt` —— 哪一层判据拦下的（将来误伤时一眼知道该复审哪一层）
+   *   `entries`    —— 扫到第几个条目命中（大归档里分清"开头就坏"还是"末尾混入"）
+   * 成本几乎为零，但定位能力差一个量级。
+   */
+  ok(/rejectedAt=(name-scan|link-scan|post-extract)/.test(auditLines), '审计里记了**哪一层**拦下的')
+  ok(/entries=\d+/.test(auditLines), '审计里记了**扫到第几个条目**命中')
   ok(/violations=\[/.test(auditLines), '审计里记了命中的条目（violations）')
   /**
    * ⚠️ **动作边界**：只销毁**我自己落地的副本**；用户来源文件只读不删。
