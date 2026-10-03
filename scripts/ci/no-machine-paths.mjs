@@ -82,13 +82,13 @@ export const DETECTORS = [
 export const ALLOWLIST = [
   {
     text: DRIVE + '\\my-cards\\monitor-card',
-    files: ['README.md', 'README.en.md', 'docs/card-protocol.md', 'lib/card-host/installer.js', 'src/card-host/installer.ts'],
+    files: ['README.md', 'README.zh.md', 'docs/card-protocol.md', 'lib/card-host/installer.js', 'src/card-host/installer.ts'],
     why: '「本地目录」安装源的通用示意路径（my-cards 是杜撰的示例目录）',
     inRepo: true,
   },
   {
     text: DRIVE + '\\downloads\\monitor-card-1.0.0.tgz',
-    files: ['README.md', 'README.en.md', 'docs/card-protocol.md', 'lib/card-host/installer.js', 'src/card-host/installer.ts'],
+    files: ['README.md', 'README.zh.md', 'docs/card-protocol.md', 'lib/card-host/installer.js', 'src/card-host/installer.ts'],
     why: '「本地 tgz」安装源的通用示意路径（downloads 是杜撰的示例目录）',
     inRepo: true,
   },
@@ -99,7 +99,7 @@ export const ALLOWLIST = [
     textPrefix: 'C' + ':' + '\\Users\\',
     requireLine: /<[^>]*>/,
     sample: 'C' + ':' + '\\Users\\<user>\\project',
-    files: ['README.md', 'README.en.md', 'docs/card-protocol.md', 'docs/adapter-api.md', 'docs/compatibility.md'],
+    files: ['README.md', 'README.zh.md', 'docs/card-protocol.md', 'docs/adapter-api.md', 'docs/compatibility.md'],
     why: '预置：文档里「盘符 + Users + 尖括号占位用户名」那种教学示例 → 豁免（当前仓库没有，由自校验脚本断言这条规则生效）',
     inRepo: false,
   },
