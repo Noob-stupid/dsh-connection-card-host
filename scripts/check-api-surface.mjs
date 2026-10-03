@@ -38,13 +38,30 @@ const ROOT = process.cwd()
 const SRC = join(ROOT, 'src')
 const BASELINE = join(ROOT, 'scripts', 'api-surface.txt')
 
-/** 递归收集 src 下的 .ts/.tsx 文件。 */
+/**
+ * 递归收集 src 下的 .ts/.tsx 文件。
+ *
+ * ⚠️ **读不到就当"没扫到"，不要抛** —— 抛出去会变成一段堆栈 + 退出码 1，
+ * 而下面那道**健全性下限**才能给出真正的结论（"检查本身没跑起来"）。
+ * 这条是**故障演练**逼出来的（`drill-observe-failure.mjs`）：
+ * 演练第一次跑时，`SRC` 不存在会导致脚本直接崩，压根走不到那句友好提示 ✗。
+ */
 function walk(dir, out = []) {
-  for (const name of readdirSync(dir)) {
+  let names
+  try {
+    names = readdirSync(dir)
+  } catch {
+    return out
+  }
+  for (const name of names) {
     const abs = join(dir, name)
-    const st = statSync(abs)
-    if (st.isDirectory()) walk(abs, out)
-    else if (/\.tsx?$/u.test(name)) out.push(abs)
+    try {
+      const st = statSync(abs)
+      if (st.isDirectory()) walk(abs, out)
+      else if (/\.tsx?$/u.test(name)) out.push(abs)
+    } catch {
+      /* 单个条目读不到：跳过（整体异常由下限发现） */
+    }
   }
   return out
 }
@@ -65,6 +82,32 @@ function collectSurface() {
 }
 
 const current = collectSurface()
+
+/**
+ * ⚠️ **观测健全性下限**（这道检查是"被观测手段本身"救的，必须显式）。
+ *
+ * 本脚本的结论是"**集合相同 ⇒ 没损伤**"—— 但**观测手段自己失败时**（目录读不到、
+ * 编码不对、正则被改坏），`collectSurface()` 会返回**空**，于是"空 == 空"⇒ **假绿** ✗。
+ *
+ * > 对端给这条起了个准名字：**观测手段失败时得出的"没有"是「假的没有」**。
+ *
+ * 我自己项目里有过一次真事故：路径扫描因为 shell 吃掉了模式而"通过"，
+ * 实际漏掉了 6 处泄漏 —— 形状完全一样（**工具没生效，结论却是绿的**）。
+ *
+ * 所以这里设一道下限：**符号数或文件数低到不合理 ⇒ 直接失败**，
+ * 而不是安静地报"通过"。要放宽时改这两个常量（改动本身就是一次显式决定）。
+ */
+const MIN_EXPECTED_SYMBOLS = 100
+const MIN_EXPECTED_FILES = 10
+
+const fileCount = walk(SRC).length
+if (fileCount < MIN_EXPECTED_FILES || current.length < MIN_EXPECTED_SYMBOLS) {
+  console.log('❌ **检查本身没跑起来**（不是"集合相同"）：')
+  console.log(`   扫到文件 ${fileCount} 个（下限 ${MIN_EXPECTED_FILES}）、导出符号 ${current.length} 个（下限 ${MIN_EXPECTED_SYMBOLS}）`)
+  console.log('   这几乎总是**观测手段失效**（路径不对 / 目录读不到 / 正则被改坏），')
+  console.log('   而不是"代码真的只剩这么点导出"。**别把它当通过。**')
+  process.exit(2)
+}
 
 if (process.argv.includes('--update')) {
   writeFileSync(BASELINE, current.join('\n') + '\n', 'utf8')
