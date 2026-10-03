@@ -1180,15 +1180,43 @@ function isNonEmptyDir(dir: string): boolean {
 }
 
 /**
+ * **已知安全**的查询参数（白名单）。
+ *
+ * ⚠️ **刻意是白名单，不是黑名单**（对端点明 —— 与逃逸判据那条 fail-closed 同源）：
+ * 黑名单的形状风险是 **"出现一个没列到的参数名，它就原样出去了"**，且**没人会发现**
+ * （日志里长得人畜无害）。白名单把"没列到"的后果从**泄露**变成**可读性略降** —— 方向才对。
+ */
+const SAFE_QUERY_KEYS = new Set([
+  'ref',
+  'path',
+  'page',
+  'per_page',
+  'since',
+  'until',
+  'version',
+  'branch',
+  'tag',
+])
+
+/** 打码时的**短指纹**长度：能对账、不能还原。 */
+const MASK_FINGERPRINT_LEN = 4
+
+/**
  * 把 URL 里的**敏感部分打码**，再印进日志/失败指引。
  *
- * 为什么要打码（对端点明）：失败指引要印"**实际用的完整 URL**"，
- * 用户才能复制到浏览器自查 —— 但 URL 里可能带 token/签名（预签名地址、私有镜像的鉴权参数）。
+ * ## 为什么打码（对端点明）
+ *
+ * 失败指引要印"**实际用的完整 URL**"（用户复制去浏览器自查），
+ * 但 URL 里可能带 token/签名（预签名地址、私有镜像的鉴权参数）——
  * **"可解释性"不能以泄露凭据为代价。**
  *
- * 覆盖两种常见形态：
- *   · query 里的敏感键（token / key / sig / auth / password / access_token / X-Amz-* 等）
- *   · URL 里的 userinfo（`https://user:pass@host`）
+ * ## 三个设计点（都是对端给的）
+ *
+ *   1. **白名单**：只放行已知安全的参数名，**其余默认打码**
+ *   2. **保留键名**：`token=***` 而不是抹掉整段 —— **"哪里被打了码"本身可读**
+ *   3. **短指纹**：`token=***#3f9c` —— 值不出现，但**同值同指纹**，
+ *      排查时能确认"这一次和上一次是同一个 token"，却拿不到凭据本体。
+ *      与审计行里记 `sha256 前 16 位` 同一思路：**要的是可对账，不是可还原。**
  */
 /**
  * 失败指引里附在**每条通道行下面**的那一行：**实际用的完整 URL**（已打码）。
@@ -1200,14 +1228,27 @@ function isNonEmptyDir(dir: string): boolean {
 function urlNote(url: string): string {
   return `\n        实际 URL: ${maskUrl(url)}`
 }
+
 export function maskUrl(url: string): string {
   let out = String(url ?? '')
   // userinfo：https://user:pass@host  →  https://***@host
   out = out.replace(/\/\/([^/@\s]+)@/gu, '//***@')
-  // query 里的敏感键
+
+  /**
+   * query：**白名单放行，其余默认打码**（带短指纹）。
+   *
+   * 原来这里是黑名单（列出 token/key/sig… 才打码）—— 对端点出它的形状风险：
+   * **出现一个没列到的参数名，它就原样出去了**，而且没人会发现（日志里长得人畜无害）。
+   * 改成白名单之后，"没列到"的后果从**泄露**变成**可读性略降** —— 方向才对。
+   */
   out = out.replace(
-    /([?&](?:token|access_token|api_?key|key|sig|signature|auth|authorization|password|passwd|secret|credential|x-amz-[a-z-]+)=)([^&\s]*)/giu,
-    '$1***',
+    /([?&])([^=&\s]+)=([^&\s]*)/gu,
+    (whole: string, sep: string, key: string, value: string) => {
+      if (SAFE_QUERY_KEYS.has(key.toLowerCase())) return whole
+      if (value === '') return `${sep}${key}=`
+      const fp = createHash('sha256').update(value).digest('hex').slice(0, MASK_FINGERPRINT_LEN)
+      return `${sep}${key}=***#${fp}`
+    },
   )
   return out
 }

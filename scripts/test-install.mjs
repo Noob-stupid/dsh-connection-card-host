@@ -458,6 +458,26 @@ try {
     )
     ok(maskUrl('https://h/x?key=K&sig=S&auth=A&password=P').includes('key=***'), '常见敏感键都覆盖')
     /**
+     * ⚠️ **白名单的形状**（对端点明的 fail-closed）：黑名单的风险是
+     * "出现一个没列到的参数名，它就原样出去了，而且没人会发现"。
+     * 所以这里断言的是**反方向** —— **没列到的**也必须被打码。
+     */
+    const unknownParam = maskUrl('https://x/y.tgz?somethingNeverSeenBefore=oops')
+    ok(!unknownParam.includes('oops'), '**没列到**的参数名也默认打码（白名单，不是黑名单）')
+    ok(unknownParam.includes('somethingNeverSeenBefore=***'), '仍然保留键名（可读性不牺牲）')
+    /** 已知安全的参数要**原样放行**，否则 URL 就没法复制自查了。 */
+    ok(
+      maskUrl('https://codeload.github.com/a/b/tar.gz/refs/heads/main?ref=main&page=2').includes('ref=main'),
+      '白名单里的安全参数原样放行',
+    )
+    /** **短指纹**：值不出现，但同值同指纹 ⇒ 能对账、不能还原。 */
+    ok(
+      maskUrl('https://x/y?token=SAME') === maskUrl('https://x/y?token=SAME'),
+      '同值 ⇒ 同指纹（可确认"和上次是同一个 token"）',
+    )
+    ok(maskUrl('https://x/y?token=A') !== maskUrl('https://x/y?token=B'), '异值 ⇒ 异指纹')
+    ok(/token=\*\*\*#[0-9a-f]{4}/.test(maskUrl('https://x/y?token=SAME')), '指纹形态固定（`***#xxxx`）')
+    /**
      * ⚠️ **"可解释性"不能以泄露凭据为代价** —— 这条是打码存在的理由，
      * 也是"印实际 URL"这个请求的边界。
      */
