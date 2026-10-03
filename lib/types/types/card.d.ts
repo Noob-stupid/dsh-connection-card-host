@@ -51,6 +51,28 @@ export interface CardManifest {
      * 规则：**加东西不升版本，删或改语义才升**。
      */
     api?: number;
+    /**
+     * ⚠️ **适配卡**声明：这张"卡片"其实是一个**普通 DSH 插件包**，
+     * 由适配层在受限作用域里挂载它（见 `docs/adapter-design.md`）。
+     *
+     * 有这一段的包与普通卡片**走同一套安装/候选/挂载流程**，
+     * 但它不能直接 `apply`（它是给 DSH 全局设计的），必须先过适配层。
+     *
+     * ```jsonc
+     * "dshCard": {
+     *   "adapter": { "capabilities": ["tools", "effect"] }
+     * }
+     * ```
+     *
+     * `capabilities` 是**申报制**的清单：适配层只提供申报过的能力，
+     * 访问未申报的能力会**当场抛错**（不静默放行、也不静默忽略）。
+     */
+    adapter?: {
+        /** 申报需要的能力（合法值见 `src/adapter/capabilities.ts`）。 */
+        capabilities?: string[];
+        /** 该插件的入口（相对包根）；缺省用 package.json 的 main。 */
+        entry?: string;
+    };
 }
 /** 连接消息 —— 两端之间的规范交流记录。 */
 export type MessageKind = 'say' | 'ask' | 'reply' | 'system';

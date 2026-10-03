@@ -463,6 +463,27 @@ export const CONNECTION_CARD_CSS = `
 
 .ccr-card-option:hover:not(:disabled) { background: var(--ccr-panel-highlight); }
 .ccr-card-option:disabled { opacity: 0.45; cursor: default; }
+
+/*
+ * 适配卡（普通 DSH 插件挂成连接能力）—— 用户裁决 D6：
+ * **照常列出 + 「适配」标注**；未就绪时置灰（沿用上面的 :disabled 样式）并保留悬停说明。
+ * 置灰而不是隐藏：让用户知道"东西在这儿、需要开一下"，而不是以为没装上。
+ */
+.ccr-card-option--blocked { border-style: dashed; }
+.ccr-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 15px;
+  vertical-align: 1px;
+  border-radius: 4px;
+  /* 与主题一致：用边框层级色，不写死具体颜色 */
+  border: 1px solid var(--dsw-alias-border-l1, rgba(128, 128, 128, 0.35));
+  color: var(--dsw-alias-label-secondary, rgba(255, 255, 255, 0.75));
+}
+.ccr-badge--adapter { letter-spacing: 0.5px; }
 .ccr-card-option__name { font-size: 12px; font-weight: 500; }
 /* 卡片更新入口（已安装卡片才有）：点一次检查，有新版再点一次更新 */
 .ccr-card-option__upd {

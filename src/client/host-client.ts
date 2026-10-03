@@ -81,6 +81,15 @@ export interface CardTemplateView {
   hasPanel: boolean
   /** 模板自己钉死的可见范围（有则用户不可改）。 */
   scope?: CardScope
+  /**
+   * 适配卡状态（**只在是适配卡时出现**）—— 候选列表据此加「适配」标注、
+   * 未就绪时置灰并说明原因（用户裁决 D6）。
+   */
+  adapter?: {
+    status: 'ready' | 'off' | 'unsupported'
+    capabilities: string[]
+    reason: string
+  }
   loadedCount: number
 }
 

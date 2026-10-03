@@ -329,21 +329,44 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
             <div className="ccr-panel__empty">
               {templates.length === 0 ? '没有发现任何卡片模板' : '所有卡片都已添加'}
             </div>
-          )}          {available.map((t) => (
-            <button
-              key={t.templateId}
-              type="button"
-              className="ccr-card-option"
-              disabled={busy === t.templateId}
-              onClick={() => void add(t.templateId)}
-            >
-              <span className="ccr-card-option__name">{t.name}</span>
-              <span className="ccr-card-option__meta">
-                {t.source === 'builtin' ? '内置' : '已安装'} · v{t.version}
-                {t.events.length > 0 && ` · ${t.events.length} 事件`}
-                {/* 模板自己钉死了范围的话，用户选什么都会被覆盖 —— 提前说清 */}
-                {t.scope && ` · 固定仅${t.scope === 'a' ? 'A' : 'B'}端`}
-              </span>
+          )}          {available.map((t) => {
+            /*
+             * 适配卡（把一个普通 DSH 插件挂成连接上的能力）：照常列出，但带「适配」标注；
+             * 未就绪时**置灰并说明原因**（用户裁决 D6）。
+             *
+             * 三条理由：让用户知道"这东西在这儿"（不是没装上）、知道"要开一下"
+             * （而不是点了撞墙）、也不会以为"下载失败"。状态由宿主侧判定后下发
+             * （`src/adapter/status.ts`），这里**不做二次判断** ——
+             * 判定分散是"标注与实际行为脱节"的根源。
+             */
+            const ad = t.adapter
+            const blocked = Boolean(ad && ad.status !== 'ready')
+            return (
+              <button
+                key={t.templateId}
+                type="button"
+                className={`ccr-card-option${blocked ? ' ccr-card-option--blocked' : ''}`}
+                disabled={busy === t.templateId || blocked}
+                title={ad ? ad.reason : undefined}
+                onClick={() => {
+                  if (blocked) return
+                  void add(t.templateId)
+                }}
+              >
+                <span className="ccr-card-option__name">
+                  {t.name}
+                  {ad && <span className="ccr-badge ccr-badge--adapter">适配</span>}
+                </span>
+                <span className="ccr-card-option__meta">
+                  {t.source === 'builtin' ? '内置' : '已安装'} · v{t.version}
+                  {t.events.length > 0 && ` · ${t.events.length} 事件`}
+                  {/* 模板自己钉死了范围的话，用户选什么都会被覆盖 —— 提前说清 */}
+                  {t.scope && ` · 固定仅${t.scope === 'a' ? 'A' : 'B'}端`}
+                  {/* 适配卡的能力清单：让"它能给这条连接带来什么"在选择前就可见 */}
+                  {ad && ad.capabilities.length > 0 && ` · 能力 ${ad.capabilities.join('/')}`}
+                  {ad?.status === 'off' && ' · 需开启适配层'}
+                  {ad?.status === 'unsupported' && ' · 本版本不支持'}
+                </span>
 
               {/*
                 已安装的卡片给一个「检查更新 / 更新」入口。
@@ -371,8 +394,9 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
                           : '检查更新'}
                 </span>
               )}
-            </button>
-          ))}
+              </button>
+            )
+          })}
         </div>
       )}
 

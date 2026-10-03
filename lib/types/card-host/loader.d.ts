@@ -23,6 +23,18 @@ export interface CardTemplateInfo {
     hasPanel: boolean;
     /** 模板自己钉死的可见范围（有则用户不可改）。 */
     scope?: CardScope;
+    /**
+     * 适配卡状态（**只在是适配卡时出现**）。
+     *
+     * 候选列表据此在名字旁加「适配」标注、并在未就绪时置灰 + 说明原因
+     * （用户裁决 D6）。判定逻辑在 `src/adapter/status.ts`，是纯函数 ——
+     * 这里只是把结果随模板信息一起下发，**不在这里做判断**。
+     */
+    adapter?: {
+        status: 'ready' | 'off' | 'unsupported';
+        capabilities: string[];
+        reason: string;
+    };
     /** 已加到当前连接的实例数（由调用方填充）。 */
     loadedCount: number;
 }
