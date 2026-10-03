@@ -45,6 +45,7 @@ import {
 import { dirname, join, relative, resolve } from 'node:path'
 import { builtinModules } from 'node:module'
 import { createRequire } from 'node:module'
+import { readClientArtifact } from '../card-host/client-artifact.js'
 import { pathToFileURL } from 'node:url'
 
 /** 垫片的 `node_modules` 里的"这是我们的目录"标记 —— 没有它就不敢往里写。 */
@@ -125,13 +126,25 @@ export function packageRootOf(spec: string): string {
  *
  * 有界：跳过 `node_modules`、只扫代码文件、限制文件数与文件大小 ——
  * 这是个体检/规划用的扫描，不是打包器。
+ *
+ * ## ⚠️ 为什么要能**跳过客户端产物**（实测踩到的假拒绝）
+ *
+ * 浏览器产物（`lib/client.js` 之类）里的 `require('react')` 是给**浏览器的模块表**用的 ✗ ——
+ * 在**宿主侧**解析它**没有意义** ✗。而本函数原先扫整个插件目录 ⇒ 把这类依赖也算成
+ * "宿主侧必须可解析" ⇒ **两张完全正常的插件都被假拒绝**（`react（第三方依赖未解析到）`）✗✗。
+ *
+ * 症状极具误导性：它看起来像"依赖没装"，实际是"**我们在用错误的解析面要求它**" ✗。
+ *
+ * @param options.skip 相对 `pluginDir` 的文件路径（正斜杠），不参与扫描
  */
 export function scanBareSpecifiers(
   pluginDir: string,
-  options: { maxFiles?: number; maxBytes?: number } = {},
+  options: { maxFiles?: number; maxBytes?: number; skip?: Set<string> } = {},
 ): string[] {
   const maxFiles = options.maxFiles ?? 400
   const maxBytes = options.maxBytes ?? 512 * 1024
+  /** **跳过集合**：相对 `pluginDir` 的正斜杠路径（客户端产物走这里排除）。 */
+  const skip = options.skip ?? new Set<string>()
   const found = new Set<string>()
 
   const walk = (dir: string, base: string): void => {
@@ -156,6 +169,15 @@ export function scanBareSpecifiers(
         continue
       }
       if (!/\.(mjs|cjs|js|ts)$/.test(name)) continue
+      /**
+       * ⚠️ **客户端产物不参与宿主侧依赖规划**（见函数头说明）——
+       * 它里面的 `require('react')` 是给浏览器模块表的，宿主侧解析它没有意义，
+       * 强行要求只会把正常插件判成"依赖缺失" ✗。
+       *
+       * ⚠️ 键必须**相对 `pluginDir`**：`walk` 的 `base` 起手就是**绝对路径** ✗
+       * （第一版直接用 `join(base, name)` ⇒ 永远匹配不上 ⇒ 修复看似生效实则没有 ✗）。
+       */
+      if (skip.has(relative(pluginDir, full).split('\\').join('/'))) continue
       if (found.size > maxFiles) return
       if (st.size > maxBytes) continue
       let text: string
@@ -215,7 +237,16 @@ export function planShims(
   shimRoot: string,
   depSourceDir?: string,
 ): ShimPlan {
-  const scanned = scanBareSpecifiers(pluginDir)
+  /**
+   * ⚠️ **把客户端产物排除在宿主侧依赖规划之外**（实测踩到的假拒绝 —— 见 `scanBareSpecifiers` 的说明）。
+   *
+   * 客户端的 `require('react')` 由**浏览器的模块表**满足；在宿主侧要求它可解析，
+   * 会把两张完全正常的插件都判成"第三方依赖未解析到" ✗（症状还极具误导性：
+   * 看起来像"依赖没装"，实际是"我们在用错误的解析面要求它"）。
+   */
+  const clientEntry = readClientArtifact(pluginDir).entry
+  const skip = new Set<string>(clientEntry ? [clientEntry.split('\\').join('/')] : [])
+  const scanned = scanBareSpecifiers(pluginDir, { skip })
   const depFrom = depSourceDir ?? pluginDir
 
   const dsh: DshShimEntry[] = []

@@ -70,10 +70,21 @@ export declare function packageRootOf(spec: string): string;
  *
  * 有界：跳过 `node_modules`、只扫代码文件、限制文件数与文件大小 ——
  * 这是个体检/规划用的扫描，不是打包器。
+ *
+ * ## ⚠️ 为什么要能**跳过客户端产物**（实测踩到的假拒绝）
+ *
+ * 浏览器产物（`lib/client.js` 之类）里的 `require('react')` 是给**浏览器的模块表**用的 ✗ ——
+ * 在**宿主侧**解析它**没有意义** ✗。而本函数原先扫整个插件目录 ⇒ 把这类依赖也算成
+ * "宿主侧必须可解析" ⇒ **两张完全正常的插件都被假拒绝**（`react（第三方依赖未解析到）`）✗✗。
+ *
+ * 症状极具误导性：它看起来像"依赖没装"，实际是"**我们在用错误的解析面要求它**" ✗。
+ *
+ * @param options.skip 相对 `pluginDir` 的文件路径（正斜杠），不参与扫描
  */
 export declare function scanBareSpecifiers(pluginDir: string, options?: {
     maxFiles?: number;
     maxBytes?: number;
+    skip?: Set<string>;
 }): string[];
 /**
  * 试着把一个 DSH 包解析到**真模块**。
