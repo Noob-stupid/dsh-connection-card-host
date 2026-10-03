@@ -112,7 +112,9 @@ try {
       `    output: { schema: { type: 'string' }, render: (a, v) => String(v) },`,
       `    async execute(args, exec) {`,
       `      const cwd = exec?.agent?.session?.header?.cwd`,
-      `      return CHROMIUM + ':' + (args.url || '') + ':' + join(cwd || '.', 'x')`,
+      // 原样回传 cwd（不 join）：断言才能精确比对夹具值，
+      // 否则 Windows 上 join('/work','x') 会变成 '\work\x'，与夹具不等 —— 实测踩到
+      `      return CHROMIUM + ':' + (args.url || '') + ':cwd=' + (cwd || '')`,
       `    },`,
       `  }))`,
       `}`,

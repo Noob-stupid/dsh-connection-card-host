@@ -8,21 +8,29 @@
  *       → 桥接（命名/可见性/生命周期）
  *
  * 这一步能提前暴露"假插件测不出来"的问题：真实插件会用到门面之外的东西、
- * 依赖真实的第三方包、Config 里可能有门面没实现的链式调用。
+ * 依赖真实的第三方包、Config 里可能用到门面没实现的链式调用。
  *
  * 插件不在本机时**跳过**（不算失败）—— 它不是人人都有的环境依赖。
  *
  * 跑法：node scripts/experiment-real-plugin.mjs [插件目录或包名]
  */
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 /**
  * 手工递归拷贝。
  *
- * ⚠️ **不能用 `fs.cpSync`**：本机上它写**用户主目录下的** `~/.dsh/…` 与 `%TEMP%` 一律
- * `EIO, Access is denied`（写**非系统盘**却正常），而 `copyFileSync` 三种位置都能写。
+ * ⚠️ **不能用 `fs.cpSync`**：本机上它写「用户主目录下的 .dsh」与 %TEMP% 一律
+ * `EIO, Access is denied`（写非系统盘却正常），而 `copyFileSync` 哪儿都能写。
  * 这与卡片安装器用的是同一个 API —— 实测安装器当时也装不上（已在 v1.0.19 修）。
  */
 function copyDir(src, dst) {
@@ -44,15 +52,17 @@ let pass = 0
 let fail = 0
 const ok = (c, l) => (c ? pass++ : (fail++, console.log(`  ❌ ${l}`)))
 
-/** 找插件：按包名从常见位置解析，或直接用给的路径。 */
+/**
+ * 找插件：按包名解析，或直接用给的路径。
+ *
+ * 候选根目录**从环境推**，不写死本机路径：
+ *   · DSH_PROFILE_DIR —— profile 启动的 DSH 会设它（首选）
+ *   · 用户主目录下的 .dsh/profiles/<名字>/node_modules —— 兜底，逐个 profile 试
+ * 找不到就跳过（本脚本不是人人都有的环境依赖）。
+ */
 function locate(spec) {
   if (existsSync(spec)) return { dir: spec, source: 'path' }
-  /**
-   * 候选根目录**从环境推**，不写死本机路径：
-   *   · DSH_PROFILE_DIR —— profile 启动的 DSH 会设（首选）
-   *   · 用户主目录下的 `.dsh/profiles/*/node_modules` —— 兜底，逐个 profile 试
-   * 找不到就跳过（本脚本不是人人都有的环境依赖）。
-   */
+
   const roots = []
   if (process.env.DSH_PROFILE_DIR) roots.push(join(process.env.DSH_PROFILE_DIR, 'node_modules'))
   const profilesDir = join(homedir(), '.dsh', 'profiles')
@@ -63,6 +73,7 @@ function locate(spec) {
   } catch {
     /* profiles 目录不存在：没有候选根 */
   }
+
   for (const r of roots) {
     const p = join(r, ...spec.split('/'))
     if (existsSync(p)) return { dir: p, source: r }
@@ -91,9 +102,7 @@ try {
   console.log(`   源目录：${found.dir}`)
 
   /* ═══ 1. 模拟安装：拷进卡片目录（与安装器做的事一致）═══ */
-  const pkgName = JSON.parse(
-    (await import('node:fs')).readFileSync(join(found.dir, 'package.json'), 'utf8'),
-  ).name
+  const pkgName = JSON.parse(readFileSync(join(found.dir, 'package.json'), 'utf8')).name
   const cardDir = join(cardsRoot, `${pkgName}@1.0.0-real`)
   mkdirSync(cardsRoot, { recursive: true })
   copyDir(found.dir, cardDir)
@@ -110,7 +119,9 @@ try {
 
   const dshTiers = plan.dsh.map((d) => `${d.pkg.split('/').pop()}=${d.tier}`).join(' ')
   console.log(`   @deepseek-ai 包定档：${dshTiers}`)
-  console.log(`   第三方：${plan.thirdParty.map((t) => `${t.pkg}=${t.resolvedDir ? '已链接' : '缺失'}`).join(' ') || '无'}`)
+  console.log(
+    `   第三方：${plan.thirdParty.map((t) => `${t.pkg}=${t.resolvedDir ? '已链接' : '缺失'}`).join(' ') || '无'}`,
+  )
 
   /* ═══ 3. 真实加载 + 真实 apply（影子 ctx）═══ */
   const mounted = await mountPlugin(
@@ -184,7 +195,13 @@ try {
   fail++
   console.log(`  ❌ 实验抛错：${e instanceof Error ? e.message : String(e)}`)
   if (e instanceof Error && e.stack) {
-    console.log(e.stack.split('\n').slice(1, 4).map((l) => `     ${l.trim()}`).join('\n'))
+    console.log(
+      e.stack
+        .split('\n')
+        .slice(1, 4)
+        .map((l) => `     ${l.trim()}`)
+        .join('\n'),
+    )
   }
 } finally {
   rmSync(root, { recursive: true, force: true })
