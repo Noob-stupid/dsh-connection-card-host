@@ -76,12 +76,28 @@ export function getOverlayHost(): HTMLDivElement | null {
  *
  * 这就是"沉默的失败"最典型的代价：**功能是对的，但用户不知道它是对的**。
  *
- * 所以这里给一条**可教一次**的提示：说清"松手位置不在会话行上"以及"该拖到哪儿"。
- * 用 `pointer-events:none` + 自动移除，不抢交互、不留垃圾。
+ * ## 文案规范（与对端对齐的同一套）
+ *
+ * **第一句先答"我该做什么"**，并且要让用户**一眼看出"这不是坏了"** ——
+ * 所以统一用「**操作没生效**」开头 + 随后的指令，而不是先解释机制。
+ *
+ * ## 合并连续相同提示
+ *
+ * 同一句话在短时间内反复触发（用户连拖几次）⇒ **复用同一条**，不叠加、不闪弹幕。
+ * 成本极低，但不做的话连拖三次就能把屏幕刷满。
  */
+let lastHint: { el: HTMLDivElement; text: string; at: number } | null = null
+
 export function flashHint(text: string, ms = 2600): void {
   const host = getOverlayHost()
   if (!host) return
+
+  const now = Date.now()
+  /** 2.5 秒内的**同一句**提示：复用现有那条（刷新计时），不再新建。 */
+  if (lastHint && lastHint.text === text && now - lastHint.at < ms) {
+    lastHint.at = now
+    return
+  }
 
   const tip = document.createElement('div')
   tip.className = 'ccr-hint'
@@ -92,6 +108,7 @@ export function flashHint(text: string, ms = 2600): void {
     'background:rgba(20,20,20,.86);color:#fff;z-index:2147483647;' +
     'box-shadow:0 4px 16px rgba(0,0,0,.28);white-space:nowrap;'
   host.appendChild(tip)
+  lastHint = { el: tip, text, at: now }
 
   window.setTimeout(() => {
     try {
@@ -99,6 +116,7 @@ export function flashHint(text: string, ms = 2600): void {
     } catch {
       /* 已经被移除：正常 */
     }
+    if (lastHint?.el === tip) lastHint = null
   }, ms)
 }
 
