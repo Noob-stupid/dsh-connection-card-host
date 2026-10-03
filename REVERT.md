@@ -8,13 +8,16 @@
 
 | 位置 | 内容 | 与实验的关系 |
 |:--|:--|:--|
-| `D:\dsh-link\dsh-connection-card-host` | 主工作树 = **线上插件**（master，v1.0.18） | **从未包含本分支任何内容** |
-| `D:\dsh-link\ccr-adapter` | 本分支工作树 `feat/plugin-adapter` | 实验全在这里 |
-| 远端 `master` | 预览线发布分支 | **未被本分支改动** |
+| **主工作树**（`git worktree list` 里带 `[master]` 的那个） | **线上插件目录** —— 用户 profile 的 junction 指向它 | 实验期间**一直保持干净**（每次提交前核对 `git status`） |
+| **实验工作树**（带 `[feat/plugin-adapter]` 的那个） | 本分支的独立检出 | 实验全在这里 |
+| 远端 `master` | 预览线发布分支 | 合并前不受影响 |
 | 远端 `feat/plugin-adapter` | 本分支（已推送，留档） | 可删可留 |
 
 **关键性质**：实验代码**不在**线上插件目录里，所以"回退"不需要动线上任何东西 ——
 最坏情况也只是"多了一个没人用的分支和一个多余的工作树目录"。
+
+> ⚠️ 本文件**不写具体盘符路径**：仓库有本机路径扫描（`scripts/localscan.sh`），
+> 文档里写死开发机的绝对路径会被它拦下 —— 这是**刻意**的，别把它们加回白名单。
 
 ---
 
@@ -37,14 +40,18 @@
 
 ### 场景 A —— 只是不想要了（最可能）
 
-实验**从未合并进 master**，且从未装进用户 profile。回退 = 什么都不做，或清理痕迹：
+实验代码只在**实验工作树 / 分支**里（下面用 `<实验工作树>` 指代，它是一个
+`git worktree`，与主工作树平级）。回退 = 什么都不做，或清理痕迹：
 
 ```powershell
-cd D:\dsh-link\dsh-connection-card-host
-git worktree remove D:\dsh-link\ccr-adapter        # 删工作树目录
-git branch -D feat/plugin-adapter                  # 删本地分支（未合并分支需 -D）
-git push origin --delete feat/plugin-adapter       # 可选：删远端留档
+cd <主工作树>                                   # 线上插件目录（master）
+git worktree remove <实验工作树>                # 删工作树目录
+git branch -D feat/plugin-adapter               # 删本地分支（未合并分支需 -D）
+git push origin --delete feat/plugin-adapter    # 可选：删远端留档
 ```
+
+> 本文档**不写具体盘符路径**（仓库会做本机路径扫描，见
+> `scripts/localscan.sh`）。用 `git worktree list` 能看到两个工作树各自的路径。
 
 **注意**：删分支不属于铁律保护范围（铁律保护的是 **tag**：永不移动、永不删除）。
 若想留档，**远端分支不删即可**，代价只是仓库里多一个分支。
@@ -54,7 +61,7 @@ git push origin --delete feat/plugin-adapter       # 可选：删远端留档
 用**前进式回退**（`git revert`），**绝不用 force-push**：
 
 ```powershell
-cd D:\dsh-link\dsh-connection-card-host
+cd <主工作树>
 git log --oneline                      # 找到适配层相关提交
 git revert --no-commit <c1> <c2> ...   # 一批一起回退
 git commit -F <说明文件>

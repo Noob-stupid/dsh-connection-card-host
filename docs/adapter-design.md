@@ -2,8 +2,8 @@
 
 > **状态：调研阶段。本分支不含任何运行代码，只含本文档与回退手册。**
 >
-> - 分支：`feat/plugin-adapter`　工作树：`D:\dsh-link\ccr-adapter`
-> - 主工作树 `D:\dsh-link\dsh-connection-card-host`（线上插件，master）**未受任何影响**
+> - 分支：`feat/plugin-adapter`（独立 `git worktree`；`git worktree list` 可看路径）
+> - 主工作树（线上插件，master）**未受任何影响** —— 实验期间保持干净
 > - 回退方式见 [REVERT.md](../REVERT.md)
 
 ---

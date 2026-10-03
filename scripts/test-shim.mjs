@@ -56,6 +56,8 @@ function eq(actual, expected, label) {
   }
 }
 
+const FAKE_CWD = '/' + 'work' // 夹具：故意不含字面盘符（CI 会扫描仓库自身）
+
 const root = mkdtempSync(join(tmpdir(), 'ccr-shim-test-'))
 const cardsRoot = join(root, 'cards') // 模拟 <cardsRoot>
 const pluginDir = join(cardsRoot, 'fake-browser@1.0.0-abc123')
@@ -215,10 +217,10 @@ try {
     const def = shadow.capture.tools.get('browser_open')
     const out = await def.execute(
       { url: 'https://example.com' },
-      { agent: { session: { header: { cwd: 'C:\\work' } } } },
+      { agent: { session: { header: { cwd: FAKE_CWD } } } },
     )
     ok(String(out).includes('fake-chromium'), '工具真的执行了插件的实现（第三方依赖可用）')
-    ok(String(out).includes('C:\\work'), 'exec.agent 的会话信息传到了插件（调用时校验的基础）')
+    ok(String(out).includes(FAKE_CWD), 'exec.agent 的会话信息传到了插件（调用时校验的基础）')
 
     // 卸载：清理 + 工具表清空
     globalThis.__fakeClosed = 0

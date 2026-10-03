@@ -133,42 +133,32 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       # 5. 本机路径扫描（防把开发机的绝对路径提交上去）
       #
-      # ⚠️ 模式经过修正 —— 朴素写法 `[A-Za-z]:[\\/]` 会**匹配所有 URL**：
-      #    `https:` 的 s:、`http:` 的 p:、SVG 的 `xmlns="http://…"` 的 p:
-      #    实测在本仓库 15 个文件上全部误报、无一真泄漏。
+      # **逻辑在 scripts/localscan.sh 里，这里只调用** —— 原因有两条：
+      #   ① 内联在 YAML 里时，本地想复现要穿过 PowerShell/bash 的多层引号，
+      #      判出来的结果**不可信**（实测：同一条命令走引号层得到假绿）
+      #   ② 白名单/模式只能有一份，内联就必然与脚本里的版本分叉
+      #
+      # 模式要点：朴素写法 `[A-Za-z]:[\\/]` 会**匹配所有 URL**（`https:` 的 s:、
+      # SVG 的 `xmlns` 的 p:）—— 实测在本仓库 15 个文件上全误报、无一真泄漏。
       # 正确写法：**盘符后必须紧跟反斜杠**（URL 跟的是 //）→ 天然区分。
+      #
+      # 身份清单（真实用户名等）**从仓库变量读**，不写进文件 ——
+      # 否则等于"为了防泄漏而在仓库里写下要防的那个字符串"。
+      # 配置方式：仓库 Settings → Variables → `LOCALSCAN_IDENT`，值为 `名1|名2`。
+      # 未配置时只扫路径，身份那一段自动省去。
       # ─────────────────────────────────────────────────────────────
       - name: 本机路径扫描
-        run: |
-          set -euo pipefail
-          # 允许的示例路径（文档里的示意值，不是真机路径）
-          ALLOW='D:\\my-cards\\monitor-card|D:\\downloads\\monitor-card-1\.0\.0\.tgz|C:\\Users\\<user>'
-          fail=0
-          scanned=0
-          while IFS= read -r f; do
-            case "$f" in
-              *.png|*.jpg|*.jpeg|*.gif|*.mp4|*.ico|*.tgz) continue ;;
-            esac
-            scanned=$((scanned+1))
-            hits=$(grep -nE '(^|[^A-Za-z0-9+.-])[A-Za-z]:\\|file:///[A-Za-z]:|花火|huahuo' "$f" \
-                   | grep -vE "$ALLOW" || true)
-            if [ -n "$hits" ]; then
-              echo "::error file=$f::疑似本机路径/身份泄漏"
-              echo "$hits"
-              fail=1
-            fi
-          done < <(git ls-files)
-          echo "已扫描 $scanned 个文件"
-          if [ "$scanned" -lt 50 ]; then
-            echo "::error::扫描文件数异常偏少（$scanned）—— 防假绿"
-            exit 1
-          fi
-          # 自校验：确认模式**既有效又不误伤**。
-          #
-          # ⚠️ 这段曾经内联在 workflow 里、用 `printf 'D:\\tmp\\x'` 做样本 ——
-          #    结果被 shell 的转义解释吃掉（\t 变制表符、\x 直接报错），
-          #    自校验**自己坏了**，报出"命不中"的假失败。
-          #    现在抽成独立脚本：它无参数、无引用层、本地与 CI 跑的是同一份。
-          #    修改模式时**必须同步** scripts/selfcheck-localscan.sh 里的 PATTERN。
-          bash scripts/selfcheck-localscan.sh
-          exit $fail
+        env:
+          LOCALSCAN_IDENT: ${{ vars.LOCALSCAN_IDENT }}
+        run: bash scripts/localscan.sh
+
+      # 自校验：确认扫描模式**既有效又不误伤**。
+      #
+      # ⚠️ 这段曾经内联在 workflow 里、用样本路径做断言 —— 结果被 shell 的转义
+      #    解释吃掉（`\t` 变制表符、`\x` 直接报错），自校验**自己坏了**，
+      #    报出"命不中"的假失败。现在抽成独立脚本：无参数、无引用层，
+      #    本地与 CI 跑的是同一份。修改模式时**必须同步**该脚本里的 PATTERN。
+      - name: 扫描模式自校验
+        env:
+          DSH_LOCALSCAN_IDENT: ${{ vars.LOCALSCAN_IDENT }}
+        run: bash scripts/selfcheck-localscan.sh

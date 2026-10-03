@@ -74,7 +74,7 @@ function classify(spec: string): SourceKind {
  *
  * ## 为什么换掉 rmSync（2026-10-02 实测，比 cpSync 那条更隐蔽）
  *
- * 本机上 `rmSync` 对 `C:\Users\<用户>\.dsh\…` 下的路径**静默无效**：
+ * 本机上 `rmSync` 对**用户主目录下**（`~/.dsh/…`）的路径**静默无效**：
  * **不抛异常、也不删除**。实测：
  *
  *     rmSync(hello-card.current, { force: true })     → 调用返回，文件仍在
@@ -148,13 +148,13 @@ function extractTgz(tgzPath: string, destDir: string): void {
  *
  * ## 为什么换掉 cpSync（2026-10-02 实测）
  *
- * 本机上 `cpSync` 写入 `C:\Users\<用户>\.dsh\…`（正是卡片目录所在）与 `%TEMP%`
- * 一律 `EIO, Access is denied`，写 `D:\` 却正常；而 `copyFileSync` 三种位置都能写。
+ * 本机上 `cpSync` 写入**用户主目录下**（`~/.dsh/…`，卡片目录正在那儿）与 `%TEMP%`
+ * 一律 `EIO, Access is denied`，写**非系统盘**却正常；而 `copyFileSync` 三种位置都能写。
  * 于是**安装卡片整个失败**：
  *
- *     installCard('D:\…\hello-card', …)
+ *     installCard('<卡片来源>', …)
  *     → ok:false  reason: "EIO, Access is denied.
- *        '\\?\C:\Users\花火\.dsh\connection-cards\cards\hello-card@1.0.0-43da4a94'"
+ *        '\\?\<用户主目录>\.dsh\connection-cards\cards\hello-card@<版本>-<指纹>'"
  *
  * 复现方式很直接：对同一份源、同一目标，`cpSync` 必失败、逐文件 `copyFileSync` 必成功。
  * 怀疑与安全软件/文件系统过滤驱动对 `cpSync` 所用的批量复制 API 有关，

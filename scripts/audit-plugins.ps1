@@ -111,14 +111,21 @@ function Test-Plugin {
 if ($Path) {
   Test-Plugin -Name (Split-Path $Path -Leaf) -Dir $Path
 } else {
+  # 候选目录**从环境推**，不写死本机路径：
+  #   DSH_PROFILE_DIR —— profile 启动的 DSH 会设（插件装在它的 node_modules 下）
+  #   DSH_HOME        —— 没设就按用户主目录下的 .dsh 兜底（开发用的插件源码在那儿）
+  $profileRoot = if ($env:DSH_PROFILE_DIR) { Join-Path $env:DSH_PROFILE_DIR 'node_modules' } else { $null }
+  $dshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $HOME '.dsh' }
+  $srcRoot = Join-Path $dshHome 'plugin-src'
+
   $targets = @(
-    @{ n = 'dsh-browser';        d = "$env:DSH_PROFILE_DIR\node_modules\dsh-browser" },
-    @{ n = 'dsh-graded-mode';    d = 'C:\Users\花火\.dsh\plugin-src\@dsh-external\dsh-graded-mode' },
-    @{ n = 'dsh-super-injector'; d = 'C:\Users\花火\.dsh\plugin-src\@dsh-external\dsh-super-injector' },
-    @{ n = 'dsh-memory-plugin';  d = 'C:\Users\花火\.dsh\plugin-src\@openviking\dsh-memory-plugin' }
+    @{ n = 'dsh-browser';        d = if ($profileRoot) { Join-Path $profileRoot 'dsh-browser' } else { '' } },
+    @{ n = 'dsh-graded-mode';    d = Join-Path $srcRoot '@dsh-external\dsh-graded-mode' },
+    @{ n = 'dsh-super-injector'; d = Join-Path $srcRoot '@dsh-external\dsh-super-injector' },
+    @{ n = 'dsh-memory-plugin';  d = Join-Path $srcRoot '@openviking\dsh-memory-plugin' }
   )
   foreach ($t in $targets) {
-    if (Test-Path $t.d) { Test-Plugin -Name $t.n -Dir $t.d }
-    else { Write-Output "---- $($t.n) : 路径不存在（$($t.d)）`n" }
+    if ($t.d -and (Test-Path $t.d)) { Test-Plugin -Name $t.n -Dir $t.d }
+    else { Write-Output "---- $($t.n) : 本机没有（跳过）`n" }
   }
 }

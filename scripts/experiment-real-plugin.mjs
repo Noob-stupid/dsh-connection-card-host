@@ -21,9 +21,9 @@ import { join } from 'node:path'
 /**
  * 手工递归拷贝。
  *
- * ⚠️ **不能用 `fs.cpSync`**：本机上它写 `C:\Users\…\.dsh\…` 与 `%TEMP%` 一律
- * `EIO, Access is denied`（写 `D:\` 却正常），而 `copyFileSync` 三种位置都能写。
- * 这与卡片安装器用的是同一个 API —— 实测安装器现在也装不上（见报告）。
+ * ⚠️ **不能用 `fs.cpSync`**：本机上它写**用户主目录下的** `~/.dsh/…` 与 `%TEMP%` 一律
+ * `EIO, Access is denied`（写**非系统盘**却正常），而 `copyFileSync` 三种位置都能写。
+ * 这与卡片安装器用的是同一个 API —— 实测安装器当时也装不上（已在 v1.0.19 修）。
  */
 function copyDir(src, dst) {
   mkdirSync(dst, { recursive: true })
@@ -47,10 +47,22 @@ const ok = (c, l) => (c ? pass++ : (fail++, console.log(`  ❌ ${l}`)))
 /** 找插件：按包名从常见位置解析，或直接用给的路径。 */
 function locate(spec) {
   if (existsSync(spec)) return { dir: spec, source: 'path' }
-  const roots = [
-    process.env.DSH_PROFILE_DIR ? join(process.env.DSH_PROFILE_DIR, 'node_modules') : null,
-    'C:\\Users\\花火\\.dsh\\profiles\\desktop\\node_modules',
-  ].filter(Boolean)
+  /**
+   * 候选根目录**从环境推**，不写死本机路径：
+   *   · DSH_PROFILE_DIR —— profile 启动的 DSH 会设（首选）
+   *   · 用户主目录下的 `.dsh/profiles/*/node_modules` —— 兜底，逐个 profile 试
+   * 找不到就跳过（本脚本不是人人都有的环境依赖）。
+   */
+  const roots = []
+  if (process.env.DSH_PROFILE_DIR) roots.push(join(process.env.DSH_PROFILE_DIR, 'node_modules'))
+  const profilesDir = join(homedir(), '.dsh', 'profiles')
+  try {
+    for (const name of readdirSync(profilesDir)) {
+      roots.push(join(profilesDir, name, 'node_modules'))
+    }
+  } catch {
+    /* profiles 目录不存在：没有候选根 */
+  }
   for (const r of roots) {
     const p = join(r, ...spec.split('/'))
     if (existsSync(p)) return { dir: p, source: r }
