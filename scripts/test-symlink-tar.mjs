@@ -20,12 +20,12 @@
  *
  * 跑法：node scripts/test-symlink-tar.mjs
  */
-import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 
-import { installCard, uninstallCard } from '../lib/card-host/installer.js'
+import { installCard, uninstallCard, findEscapingEntry } from '../lib/card-host/installer.js'
 
 let pass = 0
 let fail = 0
@@ -88,6 +88,79 @@ try {
     ok(!lib.includes('link.js'), '符号链接条目被跳过（预期行为，Windows 上建不了链接）')
     uninstallCard(r.cardId, cardsRoot)
   }
+
+  /* ═══════════ 容忍类矩阵：换 typeflag/条目，判据应当同样是"警告不失败" ═══════════ */
+
+  console.log('── 容忍类矩阵（外部工具的行为差异 ⇒ 都不该被当成我们的失败）')
+
+  /**
+   * ⚠️ 断言写成**行为级**（"条目不落地时仍算成功 + warning 里有它"），
+   * **不要**断言"stderr 里出现某句英文" —— 文本是巧合级（换 tar 版本/语言就变），
+   * "目录非空 + 该条被跳过"才是契约级。
+   */
+  const toleranceEntries = [
+    ['硬链接（typeflag 1）', () => tarHeader('lib/hard.js', 0, '1', 'index.js')],
+    ['目录条目（typeflag 5）', () => tarHeader('lib/sub/', 0, '5', '')],
+    ['FIFO（typeflag 6，Windows 建不了）', () => tarHeader('lib/pipe', 0, '6', '')],
+    ['字符设备（typeflag 3，Windows 建不了）', () => tarHeader('lib/tty', 0, '3', '')],
+    ['超长路径（>260）', () => tarFile(`lib/${'x'.repeat(300)}.js`, 'x')],
+  ]
+
+  for (const [label, make] of toleranceEntries) {
+    const t = Buffer.concat([
+      tarFile('package.json', JSON.stringify({ name: 'mix-demo', version: '1.0.0', main: 'lib/index.js', dsh: { bundle: {} } })),
+      tarFile('lib/index.js', 'export function apply() {}'),
+      make(),
+      Buffer.alloc(1024),
+    ])
+    const p = join(work, `mix-${label.slice(0, 4)}.tgz`)
+    writeFileSync(p, gzipSync(t))
+    const root = join(work, `cards-${label.slice(0, 4)}`)
+    const res = await installCard(p, root, () => {})
+    ok(res.ok, `${label} ⇒ 仍然装上（容忍类差异不该让安装失败）`)
+    if (res.ok) {
+      ok(
+        readdirSync(join(res.dir, 'lib')).includes('index.js'),
+        `${label} ⇒ 正常条目落地了`,
+      )
+      uninstallCard(res.cardId, root)
+    }
+  }
+
+  /* ═══════════ 逃逸类：**必须拒绝**（与容忍类是两个判据） ═══════════ */
+
+  console.log('── 逃逸类（zip-slip）⇒ **必须拒绝**，不是警告')
+
+  /**
+   * 判据边界（对端点明）：
+   *   · 外部工具**容忍类**差异 ⇒ 降级警告（上面那些）
+   *   · **逃逸类**条目 ⇒ **必须拦** —— 即使 tar 自己肯解，也不该落到我们目录外
+   *
+   * 纯函数先钉一遍（不依赖 tar 的行为）：
+   */
+  ok(findEscapingEntry(['package.json', '../outside.txt']) === '../outside.txt', '相对逃逸（..）能被认出')
+  ok(findEscapingEntry(['/etc/passwd']) === '/etc/passwd', '绝对路径能被认出')
+  ok(findEscapingEntry(['C:/Windows/x']) === 'C:/Windows/x', 'Windows 绝对路径能被认出')
+  ok(findEscapingEntry(['a/../../b']) === 'a/../../b', '中间的 .. 也能认出')
+  ok(findEscapingEntry(['pkg/lib/a.js', 'pkg/package.json']) === undefined, '正常条目**不误报**')
+
+  // 再走一遍真实安装路径：必须被拒，且**目标目录外一个字节都没写**
+  const evilTar = Buffer.concat([
+    tarFile('package.json', JSON.stringify({ name: 'evil-demo', version: '1.0.0', dsh: { bundle: {} } })),
+    tarFile('../outside.txt', 'I escaped'),
+    Buffer.alloc(1024),
+  ])
+  const evilPath = join(work, 'evil.tgz')
+  writeFileSync(evilPath, gzipSync(evilTar))
+  const evilRoot = join(work, 'cards-evil')
+  const evilRes = await installCard(evilPath, evilRoot, () => {})
+
+  ok(!evilRes.ok, '含逃逸条目的包 ⇒ **拒绝安装**')
+  ok(/拒绝解压|目标目录之外/.test(evilRes.reason ?? ''), '拒绝理由说清是"会写到目标目录之外"')
+  ok(
+    !existsSync(join(work, 'outside.txt')),
+    '**目标目录之外没有被写入**（这才是这条判据真正要保证的事）',
+  )
 } finally {
   rmSync(work, { recursive: true, force: true })
 }

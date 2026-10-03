@@ -35,6 +35,23 @@ export interface InstallResult {
  */
 export declare function removeFileQuiet(target: string): boolean;
 /**
+ * 挑出**逃逸类**条目（zip-slip）：绝对路径，或含 `..` 段的相对路径。
+ *
+ * ## 为什么必须**拒绝**，而不是像 bsdtar 那样"跳过并警告"
+ *
+ * 对端点明的一条边界，我照抄：
+ *
+ * > 外部工具**容忍类**差异（symlink/硬链接/设备文件/长路径）⇒ **降级警告**；
+ * > **逃逸类**条目 ⇒ **必须拦** —— 即使 tar 自己肯解，也不该落到我们目录外。
+ *
+ * 两类**不能混在一个判据里**：容忍类的后果是"少几个文件"，逃逸类的后果是
+ * **写到目标目录之外**（我们装的是任意 GitHub 仓库 ⇒ 那是一条真实的攻击面）。
+ *
+ * 也不依赖 tar 自己的默认行为（不同实现策略不同，有的剥前缀、有的跳过、`-P` 还能放行）——
+ * **我们自己的判据要自己立**。
+ */
+export declare function findEscapingEntry(entries: string[]): string | undefined;
+/**
  * 把 GitHub 的 archive 链接规范化成 **codeload** 链接。
  *
  *     https://github.com/<owner>/<repo>/archive/refs/heads/<branch>.tar.gz
