@@ -27,6 +27,10 @@ export function isAdapterEnabled(): boolean {
  *
  * ⚠️ 不做持久化 —— 持久化会让"以为关了其实还开着"成为可能；
  * 开启应当是一次**显式动作**。
+ *
+ * ⚠️ 本模块**刻意不碰 node:fs**：它被 `status.ts` 引用，而 `status.ts` 的判定结果
+ * 会下发给客户端 —— 静态引入 fs 会把宿主能力带进浏览器包。
+ * 从磁盘读开关是另一件事，放在 `flag-file.ts`（宿主专用）里。
  */
 export function setAdapterEnabled(value: boolean): void {
   adapterEnabled = value === true

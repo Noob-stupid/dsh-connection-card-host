@@ -2,11 +2,39 @@ import type { CardInstance, CardAPI, CardScope } from '../types/index.js';
 import type { ConnectionManager } from '../core/connection-manager.js';
 import type { ConnectionEventBus } from '../core/event-bus.js';
 import type { DSHAdapter } from '../adapter/dsh-adapter.js';
+/**
+ * 适配宿主的**最小接口**（避免卡片宿主反向依赖适配层内部）。
+ *
+ * 适配层实现它；卡片宿主只调这三个方法。这样：
+ *   · 依赖是单向的（卡片宿主 → 接口，而不是 → 垫片/影子 ctx/桥接）
+ *   · 回退时只摘这一个注入点
+ */
+export interface CardAdapterHostLike {
+    /** 总开关是否开启（关着时适配卡的装载会明确报错，而不是按普通卡片跑）。 */
+    enabled(): boolean;
+    /** 挂载一张适配卡（内部完成：垫片 → 申报对账 → apply → 工具桥接）。 */
+    mount(request: {
+        instanceId: string;
+        cardId: string;
+        pluginDir: string;
+        capabilities: unknown;
+        connectionId: string;
+        scope?: CardScope;
+        depSourceDir?: string;
+    }): Promise<{
+        tools: number;
+        pluginId: string;
+    }>;
+    /** 卸载一张适配卡（先摘工具再释放资源）。 */
+    unmount(instanceId: string): void;
+}
 export interface CardHostOptions {
     /** 内置卡片根目录（随插件包发布的 cards/）。 */
     builtinRoot?: string;
     /** 已安装卡片的根目录（$DSH_HOME/connection-cards/cards/）。 */
     installedRoot?: string;
+    /** 适配宿主（可选注入；不注入则适配卡不可用）。 */
+    adapterHost?: CardAdapterHostLike;
 }
 /** 面板里展示的模板摘要。 */
 export interface CardTemplateInfo {
@@ -46,6 +74,17 @@ export declare class CardHost {
     /** 连接两端的规范交流记录（CardAPI.send/read 走它）。 */
     private messageLog;
     private options;
+    /**
+     * 卡片适配宿主（**可选**）：清单里带 `dshCard.adapter` 的卡片交给它挂载。
+     *
+     * 用**接口**而不是直接 import 适配模块，是为了让这一层保持单向依赖：
+     * 卡片宿主不必知道适配层内部（垫片、影子 ctx、桥接），
+     * 回退时也只把这一个注入点摘掉。
+     *
+     * 未注入时（或适配层总开关关闭时），适配卡的装载会**明确报错**，
+     * 而不是悄悄按普通卡片处理 —— 后者会让一个 DSH 插件拿到 CardAPI 并跑出莫名其妙的行为。
+     */
+    private adapterHost;
     /** instanceId → CardAPI。 */
     private apiByInstance;
     private scanned;
@@ -81,6 +120,13 @@ export declare class CardHost {
      * @param connectionId 目标连接 id
      */
     loadCard(templateId: string, connectionId: string, requestedScope?: CardScope): Promise<CardInstance>;
+    /**
+     * 装载一张**适配卡**：交给适配宿主，失败时把已登记的实例回滚掉。
+     *
+     * 单独成方法（而不是塞进 loadCard 的分支里）是为了让"两条路"在代码结构上就分开：
+     * 读代码的人能直接看到适配卡**不走** CardAPI、**不走** importCardModule。
+     */
+    private loadAdapterCard;
     unloadCard(instanceId: string): Promise<void>;
     reloadCard(instanceId: string): Promise<void>;
     /**

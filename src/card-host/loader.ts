@@ -29,11 +29,37 @@ import { createCardApi } from './card-api.js'
 import { createShimElement } from './dom-shim.js'
 import { adapterStatusOf } from '../adapter/status.js'
 
+/**
+ * 适配宿主的**最小接口**（避免卡片宿主反向依赖适配层内部）。
+ *
+ * 适配层实现它；卡片宿主只调这三个方法。这样：
+ *   · 依赖是单向的（卡片宿主 → 接口，而不是 → 垫片/影子 ctx/桥接）
+ *   · 回退时只摘这一个注入点
+ */
+export interface CardAdapterHostLike {
+  /** 总开关是否开启（关着时适配卡的装载会明确报错，而不是按普通卡片跑）。 */
+  enabled(): boolean
+  /** 挂载一张适配卡（内部完成：垫片 → 申报对账 → apply → 工具桥接）。 */
+  mount(request: {
+    instanceId: string
+    cardId: string
+    pluginDir: string
+    capabilities: unknown
+    connectionId: string
+    scope?: CardScope
+    depSourceDir?: string
+  }): Promise<{ tools: number; pluginId: string }>
+  /** 卸载一张适配卡（先摘工具再释放资源）。 */
+  unmount(instanceId: string): void
+}
+
 export interface CardHostOptions {
   /** 内置卡片根目录（随插件包发布的 cards/）。 */
   builtinRoot?: string
   /** 已安装卡片的根目录（$DSH_HOME/connection-cards/cards/）。 */
   installedRoot?: string
+  /** 适配宿主（可选注入；不注入则适配卡不可用）。 */
+  adapterHost?: CardAdapterHostLike
 }
 
 /** 面板里展示的模板摘要。 */
@@ -72,6 +98,17 @@ export class CardHost {
   /** 连接两端的规范交流记录（CardAPI.send/read 走它）。 */
   private messageLog: ConnectionMessageLog
   private options: CardHostOptions
+  /**
+   * 卡片适配宿主（**可选**）：清单里带 `dshCard.adapter` 的卡片交给它挂载。
+   *
+   * 用**接口**而不是直接 import 适配模块，是为了让这一层保持单向依赖：
+   * 卡片宿主不必知道适配层内部（垫片、影子 ctx、桥接），
+   * 回退时也只把这一个注入点摘掉。
+   *
+   * 未注入时（或适配层总开关关闭时），适配卡的装载会**明确报错**，
+   * 而不是悄悄按普通卡片处理 —— 后者会让一个 DSH 插件拿到 CardAPI 并跑出莫名其妙的行为。
+   */
+  private adapterHost: CardAdapterHostLike | undefined
   /** instanceId → CardAPI。 */
   private apiByInstance = new Map<string, CardAPI>()
   private scanned = false
@@ -97,6 +134,7 @@ export class CardHost {
     this.adapter = adapter
     this.messageLog = manager.messages
     this.options = options
+    this.adapterHost = options.adapterHost
   }
 
   /**
@@ -293,6 +331,20 @@ export class CardHost {
     // 模板可以把自己固定到某一端（scope: 'a'|'b'）；否则用调用方选的，默认双向
     const scope: CardScope = template.manifest.scope ?? requestedScope ?? 'both'
 
+    /**
+     * ⚠️ **适配卡走另一条路**（清单里有 `dshCard.adapter`）。
+     *
+     * 它不能按普通卡片处理：那是一个**给 DSH 全局写的插件**，
+     * 直接 import 会因解析不到 `@deepseek-ai/*` 而失败；
+     * 就算 import 成功，给它 CardAPI 也是错的上下文。
+     *
+     * 所以这里**分叉**，而不是"失败了再回退" ——
+     * 让两条路的边界在代码上可见，也让失败原因指向正确的方向。
+     */
+    if (template.manifest.adapter) {
+      return await this.loadAdapterCard(template, connectionId, scope)
+    }
+
     // 导入卡片模块（含崩溃隔离）。带 loadSeq 做缓存失效 —— 否则 reload 拿回的是旧模块。
     const mod = await importCardModule(template.entry, this.loadSeq)
     this.registry.setModule(templateId, mod)
@@ -333,6 +385,81 @@ export class CardHost {
     return instance
   }
 
+  /**
+   * 装载一张**适配卡**：交给适配宿主，失败时把已登记的实例回滚掉。
+   *
+   * 单独成方法（而不是塞进 loadCard 的分支里）是为了让"两条路"在代码结构上就分开：
+   * 读代码的人能直接看到适配卡**不走** CardAPI、**不走** importCardModule。
+   */
+  private async loadAdapterCard(
+    template: CardTemplate,
+    connectionId: string,
+    scope: CardScope,
+  ): Promise<CardInstance> {
+    const conn = this.manager.getById(connectionId)
+    if (!conn) throw new Error(`连接不存在: ${connectionId}`)
+
+    const adapter = this.adapterHost
+    if (!adapter) {
+      throw new Error(
+        `「${template.templateId}」是**适配卡**（把一个普通 DSH 插件挂成连接能力），` +
+          `但当前宿主没有装配适配层 —— 无法装载。` +
+          `这不是卡片坏了：适配层是可选组件，未装配时适配卡一律不可用（普通卡片不受影响）。`,
+      )
+    }
+    // 总开关关着时给出**能指导下一步**的报错（而不是让 mount 内部抛个技术性错误）
+    if (!adapter.enabled()) {
+      throw new Error(
+        `「${template.templateId}」是适配卡，但**适配层默认关闭**。` +
+          `开启后重试；未开启时它不会被装载，也不会影响其它卡片与连接。`,
+      )
+    }
+
+    const instance: CardInstance = {
+      instanceId: randomUUID(),
+      templateId: template.templateId,
+      connectionId,
+      scope,
+      config: {},
+      state: {},
+      permissions: 'read',
+      priority: 100,
+      enabled: true,
+    }
+    this.registry.registerInstance(instance)
+    conn.cards.push(instance)
+    conn.updatedAt = Date.now()
+
+    try {
+      /**
+       * ⚠️ 这里**不创建 CardAPI** —— 适配卡拿到的是影子 ctx（模拟 DSH 插件上下文），
+       * 两者刻意不混（见 card-adapter.ts 文件头）。
+       */
+      await adapter.mount({
+        instanceId: instance.instanceId,
+        cardId: template.templateId,
+        pluginDir: template.dir,
+        capabilities: template.manifest.adapter?.capabilities,
+        connectionId,
+        scope,
+      })
+    } catch (e) {
+      /**
+       * 装载失败 ⇒ **回滚实例**（从连接与注册表里摘掉）。
+       * 不回滚的话，面板上会挂着一张"看起来装上了但什么都没跑"的卡片，
+       * 而真正的原因只留在日志里。
+       */
+      conn.cards = conn.cards.filter((c) => c.instanceId !== instance.instanceId)
+      conn.updatedAt = Date.now()
+      this.registry.removeInstance(instance.instanceId)
+      this.manager.persistConnection(connectionId)
+      throw e
+    }
+
+    this.manager.persistConnection(connectionId)
+    return instance
+  }
+
   async unloadCard(instanceId: string): Promise<void> {
     const instance = this.registry.getInstance(instanceId)
     if (!instance) return
@@ -344,6 +471,16 @@ export class CardHost {
     }
     this.registry.removeInstance(instanceId)
     this.apiByInstance.delete(instanceId)
+    /**
+     * 适配卡还要**摘掉桥接的工具并释放插件资源** ——
+     * 否则就是幽灵工具（护栏③）。普通卡片在这里是 no-op（适配宿主里没有它的记录）。
+     */
+    try {
+      this.adapterHost?.unmount(instanceId)
+    } catch (e) {
+      // 卸载途中的错误不该让"卸载"本身失败（卡片已经从连接上摘掉了）
+      console.error(`[CardHost] 适配卡卸载收尾失败 ${instanceId}:`, e)
+    }
   }
 
   async reloadCard(instanceId: string): Promise<void> {
@@ -559,6 +696,38 @@ export class CardHost {
             )
             continue
           }
+
+          /**
+           * 适配卡的重放走适配层（**不能** importCardModule —— 那是给卡片协议写的；
+           * 普通 DSH 插件在卡片目录里 import 不到 `@deepseek-ai/*`）。
+           *
+           * 总开关关着时**安静跳过**（不是错误）：用户可能就是把适配层关掉了，
+           * 那时已挂在连接上的适配卡自然不再生效 —— 说清楚即可，不要刷一堆失败日志。
+           */
+          if (template.manifest.adapter) {
+            if (!this.adapterHost) {
+              console.warn(`[CardHost] 重放跳过适配卡 ${instance.templateId}：宿主未装配适配层`)
+              continue
+            }
+            if (!this.adapterHost.enabled()) {
+              console.warn(
+                `[CardHost] 重放跳过适配卡 ${instance.templateId}：适配层已关闭（卡片仍在连接上，开启后重启生效）`,
+              )
+              continue
+            }
+            await this.adapterHost.mount({
+              instanceId: instance.instanceId,
+              cardId: instance.templateId,
+              pluginDir: template.dir,
+              capabilities: template.manifest.adapter?.capabilities,
+              connectionId: conn.id,
+              scope: instance.scope,
+            })
+            this.registry.registerInstance(instance)
+            restored++
+            continue
+          }
+
           const mod = await importCardModule(template.entry, this.loadSeq)
           this.registry.setModule(instance.templateId, mod)
 
