@@ -66,16 +66,71 @@ function walk(dir, out = []) {
   return out
 }
 
-/** 抓导出符号：`export function X` / `export const X` / `export class X` / `export interface X` / `export type X`。 */
-const EXPORT_RE =
-  /^export\s+(?:async\s+)?(?:function|const|let|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/gmu
+/**
+ * 抓导出符号 **+ arity（参数个数）**。
+ *
+ * ## 为什么带 arity（对端点明的**边界补丁**）
+ *
+ * 本护栏能抓：**被切掉 / 被改名 / 新增未申报** 的导出 —— 即"**消失了什么**"。
+ * 它**抓不到**："**还在、但被掏空**" —— 函数名不变、函数体被换成 `return null`，
+ * 或者**参数个数/顺序被改**（这几种符号集合一模一样）。
+ *
+ * ⇒ 把 **arity** 也记进基线（形如 `installer.ts:pruneStaleCardDirs/2`）：
+ * 仍然**只对"有意改签名"报警**（信噪比不降），但覆盖到"**签名被改**"这一类。
+ *
+ * ⚠️ 剩下的"同名同参但**体被掏空**"这类**刻意不用护栏覆盖** ——
+ * 那正是会把护栏变成噪声的那条路。它靠**测试 + `git diff --stat` 比例审查**兜住。
+ *
+ * ⚠️ 还有一条判断护栏死活的通用规则（对端给的，写在这儿免得后人加规则时忘）：
+ * > **报警必须只对"你要防的那类损伤"报警；
+ * > 报警频率高于该类损伤的真实出现率，护栏就会死**
+ * > （不是被绕过，是被"例行公事"磨掉 —— 人开始习惯性 `--update`）。
+ */
+const FUNC_RE = /^export\s+(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)/gmu
+/**
+ * ⚠️ `u` 标志下**裸 `{` 是语法错误**（`Lone quantifier brackets`）——
+ * 我第一次写 `(?:=>|{)` 就是这样，整个脚本直接解析失败 ✗。
+ * 带 `u` 的正则里 `{` / `}` 必须转义。
+ */
+const ARROW_RE =
+  /^export\s+const\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(?:async\s*)?(?:function\s*)?\(([^)]*)\)\s*(?:=>|\{)/gmu
+const OTHER_RE = /^export\s+(?:const|let|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/gmu
+
+/** 数顶层逗号 ⇒ 参数个数（无参 = 0）。 */
+function arityOf(params) {
+  const t = String(params ?? '').trim()
+  if (t === '') return 0
+  let depth = 0
+  let n = 1
+  for (const ch of t) {
+    if ('([{<'.includes(ch)) depth++
+    else if (')]}>'.includes(ch)) depth--
+    else if (ch === ',' && depth === 0) n++
+  }
+  return n
+}
 
 function collectSurface() {
   const syms = []
   for (const abs of walk(SRC)) {
     const text = readFileSync(abs, 'utf8')
-    for (const m of text.matchAll(EXPORT_RE)) {
-      syms.push(`${relative(ROOT, abs).replace(/\\/gu, '/')}:${m[1]}`)
+    const rel = relative(ROOT, abs).replace(/\\/gu, '/')
+    const seen = new Set()
+
+    for (const m of text.matchAll(FUNC_RE)) {
+      seen.add(m[1])
+      syms.push(`${rel}:${m[1]}/${arityOf(m[2])}`)
+    }
+    for (const m of text.matchAll(ARROW_RE)) {
+      if (seen.has(m[1])) continue
+      seen.add(m[1])
+      syms.push(`${rel}:${m[1]}/${arityOf(m[2])}`)
+    }
+    /** 非函数导出：只记名字（`/n` = not applicable），不制造无意义的噪声。 */
+    for (const m of text.matchAll(OTHER_RE)) {
+      if (seen.has(m[1])) continue
+      seen.add(m[1])
+      syms.push(`${rel}:${m[1]}/n`)
     }
   }
   return syms.sort()
