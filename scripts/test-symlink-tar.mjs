@@ -188,8 +188,13 @@ try {
   const auditLines = audit.join('\n')
   ok(/安全策略\*\*拒绝/.test(auditLines), '审计里记了"被安全策略拒绝"')
   ok(/sha256:[0-9a-f]{16}/.test(auditLines), '审计里记了**内容哈希**（同一坏包再试一眼可查）')
+  ok(/judgementVersion=\d+/.test(auditLines), '审计里记了**判据版本**（将来做快拒时防"误伤被永久缓存"）')
   ok(/violations=\[/.test(auditLines), '审计里记了命中的条目（violations）')
-  ok(/已销毁被拒归档/.test(auditLines), '审计里记了"已销毁不可信字节"')
+  /**
+   * ⚠️ **动作边界**：只销毁**我自己落地的副本**；用户来源文件只读不删。
+   * 这条是规则（对端点明），审计文案也要如实反映它。
+   */
+  ok(/已销毁\*\*自己落地的副本\*\*/.test(auditLines), '审计里写明"只销毁自己落地的副本"（动作边界）')
 
   /* ═══════════ 链接目标逃逸：条目名正常，**目标**指向目录外 ═══════════ */
 

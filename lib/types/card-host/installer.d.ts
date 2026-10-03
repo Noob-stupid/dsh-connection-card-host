@@ -63,6 +63,19 @@ export declare class UnsafeArchiveError extends Error {
     constructor(message: string, violations?: string[]);
 }
 /**
+ * 逃逸判据的**版本号** —— 与内容哈希一起记进审计。
+ *
+ * 为什么需要（对端点明，"将来做已知坏包快拒"时的坑）：
+ * 快拒的键必须是 **`hash + judgementVersion`**。只用哈希的话，
+ * 哪天修掉一条**误报**（例如 `a//../b` 那种"看着像上跳、其实不逃逸"），
+ * 那条**误伤会永久留在缓存里** —— 用户重下多少次都被快拒。
+ *
+ * > **错误的拒绝会伪装成"包有问题"**，比不做缓存更糟。
+ *
+ * 改动判据时**必须**把它 +1（哪怕只是收紧/放宽一条正则）。
+ */
+export declare const ESCAPE_JUDGEMENT_VERSION = 1;
+/**
  * 判定一个归档条目名是否**逃逸**（会写到目标目录之外）。
  *
  * ## 为什么不能只查 `..` 与绝对路径（对端点明）
