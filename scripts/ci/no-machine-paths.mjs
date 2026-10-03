@@ -30,6 +30,7 @@ const HERE = dirname(SELF)
 
 // ── 敏感字面量：全部拼接构造，避免扫描器命中自己 ────────────────────────────
 const DRIVE = 'D' + ':' // 白名单里那几条示意路径用的盘符
+const BS2 = '\\' + '\\' // 双反斜杠（两个字符）：照抄预览线 localscan.sh 里 shell 正则的原文写法
 const USER_CN = '花' + '火'
 const USER_PY = 'hua' + 'huo'
 const URI_PREFIX = 'file' + ':' + '///'
@@ -72,6 +73,12 @@ export const DETECTORS = [
 // 豁免粒度 = 「这几个文件 + 这段精确文本」：同一段文本出现在别处、或换成别的路径，一律照失败。
 // 不许用「扫不出来就放宽正则」的办法 —— 放宽模式会同时放过真泄漏。
 // 注意 LICENSE 里的 `Copyright (c) 2026, Noob-stupid` 本来就不在命中范围内（那不是用户名）。
+//
+// ── 收口判据（2026-10-04 定；后来者不许放宽）────────────────────────────────
+//   · **白名单只收精确字面量**：整条路径逐字符相等才豁免 —— 不收通配、不收正则；
+//     （下面那条 `textPrefix` 是唯一的历史例外，且自带「必须带 <...> 占位符」的附加条件）
+//   · **出现带用户名的真实路径一律不许进白名单** —— 那说明真泄漏已经发生，只能回去改代码；
+//     加豁免等于把闸门关掉，等于让这道门槛失效。
 export const ALLOWLIST = [
   {
     text: DRIVE + '\\my-cards\\monitor-card',
@@ -95,6 +102,42 @@ export const ALLOWLIST = [
     files: ['README.md', 'README.en.md', 'docs/card-protocol.md', 'docs/adapter-api.md', 'docs/compatibility.md'],
     why: '预置：文档里「盘符 + Users + 尖括号占位用户名」那种教学示例 → 豁免（当前仓库没有，由自校验脚本断言这条规则生效）',
     inRepo: false,
+  },
+
+  // ── 预览线（≥1.0.58）合并进来的「泛化示例 / 测试夹具」6 处命中 ──────────────
+  // 都不是本机真实路径：没有用户名、不指向任何真机上的位置。
+  // 其中 4 处**正是**「Windows 绝对路径必须能被识别出来」这条断言本身 —— 删不得，
+  // 删了等于把被测行为删掉，所以走白名单（该机制本就是为泛化示例准备的）。
+  // 被扫描文件里的原文是「双反斜杠」写法（shell 正则里的转义），故用 BS2 拼接复现。
+  {
+    text: 'D' + ':' + BS2 + 'my-cards' + BS2 + 'monitor-card',
+    files: ['scripts/localscan.sh'],
+    why: '泛化示例（localscan.sh 第 30 行 ALLOW 正则第 1 段）：杜撰的示例目录，非本机真实路径',
+    inRepo: true,
+  },
+  {
+    text: 'D' + ':' + BS2 + 'downloads' + BS2 + 'monitor-card-1' + '\\.0\\.0\\.tgz',
+    files: ['scripts/localscan.sh'],
+    why: '泛化示例（同一行 ALLOW 正则第 2 段）：杜撰的示例 tgz 名，非本机真实路径',
+    inRepo: true,
+  },
+  {
+    text: 'C' + ':' + BS2 + 'Users' + BS2,
+    files: ['scripts/localscan.sh'],
+    why: '泛化前缀（同一行 ALLOW 正则第 3 段里被 <> 占位符截断的部分）：**无用户名**，非本机真实路径',
+    inRepo: true,
+  },
+  {
+    text: 'C' + ':' + '/Windows/system32/x',
+    files: ['scripts/test-escape-entries.mjs'],
+    why: '测试夹具（该行故意写一个绝对路径，断言它「能被认出」）：非本机真实路径',
+    inRepo: true,
+  },
+  {
+    text: 'C' + ':' + '/Windows/x',
+    files: ['scripts/test-symlink-tar.mjs'],
+    why: '测试夹具（同一行出现 2 次、精确文本一致，故一条覆盖两处；断言「Windows 绝对路径能被认出」）：非本机真实路径',
+    inRepo: true,
   },
 ]
 
