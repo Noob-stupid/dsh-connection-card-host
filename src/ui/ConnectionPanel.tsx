@@ -75,22 +75,8 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
     }
   }, [client])
 
-  /** 侧栏要渲染的卡片：已挂载 + 是适配卡。 */
-  const capturedCards = useMemo(() => {
-    const out: { instanceId: string; label: string }[] = []
-    for (const conn of connections) {
-      for (const card of conn.cards ?? []) {
-        if (!adapterTemplates.has(card.templateId)) continue
-        out.push({
-          instanceId: card.instanceId,
-          label: `${card.templateId} · ${conn.id.slice(0, 8)}`,
-        })
-      }
-    }
-    return out
-  }, [connections, adapterTemplates])
-
   const { options: sessionOptions, labelOf, ready: sessionsReady } = useSessionList(sessions)
+
   /**
    * 新建连接用的会话槽位。
    * 默认两个；点中间的箭头可以加第三个 —— 三个会**两两相连**（3 条连接）。
@@ -98,6 +84,44 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
   const [picks, setPicks] = useState<string[]>(['', ''])
   const [manual, setManual] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  /**
+   * 侧栏要渲染的卡片：**只属于"当前展开的那条连接"** 的适配卡。
+   *
+   * ## ⚠️ 这里原先是**遍历所有连接** —— 用户报的行为缺陷（现场："固定位置呆着不动"）
+   *
+   * 用户原话：
+   *
+   * > 「应该展开对应的连接右侧才会展现，**而不是固定位置呆着不动** ——
+   * >   因为如果有多个连接，**展开哪个右侧就显示哪个**。」
+   *
+   * 原来的写法把**所有连接**上挂的适配卡都收进来 ⇒
+   *   ① 右侧**不跟随**展开态（看起来"钉在原地"✗）
+   *   ② 多连接时**重复挂载 + 白渲染** ✗
+   *   ③ 切换连接时旧组件**不卸载** ⇒ **Y 会看到 X 的组件状态** ✗（React 组件带 state）
+   *
+   * 现在：`expandedId` 决定一切 ✓ ——
+   *   · 展开 X ⇒ 只收 X 的卡 ✓
+   *   · 没展开任何连接（`null`）⇒ 列表为空 ⇒ 右侧**整个不渲染**（不残留上一条 ✗）
+   *   · 从 X 切到 Y ⇒ 列表成员整体换掉 ⇒ React **卸载旧的、重挂新的** ✓
+   *     （`key` 里带上连接 id ⇒ 即使两张卡的 `instanceId` 撞了也不会复用 X 的实例 ✓）
+   */
+  const capturedCards = useMemo(() => {
+    const out: { key: string; instanceId: string; label: string }[] = []
+    if (!expandedId) return out
+    const conn = connections.find((c) => c.id === expandedId)
+    if (!conn) return out
+    for (const card of conn.cards ?? []) {
+      if (!adapterTemplates.has(card.templateId)) continue
+      out.push({
+        /** **连接 id + 实例 id** 一起做 key：换连接 ⇒ 必然卸载重挂 ✓。 */
+        key: `${conn.id}:${card.instanceId}`,
+        instanceId: card.instanceId,
+        label: `${card.templateId} · ${conn.id.slice(0, 8)}`,
+      })
+    }
+    return out
+  }, [connections, adapterTemplates, expandedId])
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState<PendingUpgradeView[]>([])
@@ -677,7 +701,13 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
         <aside className="ccr-page__side" aria-label="卡片界面">
           {capturedCards.map((c) => (
             <CapturedCardUi
-              key={c.instanceId}
+              /**
+               * ⚠️ key 用 **`连接id:实例id`**（不是单独的 `instanceId`）——
+               * 换一条展开的连接时，key 必然整套换掉 ⇒ React **卸载旧的、重挂新的** ✓。
+               * 若只用 `instanceId`，两张不同连接的卡在极端情况下可能被 React 复用同一实例 ⇒
+               * **Y 会看到 X 的组件状态** ✗（用户点名要确认的就是这条）。
+               */
+              key={c.key}
               client={client}
               instanceId={c.instanceId}
               label={c.label}
