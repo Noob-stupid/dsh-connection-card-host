@@ -40,18 +40,19 @@ This plugin makes a **connection** a first-class object in DSH:
 
 - [What it does](#what-it-does)
 - [Quick start](#quick-start)
-- [What can be mounted, and what cannot](#what-can-be-mounted-and-what-cannot)
+- [What a card can and cannot do](#what-a-card-can-and-cannot-do)
 - [Three layers: awareness / conventions / messaging](#three-layers-awareness--conventions--messaging)
 - [Cards on a connection](#cards-on-a-connection)
-- [Architecture at a glance](#architecture-at-a-glance)
+- [Architecture and cost](#architecture-and-cost)
 - [Why it works this way](#why-it-works-this-way)
-- [Where it saves](#where-it-saves)
+
 - [Install](#install)
+- [Use](#use)
 - [Configuration](#configuration)
-- [Uninstalling](#uninstalling)
+- [Uninstall](#uninstall)
 - [FAQ](#faq)
 - [Writing a card](#writing-a-card)
-- [Status](#status)
+- [Maintenance](#maintenance)
 
 ---
 
@@ -227,7 +228,35 @@ parse results back.
 
 ---
 
-## Architecture at a glance
+## What a card can and cannot do
+
+Any ordinary DSH plugin can be mounted as a card on a connection. Three **static** conditions decide it:
+
+| Condition | Supported | Not supported |
+|---|---|---|
+| **Scope** | Registers into a **connection-level** location (conversation, input area), or is **capability-only** (no client UI) | Registers into an **app-level** location (sidebar, overall layout, settings page, theme, title bar, workspace) — those are meant to be installed into the app, not onto a connection |
+| **Host dependencies** | Everything the **entry actually loads** can be resolved | A real runtime dependency is missing. Install reports it in two classes: missing host capability → the card needs a design change; missing third-party dependency → just add the dependency |
+| **Host capabilities** | Uses only `tools` / `effect` / `llm` / `prompt` | Needs other host services (credentials, web server, session control, commands, subprocess, …) — not provided; the mount is **refused with a reason** |
+
+> Only files the **entry actually loads** count: tests, build scripts, CLIs and type declarations are not runtime dependencies.
+
+### Client UI: what works
+
+| Client shape | Result |
+|---|---|
+| Uses only slot registration and effect hooks (`slots` / `effect`) | **Renders**, and stays interactive |
+| Needs more client services (localization, config forms, connection, routing, settings pages) | **Mounts and registers slots, but cannot render** — the panel shows **the specific reason** instead of a blank area |
+| Client artifact size | Up to **32 MB** (self-contained bundles with inlined assets are fine) |
+| Component props | Components are called **without props** — ones that require slot props will error; the error is contained to that card |
+
+### Badges in the candidate list
+
+Each card carries one badge: **adapter / capability / local / global / undecided**.
+It tells you *before* mounting whether a plugin suits a connection — **advisory only, nothing is blocked**.
+
+---
+
+## Architecture and cost
 
 Three layers, with hard boundaries — each talks only to the one below:
 
@@ -273,7 +302,7 @@ bridge, discovers on demand, calls on demand, and visibility is enforced at the 
 
 ---
 
-## Where it saves
+### What it costs
 
 | Item | Number | Notes |
 |:---|:---|:---|
@@ -286,34 +315,6 @@ bridge, discovers on demand, calls on demand, and visibility is enforced at the 
 resident** — **and only in sessions that have connections**: sessions with none have them
 stripped automatically by `system-prompt/assemble` (a 0-connection session has 5
 tools removed, logged as `按会话 scope 隐藏了 5 个感知工具`).
-
----
-
-## What can be mounted, and what cannot
-
-Any ordinary DSH plugin can be mounted as a card on a connection. Three **static** conditions decide it:
-
-| Condition | Supported | Not supported |
-|---|---|---|
-| **Scope** | Registers into a **connection-level** location (conversation, input area), or is **capability-only** (no client UI) | Registers into an **app-level** location (sidebar, overall layout, settings page, theme, title bar, workspace) — those are meant to be installed into the app, not onto a connection |
-| **Host dependencies** | Everything the **entry actually loads** can be resolved | A real runtime dependency is missing. Install reports it in two classes: missing host capability → the card needs a design change; missing third-party dependency → just add the dependency |
-| **Host capabilities** | Uses only `tools` / `effect` / `llm` / `prompt` | Needs other host services (credentials, web server, session control, commands, subprocess, …) — not provided; the mount is **refused with a reason** |
-
-> Only files the **entry actually loads** count: tests, build scripts, CLIs and type declarations are not runtime dependencies.
-
-### Client UI: what works
-
-| Client shape | Result |
-|---|---|
-| Uses only slot registration and effect hooks (`slots` / `effect`) | **Renders**, and stays interactive |
-| Needs more client services (localization, config forms, connection, routing, settings pages) | **Mounts and registers slots, but cannot render** — the panel shows **the specific reason** instead of a blank area |
-| Client artifact size | Up to **32 MB** (self-contained bundles with inlined assets are fine) |
-| Component props | Components are called **without props** — ones that require slot props will error; the error is contained to that card |
-
-### Badges in the candidate list
-
-Each card carries one badge: **adapter / capability / local / global / undecided**.
-It tells you *before* mounting whether a plugin suits a connection — **advisory only, nothing is blocked**.
 
 ---
 
@@ -344,6 +345,17 @@ installing and crashing later.
 
 ---
 
+## Use
+
+1. **Create a connection** — pick two sessions in the panel; each direction has its own permissions.
+2. **Mount a card** — open a connection, choose a card from the candidate list. It takes effect on
+   the side you pick (`A` / `B` / both).
+3. **Talk to the peer** — the card's tools become available to that session; messages carry the
+   urgency you choose (`quiet` / `normal` / `urgent` / `preempt`).
+4. **Unmount** — remove the card from the connection; the card itself stays installed.
+
+---
+
 ## Configuration
 
 | Setting | Default | What it does |
@@ -352,7 +364,7 @@ installing and crashing later.
 | Automatic mirroring | **off** | Auto-forwarding session content to the peer. Kept off on purpose (it mostly sends noise). |
 | View preferences | per connection | Number of lanes shown on the connection track. |
 
-## Uninstalling
+## Uninstall
 
 - **A card** — the candidate list has an **Uninstall** entry for installed cards (a confirmation
   states how many connections it is mounted on). Built-in cards do not offer it: they ship with the
@@ -436,7 +448,22 @@ See [`docs/card-protocol.md`](docs/card-protocol.md) for details.
 
 ---
 
-## Status
+## Docs
+
+| Document | Contents |
+|:---|:---|
+| [`docs/capabilities.md`](docs/capabilities.md) | **Capability report**: per-item measurements, total context cost, known limits |
+| [`docs/card-protocol.md`](docs/card-protocol.md) | Card protocol: manifest, CardAPI, install validation, distribution |
+| [`docs/compatibility.md`](docs/compatibility.md) | Compatibility: how DSH's version gate works, the two lines of defence |
+| [`docs/adapter-api.md`](docs/adapter-api.md) | DSH adapter: the stable interface and its allowlist |
+
+---
+
+<p align="center">
+  <sub>BSD-3-Clause · not affiliated with the DSH project</sub>
+</p>
+
+## Maintenance
 
 **Implemented**
 
@@ -462,18 +489,3 @@ See [`docs/card-protocol.md`](docs/card-protocol.md) for details.
 | **Rail layering trade-off** | The rail is portaled onto `document.body` — **decoupled from slot containers**, which is the only way to keep someone else's skin/overlay from beating it via stacking context (`z-index` is only comparable *within* one stacking context). The cost: it always sits at body level, so a future "must be on top" full-screen modal would have the rail drawn over it. `pointer-events: none` keeps interaction unaffected, so the risk is low; if it ever needs tightening, the suggested fix is a **minimal predicate** — while `[role="dialog"][aria-modal="true"]` is present, drop the rail below that modal and restore when it closes (**not** an unconditional hide) |
 
 ---
-
-## Docs
-
-| Document | Contents |
-|:---|:---|
-| [`docs/capabilities.md`](docs/capabilities.md) | **Capability report**: per-item measurements, total context cost, known limits |
-| [`docs/card-protocol.md`](docs/card-protocol.md) | Card protocol: manifest, CardAPI, install validation, distribution |
-| [`docs/compatibility.md`](docs/compatibility.md) | Compatibility: how DSH's version gate works, the two lines of defence |
-| [`docs/adapter-api.md`](docs/adapter-api.md) | DSH adapter: the stable interface and its allowlist |
-
----
-
-<p align="center">
-  <sub>BSD-3-Clause · not affiliated with the DSH project</sub>
-</p>
