@@ -20,6 +20,53 @@ const original = readFileSync(target, 'utf8')
 let pass = 0
 let fail = 0
 const ok = (c, l) => (c ? pass++ : (fail++, console.log(`  ❌ ${l}`)))
+const eq = (a, b, l) =>
+  JSON.stringify(a) === JSON.stringify(b)
+    ? pass++
+    : (fail++, console.log(`  ❌ ${l} —— 期望 ${JSON.stringify(b)}，实得 ${JSON.stringify(a)}`))
+
+/** 跑一次护栏，返回 `{ status, json }`（**断言结构**，不断言人类文案）。 */
+function runGuard() {
+  let status = 0
+  let out = ''
+  try {
+    out = String(execFileSync(process.execPath, [target, '--json'], { encoding: 'utf8' }))
+  } catch (e) {
+    status = e.status ?? -1
+    out = String(e.stdout ?? '')
+  }
+  let json = null
+  for (const line of out.split('\n')) {
+    const t = line.trim()
+    if (t.startsWith('{')) {
+      try {
+        json = JSON.parse(t)
+      } catch {
+        /* 不是 JSON 行：忽略 */
+      }
+    }
+  }
+  return { status, json, out }
+}
+
+/**
+ * ⚠️ **演练成对**（对端点明）：**负例**（观测失败 ⇒ 必须 2）+ **正例**（干净树 ⇒ 必须 0）。
+ *
+ * 只有负例的话，将来有人把下限门槛调坏，护栏会**永久红** ⇒
+ * 又被"习惯性 --update/关掉"磨掉（回到信噪比那条）。
+ * 正例的作用就是**证明护栏在正常情况下真的是绿的**。
+ */
+console.log('── 正例：干净树 ⇒ 必须 ok/0')
+
+{
+  const r = runGuard()
+  ok(r.status === 0, `干净树 ⇒ 退出码 0（实测 ${r.status}）`)
+  eq(r.json?.status, 'ok', 'JSON status = ok')
+  eq(r.json?.removed?.length, 0, 'JSON removed 为空')
+  ok((r.json?.symbols ?? 0) > 0, 'JSON 带上了符号数（结构化信号，不是文案）')
+}
+
+console.log('── 负例：观测失效 ⇒ 必须 unavailable/2')
 
 try {
   // 把 src 指到不存在的目录 —— 模拟"观测手段失效"
@@ -27,24 +74,22 @@ try {
   ok(broken !== original, '演练准备：能改到 SRC（否则演练本身没生效）')
   writeFileSync(target, broken, 'utf8')
 
-  let status = 0
-  let out = ''
-  try {
-    out = String(execFileSync(process.execPath, [target], { encoding: 'utf8' }))
-  } catch (e) {
-    status = e.status ?? -1
-    out = String(e.stdout ?? '')
-  }
+  const r = runGuard()
+  const { status, json } = r
 
   ok(status === 2, `观测失效时**必须失败**（实测退出码 ${status}，应为 2）`)
-  ok(/检查本身没跑起来/.test(out), '文案明确说"检查本身没跑起来"，而不是"通过"')
-  ok(/假的没有|观测手段失效/.test(out), '文案点出这是**观测手段**的问题（免得被当成"代码变了"）')
+  /** ⚠️ **断言结构**（对端点明）：人类文案会变、会被否定句迷惑，JSON 不会。 */
+  eq(json?.status, 'unavailable', 'JSON status = unavailable（**第三档**，不是 ok 也不是 changed）')
+  ok(typeof json?.reason === 'string' && json.reason.length > 0, 'JSON 里带上了原因（结构化，可被脚本消费）')
   /**
-   * ⚠️ 断言要写成"**没有正向通过行**"，不能只写"不含『通过』二字" ——
-   * 文案里恰好有一句"**别把它当通过**"，那是**否定**用法。
-   * （第一次就是这么挂的：断言太粗 ⇒ 把正确的提示语判成了失败。）
+   * 人类文案只留一条**粗判**：不能出现**正向通过行**。
+   *
+   * ⚠️ 这里踩过一次：最早断言"输出里不含『通过』二字" ⇒
+   * 而正确文案里恰好有一句"**别把它当通过**"（否定用法）⇒ 把对的判成了错的 ✗。
+   * 教训（对端归纳的）：**断言人类文本本身就是脆的** ——
+   * 判据要做成**结构**（上面的 JSON），文案只作展示、不参与断言。
    */
-  ok(!/集合未变|—— 通过 ═══/u.test(out), '**不能出现正向通过行**（那才是假绿的形态）')
+  ok(!/集合未变/u.test(r.out), '人类文案里不能出现正向通过行（那才是假绿的形态）')
 } finally {
   writeFileSync(target, original, 'utf8')
 }

@@ -115,7 +115,11 @@ export declare class CardHost {
      *
      * 现在由宿主在加载时调一次；删不掉的留到下次（锁在重启后自然释放）。
      */
-    pruneStaleVersions(): number;
+    pruneStaleVersions(): {
+        removed: number;
+        scanned: number;
+        ok: boolean;
+    };
     /** 扫描两个根目录下的卡片包（幂等）。 */
     scanTemplates(force?: boolean): void;
     private scanRoot;

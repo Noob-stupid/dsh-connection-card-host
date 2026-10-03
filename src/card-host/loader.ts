@@ -175,7 +175,7 @@ export class CardHost {
    *
    * 现在由宿主在加载时调一次；删不掉的留到下次（锁在重启后自然释放）。
    */
-  pruneStaleVersions(): number {
+  pruneStaleVersions(): { removed: number; scanned: number; ok: boolean } {
     try {
       /**
        * 审计走**管理器**那一条（`CardHost` 自己没有 auditLog 字段）——
@@ -183,9 +183,13 @@ export class CardHost {
        */
       const log = (this as unknown as { manager?: { auditLog?: (m: string) => void } }).manager
         ?.auditLog
-      return pruneStaleCardDirs(this.installedRoot(), typeof log === 'function' ? log.bind(this.manager) : () => {})
+      return pruneStaleCardDirs(
+        this.installedRoot(),
+        typeof log === 'function' ? log.bind(this.manager) : () => {},
+      )
     } catch {
-      return 0
+      /** 外面再兜一层：**这一档同样是"没跑起来"，不是"没有可清理的"**。 */
+      return { removed: 0, scanned: 0, ok: false }
     }
   }
 

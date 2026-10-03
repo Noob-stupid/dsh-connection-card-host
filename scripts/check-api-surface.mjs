@@ -156,11 +156,43 @@ const MIN_EXPECTED_SYMBOLS = 100
 const MIN_EXPECTED_FILES = 10
 
 const fileCount = walk(SRC).length
+
+/**
+ * **机器可读输出**（对端点明：把"结构化优先"从**归因**推到**断言**）。
+ *
+ * > 断言"某词不出现"是脆的 —— 根因是**在断言人类文本**。
+ * > 最稳的形状：让判据**输出结构**，测试断言**结构**；人类文案只作展示、不参与断言。
+ *
+ * 一行 JSON：`{"status":"ok|changed|unavailable","files":N,"symbols":N,"removed":[],"added":[]}`
+ *
+ * ⚠️ **`status` 是三档，不是两档**：
+ *   `ok` = 集合相同；`changed` = 有增删；**`unavailable` = 检查没跑起来**。
+ * 第三档是**概念上多一个值**（"我做了但没成" ≠ "我没做成这件事"）。
+ */
+function emit(payload, humanLines) {
+  if (!process.argv.includes('--json')) {
+    for (const l of humanLines ?? []) console.log(l)
+  }
+  console.log(JSON.stringify(payload))
+}
+
 if (fileCount < MIN_EXPECTED_FILES || current.length < MIN_EXPECTED_SYMBOLS) {
-  console.log('❌ **检查本身没跑起来**（不是"集合相同"）：')
-  console.log(`   扫到文件 ${fileCount} 个（下限 ${MIN_EXPECTED_FILES}）、导出符号 ${current.length} 个（下限 ${MIN_EXPECTED_SYMBOLS}）`)
-  console.log('   这几乎总是**观测手段失效**（路径不对 / 目录读不到 / 正则被改坏），')
-  console.log('   而不是"代码真的只剩这么点导出"。**别把它当通过。**')
+  emit(
+    {
+      status: 'unavailable',
+      files: fileCount,
+      symbols: current.length,
+      removed: [],
+      added: [],
+      reason: `扫到文件 ${fileCount}（下限 ${MIN_EXPECTED_FILES}）、符号 ${current.length}（下限 ${MIN_EXPECTED_SYMBOLS}）`,
+    },
+    [
+      '❌ **检查本身没跑起来**（不是"集合相同"）：',
+      `   扫到文件 ${fileCount} 个（下限 ${MIN_EXPECTED_FILES}）、导出符号 ${current.length} 个（下限 ${MIN_EXPECTED_SYMBOLS}）`,
+      '   这几乎总是**观测手段失效**（路径不对 / 目录读不到 / 正则被改坏），',
+      '   而不是"代码真的只剩这么点导出"。**别把它当通过。**',
+    ],
+  )
   process.exit(2)
 }
 
@@ -187,20 +219,28 @@ const added = current.filter((s) => !base.has(s))
 const removed = baseline.filter((s) => !cur.has(s))
 
 if (added.length === 0 && removed.length === 0) {
-  console.log(`═══ 导出符号集合未变（${current.length} 个）—— 通过 ═══`)
+  emit(
+    { status: 'ok', files: fileCount, symbols: current.length, removed: [], added: [] },
+    [`═══ 导出符号集合未变（${current.length} 个）—— 通过 ═══`],
+  )
   process.exit(0)
 }
 
-console.log('❌ 导出符号集合变了（这类变化要么是有意的，要么是**批量替换切掉了什么**）：')
+const human = ['❌ 导出符号集合变了（这类变化要么是有意的，要么是**批量替换切掉了什么**）：']
 if (removed.length > 0) {
-  console.log(`   少了 ${removed.length} 个（**重点看这个** —— 静默损伤通常长这样）：`)
-  for (const s of removed) console.log(`     - ${s}`)
+  human.push(`   少了 ${removed.length} 个（**重点看这个** —— 静默损伤通常长这样）：`)
+  for (const s of removed) human.push(`     - ${s}`)
 }
 if (added.length > 0) {
-  console.log(`   多了 ${added.length} 个：`)
-  for (const s of added) console.log(`     + ${s}`)
+  human.push(`   多了 ${added.length} 个：`)
+  for (const s of added) human.push(`     + ${s}`)
 }
-console.log('')
-console.log('   确认是有意增删 ⇒ node scripts/check-api-surface.mjs --update')
-console.log('   不是有意的 ⇒ 很可能是批量替换越过了函数边界，用 git diff 查回那段。')
+human.push('')
+human.push('   确认是有意增删 ⇒ node scripts/check-api-surface.mjs --update')
+human.push('   不是有意的 ⇒ 很可能是批量替换越过了函数边界，用 git diff 查回那段。')
+
+emit(
+  { status: 'changed', files: fileCount, symbols: current.length, removed, added },
+  human,
+)
 process.exit(1)

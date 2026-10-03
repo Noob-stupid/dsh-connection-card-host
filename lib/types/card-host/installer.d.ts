@@ -334,9 +334,19 @@ export declare function installCard(spec: string, cardsRoot: string, auditLog: (
  * （或指针指向的不是它）⇒ 它是旧版本 ⇒ 尽力删掉。
  * **删不掉（仍被占用）不算错** —— 下次启动再试。
  *
- * @returns 实际删掉的数量
+ * @returns **三档**（对端点明的一条通用规则）：
+ *   · `ok: false` ⇒ **清理这件事根本没跑起来**（目录读不到）
+ *   · `scanned > removed` ⇒ **尝试了但没删掉**（仍被占用，下次再试）
+ *   · `scanned === removed` ⇒ 该删的都删了
+ *
+ * > **凡是"我做了但没成"与"我没做成这件事"分得开的地方，都要有第三档。**
+ * > 否则用户会看到"删不掉"，而真实原因可能是"**根本没去删**"。
  */
-export declare function pruneStaleCardDirs(cardsRoot: string, auditLog: (msg: string) => void): number;
+export declare function pruneStaleCardDirs(cardsRoot: string, auditLog: (msg: string) => void): {
+    removed: number;
+    scanned: number;
+    ok: boolean;
+};
 /** 从已安装目录卸载一张卡片。 */
 export declare function uninstallCard(cardId: string, cardsRoot: string): {
     ok: boolean;

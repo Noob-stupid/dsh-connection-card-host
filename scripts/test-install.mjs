@@ -520,15 +520,37 @@ try {
     ok(!existsSync(join(cleanRoot, 'demo@1.0.0-aaaaaaaa')), '旧版本目录被删掉')
     ok(existsSync(join(cleanRoot, 'demo@1.0.0-bbbbbbbb')), '**正在用的那份绝不能被删**（指针指向它）')
     ok(!existsSync(join(cleanRoot, 'orphan@2.0.0-cccccccc')), '没有指针的孤儿目录也清掉（否则永久堆积）')
-    eq(removed, 2, '返回实际删掉的数量（2 个）')
+    eq(removed.removed, 2, '返回实际删掉的数量（2 个）')
+    /**
+     * ⚠️ **第三档**（对端点明）：`ok:false` = "**清理没跑起来**"，
+     * 与"跑了但没东西可删 / 尝试了但没删掉"是**三件不同的事**。
+     * 这里正例应当 `ok:true`。
+     */
+    ok(removed.ok === true, '正例 ⇒ ok:true（清理确实跑起来了）')
+    eq(removed.scanned, 2, 'scanned = 尝试过的数量（2 个）')
     ok(
       logs.some((l) => /启动清理/.test(l)),
       '清理留了审计（"重启会清"这句承诺要能被验证）',
     )
     /** 幂等：再跑一次不该出错、也不该删掉正在用的。 */
     const second = pruneStaleCardDirs(cleanRoot, () => {})
-    eq(second, 0, '再跑一次 ⇒ 0（幂等，且不误删）')
+    eq(second.removed, 0, '再跑一次 ⇒ removed 0（幂等，且不误删）')
+    ok(second.ok === true, '再跑一次 ⇒ ok:true（跑起来了、只是没东西可删）')
     ok(existsSync(join(cleanRoot, 'demo@1.0.0-bbbbbbbb')), '第二次跑完仍在用的那份还在')
+
+    /**
+     * **负例（第三档）**：目录压根读不到 ⇒ `ok:false`，
+     * **绝不能**返回 `{removed:0, ok:true}`（那会把"没去删"说成"没有可删的"）。
+     */
+    const unreadable = pruneStaleCardDirs(join(root, 'does-not-exist-at-all'), (m) =>
+      logs.push(String(m)),
+    )
+    ok(unreadable.ok === false, '读不到目录 ⇒ **ok:false**（第三档：清理没跑起来）')
+    eq(unreadable.removed, 0, '同时 removed 是 0 —— 所以**只能靠 ok 区分**')
+    ok(
+      logs.some((l) => /没跑起来/.test(l)),
+      '审计里写明"**没跑起来**"，并说清这不是"没有可清理的"',
+    )
   }
 } finally {
   rmSync(root, { recursive: true, force: true })
