@@ -59,7 +59,7 @@ tools — without getting in each other's way**.
 - [Writing a card](#writing-a-card)
 - [Uninstall](#uninstall)
 - [FAQ](#faq)
-- [Docs](#docs)
+- [docs](#docs)
 - [Maintenance](#maintenance)
 
 ---
