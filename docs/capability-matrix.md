@@ -18,8 +18,8 @@
 |:--|:--|:--|:--|:--|:--|:--|
 | **`dsh-browser`** | 0.1.0 | **纯能力（工具）** | **无** | `tools`×12, `effect`×1 | 无 | ✅ **最容易 —— 首选试点** |
 | `@openviking/dsh-memory-plugin` | 0.5.11 | 能力（记忆） | **有**（`client.mjs`） | `on`×7, `effect`×3, **`plugin`×2**, `logger`×1, **`provide`×1**, `skills`×1 | `setInterval`, **写文件**, `process.on` | ⚠️ 依赖 `dsh-llm` / `dsh-mcp-client` / `dsh-skill-filesystem` → **B1 依赖图**；且 `provide` 是**向全局提供服务** |
-| `@dsh-external/dsh-graded-mode` | 0.0.1-rc1 | 能力 + UI | **有**（`immediately: true`） | `effect`×5, `webServer`×4, `on`×3, `userQuestions`×2, `commands`×1, `tools`×1 | **写文件** | ⚠️ 中等 —— 多服务 + 需捕获 UI |
-| `@dsh-external/dsh-super-injector` | 0.3.5 | **宿主手术刀** | 有 | `loader`×38, `effect`×22, `logger`×16, `get`×14, `fiber`×13, `reflect`×12, `registry`×9, `systemPrompt`×8, `slots`×8, `tools`×7 | `setInterval`, **写文件**, `process.on` | ❌ **不可适配**（脚本已自动判定） |
+| `dsh-graded-mode（社区样本）` | 0.0.1-rc1 | 能力 + UI | **有**（`immediately: true`） | `effect`×5, `webServer`×4, `on`×3, `userQuestions`×2, `commands`×1, `tools`×1 | **写文件** | ⚠️ 中等 —— 多服务 + 需捕获 UI |
+| `dsh-super-injector（社区样本）` | 0.3.5 | **宿主手术刀** | 有 | `loader`×38, `effect`×22, `logger`×16, `get`×14, `fiber`×13, `reflect`×12, `registry`×9, `systemPrompt`×8, `slots`×8, `tools`×7 | `setInterval`, **写文件**, `process.on` | ❌ **不可适配**（脚本已自动判定） |
 
 > **体检脚本的一处自身缺陷，已修**：脚本原先用**绝对路径**判断是否落在 `node_modules` 里，
 > 而 profile 装的插件**本身就住在 `node_modules` 下** ⇒ 整个插件被排除、扫到 0 个文件
@@ -55,14 +55,14 @@
 - peers 声明了 `dsh-llm` / `dsh-mcp-client` / `dsh-skill-filesystem` → 典型 **B1**：
   适配时要明确"这些依赖从哪来"，拿不到就**明确拒绝**，不静默降级
 
-### 2.3 `@dsh-external/dsh-graded-mode` —— ⚠️ UI 捕获的第一个真实样本
+### 2.3 `dsh-graded-mode（社区样本）` —— ⚠️ UI 捕获的第一个真实样本
 
 - **它是唯一同时具备"能力 + client UI"的候选** —— 正好用来验证 §4 的四步捕获机制
 - 依赖面比 `dsh-browser` 宽：`webServer` / `commands` / `userQuestions` / `on` —— 适配器要逐个申报
 - 有**写文件**副作用 → 走护栏②的判定：**这是它的功能还是越界**？（写自己的数据目录属功能；写别人的属越界）
 - `immediately: true`：它声明了立即加载 —— 适配后这个开关由**我们**决定，不再由它自己决定
 
-### 2.4 `@dsh-external/dsh-super-injector` —— ❌ 不可适配（**范本级的反例**）
+### 2.4 `dsh-super-injector（社区样本）` —— ❌ 不可适配（**范本级的反例**）
 
 它的 `ctx.*` 用量把不可适配的理由写得清清楚楚：
 `loader`×38 / `reflect`×12 / `fiber`×13 / `registry`×9 —— **这些是宿主内部机制**，
@@ -95,11 +95,11 @@
 | 插件 | 来源 | 形态 | 用它验证什么 |
 |:--|:--|:--|:--|
 | **`dsh-browser`** v0.1.0 | profile 安装 | 纯工具、无 UI | **实验一：能力桥接**（最小面：`tools`+`effect`） |
-| **`@dsh-external/dsh-graded-mode`** v0.0.1-rc1 | `plugin-src`（有源码） | 能力 + **client UI** | **实验二：UI 捕获**（唯一 UI 样本） |
+| **`dsh-graded-mode（社区样本）`** v0.0.1-rc1 | `plugin-src`（有源码） | 能力 + **client UI** | **实验二：UI 捕获**（唯一 UI 样本） |
 | **`@openviking/dsh-memory-plugin`** v0.5.11 | `plugin-src`（有源码） | 能力 + 依赖图 + `provide` | **实验三：依赖图与拒绝路径** |
 | `@deepseek-ai/dsh-experimental-auto-review` | profile 安装（官方实验） | 能力 | 备选：官方实验插件能否同样挂 |
 | `@deepseek-ai/dsh-experimental-agent-team` | profile 安装（官方实验） | 能力 | 备选：同上 |
-| `@dsh-external/dsh-super-injector` v0.3.5 | `plugin-src` | 宿主手术刀 | **反例**：硬判据应自动拒绝 |
+| `dsh-super-injector（社区样本）` v0.3.5 | `plugin-src` | 宿主手术刀 | **反例**：硬判据应自动拒绝 |
 | `dsh-whale-widget` v0.3.16 | profile 安装 | 挂件/装饰 | **范围外**（装饰类，按 §0.1 不纳入） |
 
 > 备注：profile 的 `@deepseek-ai` 下还装着 7 个官方实验包（全部构建完好），

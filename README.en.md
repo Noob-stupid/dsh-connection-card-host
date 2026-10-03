@@ -330,12 +330,12 @@ dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host-preview
 dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
 
 # Or a pinned tarball (grab the asset URL from the Releases page)
-dsh plugin --profile web add https://github.com/…/releases/download/v1.0.0/dsh-external-dsh-connection-card-host-1.0.0.tgz
+dsh plugin --profile web add https://github.com/…/releases/download/v1.0.0/noob-stupid-dsh-connection-card-host-1.0.0.tgz
 ```
 
 > The two `github:` commands above are **verified working** (161 files land in `lib`, using
 > the profile's own settings: `autoInstallPeers: false`). The bare names
-> `dsh-connection-card-host` and `@dsh-external/dsh-connection-card-host` both **404** on
+> `dsh-connection-card-host` and `@noob-stupid/dsh-connection-card-host` both **404** on
 > npm and won't work for anyone else — don't use them.
 
 **Compatibility**: `peerDependencies` declares `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0` — DSH
