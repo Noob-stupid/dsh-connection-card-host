@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 
 import { checkPackage, ensureAdapterManifest, looksLikeDshPlugin } from '../lib/card-host/package-check.js'
-import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, probeChannel, expandGitHubRepoUrl, bytesFromExecError, partSizeOnDisk, classifyCurlExit, classifyFetchError } from '../lib/card-host/installer.js'
+import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, probeChannel, expandGitHubRepoUrl, bytesFromExecError, partSizeOnDisk, classifyCurlExit, classifyFetchError, maskUrl } from '../lib/card-host/installer.js'
 
 let pass = 0
 let fail = 0
@@ -339,7 +339,6 @@ try {
   }
 
   /* ═══════════ 6. 失败归因：**结构化退出码**，不解析文本 ═══════════ */
-
   console.log('── 6. 失败归因（结构化退出码 = 契约）')
 
   {
@@ -438,6 +437,34 @@ try {
     ok(!shouldExtend(bytesFromExecError({ stdout: '0 0.0' })), '0 字节 ⇒ 不加时（换通道）')
     ok(shouldExtend(bytesFromExecError({ stdout: '1024 8.0' })), '有字节 ⇒ 加时重试一次')
     ok(!shouldExtend(bytesFromExecError(new Error('x'))), '拿不到字节数 ⇒ 不加时（不赌）')
+  }
+
+  /* ═══════════ 9. 失败指引里的"实际 URL"（可解释性）+ 打码 ═══════════ */
+
+  console.log('── 9. 实际 URL 与打码（对端请求：用户要能复制去浏览器自查）')
+
+  {
+    eq(
+      maskUrl('https://codeload.github.com/a/b/tar.gz/refs/heads/main'),
+      'https://codeload.github.com/a/b/tar.gz/refs/heads/main',
+      '普通 URL 原样保留（可复制去浏览器）',
+    )
+    ok(!maskUrl('https://x/y.tgz?token=SECRET123').includes('SECRET123'), 'query 里的 token **必须打码**')
+    ok(maskUrl('https://x/y.tgz?token=SECRET123').includes('token=***'), '打码后保留键名（可读性）')
+    ok(!maskUrl('https://user:pw@host/x.tgz').includes('pw@'), 'userinfo 里的口令 **必须打码**')
+    ok(
+      !maskUrl('https://h/x?X-Amz-Signature=abc&X-Amz-Credential=zzz').includes('abc'),
+      'AWS 预签名参数**必须打码**',
+    )
+    ok(maskUrl('https://h/x?key=K&sig=S&auth=A&password=P').includes('key=***'), '常见敏感键都覆盖')
+    /**
+     * ⚠️ **"可解释性"不能以泄露凭据为代价** —— 这条是打码存在的理由，
+     * 也是"印实际 URL"这个请求的边界。
+     */
+    ok(
+      maskUrl('https://codeload.github.com/a/b/tar.gz?token=X').startsWith('https://codeload.github.com/'),
+      '打码只动敏感部分，不改地址本身',
+    )
   }
 } finally {
   rmSync(root, { recursive: true, force: true })

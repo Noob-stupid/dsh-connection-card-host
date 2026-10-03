@@ -303,6 +303,7 @@ export declare function partSizeOnDisk(partPath: string): number;
  * @returns 字节数；拿不到返回 -1（与"传了 0 字节"是**两种**情况，不能混）
  */
 export declare function bytesFromExecError(e: unknown): number;
+export declare function maskUrl(url: string): string;
 /**
  * 安装一张卡片到 cardsRoot/<id>/。
  *
