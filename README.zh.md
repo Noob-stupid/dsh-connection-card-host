@@ -37,7 +37,7 @@
 </table>
 
 <p align="center">
-  <sub>左：真实操作（<a href="docs/assets/demo-drag-anchor.mp4">原视频</a>） · 右：同一动作的交互结构示意，标出了「开关语义」</sub>
+  <sub>左：真实操作 · 右：同一动作的交互结构示意，标出了「开关语义」</sub>
 </p>
 
 ---
@@ -100,10 +100,6 @@
 </td>
 </tr>
 </table>
-
-<p align="center">
-  <sub><a href="docs/assets/demo-drag-rail.mp4">这段的原视频</a>（锚点拖拽那段的原视频见首屏）</sub>
-</p>
 
 2. **完事**。两端各自收到一条静默通知（说清了连上了谁、能做什么），**不打断任何人**。
 3. 想看得更细：点侧栏「连接」，或者让会话自己调 `connection_peer_work`。

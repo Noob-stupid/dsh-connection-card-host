@@ -40,7 +40,7 @@ tools — without getting in each other's way**.
 </table>
 
 <p align="center">
-  <sub>Left: the real thing (<a href="docs/assets/demo-drag-anchor.mp4">source video</a>) · Right: the same action as an interaction diagram, showing the toggle semantics</sub>
+  <sub>Left: the real thing · Right: the same action as an interaction diagram, showing the toggle semantics</sub>
 </p>
 
 ---
@@ -105,10 +105,6 @@ right now, or session B hands session A a tool that only exists on that connecti
 </td>
 </tr>
 </table>
-
-<p align="center">
-  <sub><a href="docs/assets/demo-drag-rail.mp4">Source video for this one</a> (the anchor drag is at the top of this page)</sub>
-</p>
 
 2. **Done.** Both ends get one quiet notice (who you're connected to, what it enables) —
    **nobody is interrupted**.
