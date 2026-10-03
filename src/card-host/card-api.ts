@@ -132,12 +132,17 @@ export function createCardApi(deps: CardApiDeps): CardAPI {
      */
     async sendMessage(text: string, options: { urgency?: 'quiet' | 'normal' | 'urgent' | 'preempt'; kind?: 'say' | 'ask' | 'reply' } = {}) {
       const body = typeof text === 'string' ? text.trim() : ''
-      if (!body) return { ok: false, reason: '文本为空 —— 没有可投递的内容' }
+      if (!body) {
+        return { ok: false, code: 'threw' as const, permanent: true, reason: '文本为空 —— 没有可投递的内容' }
+      }
 
       /** ② 授权（fail-closed）：没有这张能力就不发。 */
       if (!deps.canSendMessage?.()) {
         return {
           ok: false,
+          code: 'not-authorized' as const,
+          /** **永久**：授权来自 manifest，挂载时就定了 ⇒ 卡片别再反复重试。 */
+          permanent: true,
           reason:
             `卡片没有"发消息"能力 —— 请在卡片 manifest 的 ` +
             `requires.write 里声明 "send_message"（这是用户授权，不是默认权利）。`,
@@ -149,6 +154,17 @@ export function createCardApi(deps: CardApiDeps): CardAPI {
       if (!peer) {
         return {
           ok: false,
+          /**
+           * ⚠️ **结构化 `code`**（不只给文本 reason）。
+           *
+           * 卡片的"惰性宣告"要靠它区分**永久拒绝**与**暂时失败**：
+           * 永久拒绝 ⇒ 别再每次调用都重试（否则就是**重试风暴** ✗）；
+           * 暂时失败 ⇒ 下次再试 ✓。
+           * 只给文本的话，卡片只能去**解析文案** —— 那正是本仓立过规矩不许做的事。
+           */
+          code: scope === 'both' ? 'scope-ambiguous' : 'no-peer-session',
+          /** `scope-ambiguous` 是**永久**的（挂载时就定了）；`no-peer-session` 可能是暂时的。 */
+          permanent: scope === 'both',
           reason:
             scope === 'both'
               ? '这张卡片挂在两端（scope=both）—— 无法判定该对哪一端说话，故未发送'
@@ -158,7 +174,14 @@ export function createCardApi(deps: CardApiDeps): CardAPI {
 
       /** ① 投递：走宿主既有路径（没有它就不发，而不是另找一条路）。 */
       const deliver = deps.deliver
-      if (!deliver) return { ok: false, reason: '宿主投递通道不可用（未接入会话桥）' }
+      if (!deliver) {
+        return {
+          ok: false,
+          code: 'no-channel',
+          permanent: false,
+          reason: '宿主投递通道不可用（未接入会话桥）',
+        }
+      }
 
       const urgency = options.urgency ?? 'normal'
       /**

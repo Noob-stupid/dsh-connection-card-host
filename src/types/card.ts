@@ -139,5 +139,14 @@ export interface CardAPI {
   sendMessage(
     text: string,
     options?: { urgency?: 'quiet' | 'normal' | 'urgent' | 'preempt'; kind?: 'say' | 'ask' | 'reply' },
-  ): Promise<{ ok: boolean; via?: string; live?: boolean; reason?: string }>
+  ): Promise<{
+    ok: boolean
+    via?: string
+    live?: boolean
+    /** 结构化失败码（**永久 vs 暂时**由 permanent 区分）—— 别去解析 eason 文本。 */
+    code?: 'not-authorized' | 'scope-ambiguous' | 'no-peer-session' | 'no-channel' | 'deliver-refused' | 'threw'
+    /** 	rue ⇒ 重试也没用（如未授权 / scope=both）；alse/缺省 ⇒ 下次可再试。 */
+    permanent?: boolean
+    reason?: string
+  }>
 }
