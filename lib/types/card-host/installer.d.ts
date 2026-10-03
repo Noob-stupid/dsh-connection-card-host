@@ -9,6 +9,13 @@ export interface InstallResult {
     version?: string;
     reason?: string;
     /**
+     * **安全违规**（不是网络问题）—— 调用方据此**不要提供"重试"**。
+     *
+     * 见 `UnsafeArchiveError` 的说明：判成可重试类，重试路径就会真的执行，
+     * 于是把一个已确认有问题的包**又下一遍**。
+     */
+    unsafe?: boolean;
+    /**
      * **装上了，但有话要说**（例如解包时跳过了符号链接）。
      *
      * 对端的原则，照抄：**宁可"成功了但带警告"，也不要"其实成功了却报失败"**。
@@ -34,6 +41,27 @@ export interface InstallResult {
  *          "删不掉"与"删掉了"在这台机器上是两种真实结果。
  */
 export declare function removeFileQuiet(target: string): boolean;
+/**
+ * **安全违规**（归档会写到目标目录之外）—— 一个**独立的错误类**。
+ *
+ * ## 为什么必须独立成类（对端点明的"动作不同"）
+ *
+ *     下载失败  ⇒ 可重试、可换通道、可加时、归因是"网络/镜像"
+ *     安全违规  ⇒ **不可重试、绝不换通道、绝不加时**
+ *
+ * 如果两者共用一个失败路径，最危险的后果是：
+ * **一个"包有问题"被判成"网络问题"** ⇒ 去换源重试 ⇒
+ * **把一个已确认异常/恶意的包又下了一遍**，而日志里写着"重试中" ✗
+ *
+ * 这与前面修的"归因错误比没有归因更糟"是同一条：
+ * **一旦判成可重试类，重试路径就会真的执行**。
+ */
+export declare class UnsafeArchiveError extends Error {
+    readonly kind = "unsafe-archive";
+    /** 命中的具体条目（给用户看的证据）。 */
+    readonly violations: string[];
+    constructor(message: string, violations?: string[]);
+}
 /**
  * 判定一个归档条目名是否**逃逸**（会写到目标目录之外）。
  *

@@ -51,6 +51,13 @@ export interface InstallResult {
   version?: string
   reason?: string
   /**
+   * **安全违规**（不是网络问题）—— 调用方据此**不要提供"重试"**。
+   *
+   * 见 `UnsafeArchiveError` 的说明：判成可重试类，重试路径就会真的执行，
+   * 于是把一个已确认有问题的包**又下一遍**。
+   */
+  unsafe?: boolean
+  /**
    * **装上了，但有话要说**（例如解包时跳过了符号链接）。
    *
    * 对端的原则，照抄：**宁可"成功了但带警告"，也不要"其实成功了却报失败"**。
@@ -226,6 +233,32 @@ async function listTarEntries(tgzPath: string): Promise<string[]> {
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/iu
 
 /**
+ * **安全违规**（归档会写到目标目录之外）—— 一个**独立的错误类**。
+ *
+ * ## 为什么必须独立成类（对端点明的"动作不同"）
+ *
+ *     下载失败  ⇒ 可重试、可换通道、可加时、归因是"网络/镜像"
+ *     安全违规  ⇒ **不可重试、绝不换通道、绝不加时**
+ *
+ * 如果两者共用一个失败路径，最危险的后果是：
+ * **一个"包有问题"被判成"网络问题"** ⇒ 去换源重试 ⇒
+ * **把一个已确认异常/恶意的包又下了一遍**，而日志里写着"重试中" ✗
+ *
+ * 这与前面修的"归因错误比没有归因更糟"是同一条：
+ * **一旦判成可重试类，重试路径就会真的执行**。
+ */
+export class UnsafeArchiveError extends Error {
+  readonly kind = 'unsafe-archive'
+  /** 命中的具体条目（给用户看的证据）。 */
+  readonly violations: string[]
+  constructor(message: string, violations: string[] = []) {
+    super(message)
+    this.name = 'UnsafeArchiveError'
+    this.violations = violations
+  }
+}
+
+/**
  * 判定一个归档条目名是否**逃逸**（会写到目标目录之外）。
  *
  * ## 为什么不能只查 `..` 与绝对路径（对端点明）
@@ -312,17 +345,29 @@ export function findEscapingEntry(entries: string[]): string | undefined {
  *
  * @returns 越界的条目（相对路径 + 它指向哪儿）
  */
-export function findEscapedLinks(destDir: string, limit = 5000): { entry: string; target: string }[] {
+export function findEscapedLinks(
+  destDir: string,
+  limit = 5000,
+): { entry: string; target: string }[] {
   const out: { entry: string; target: string }[] = []
   const root = resolve(destDir)
   let seen = 0
+
+  /**
+   * ⚠️ **fail-closed**（对端点明的一条）：
+   * 这道巡检是**最后一道网**，一旦它自己出错（读不了目录等），
+   * 必须按**不安全**处理（拒绝 + 报告），**不能按"警告"放过** ——
+   * 网坏了就等于没网。
+   */
+  let walkError: string | undefined
 
   const walk = (dir: string): void => {
     if (seen > limit) return
     let items: Dirent[]
     try {
       items = readdirSync(dir, { withFileTypes: true })
-    } catch {
+    } catch (e) {
+      walkError ??= `巡检时读不了目录 ${dir}：${e instanceof Error ? e.message : String(e)}`
       return
     }
     for (const it of items) {
@@ -331,12 +376,13 @@ export function findEscapedLinks(destDir: string, limit = 5000): { entry: string
       if (it.isSymbolicLink()) {
         try {
           const target = resolve(dir, readlinkSync(abs))
-          // 解析结果必须仍在目标目录之内（前缀比较要带分隔符，避免 /a/bc 匹配 /a/b）
+          // 解析结果必须仍在目标目录之内（前缀比较带分隔符，避免 /a/bc 匹配 /a/b）
           if (target !== root && !target.startsWith(root + sep)) {
             out.push({ entry: relative(root, abs), target })
           }
-        } catch {
-          /* 读不到链接目标：不阻塞（上面的名字判据已经拦过一轮） */
+        } catch (e) {
+          // 读不到链接目标：**也按可疑处理**（fail-closed），不能当没看见
+          walkError ??= `巡检时读不了链接 ${abs}：${e instanceof Error ? e.message : String(e)}`
         }
         continue
       }
@@ -345,6 +391,7 @@ export function findEscapedLinks(destDir: string, limit = 5000): { entry: string
   }
 
   walk(root)
+  if (walkError) out.push({ entry: '(巡检本身失败)', target: walkError })
   return out
 }
 
@@ -389,9 +436,15 @@ async function extractTgz(tgzPath: string, destDir: string): Promise<string | un
   const linkTargets = await listTarLinkTargets(tgzPath)
   const escaping = findEscapingEntry(entries) ?? findEscapingEntry(linkTargets)
   if (escaping) {
-    throw new Error(
+    /**
+     * ⚠️ 抛的是 **UnsafeArchiveError**（独立错误类），**不是**普通 Error ——
+     * 语义是"**不可重试、绝不换通道**"。见该类的说明（判成可重试类，重试路径就会真的执行）。
+     */
+    throw new UnsafeArchiveError(
       `**拒绝解压**：归档里有会写到目标目录之外的条目（「${escaping.slice(0, 80)}」）—— ` +
-        `这类包（含 ".." 段或绝对路径）可能试图覆盖你机器上的其它文件，适配层不安装它。`,
+        `这类包（含 ".." 段、绝对路径、设备名等）可能试图覆盖你机器上的其它文件。` +
+        `**这不是网络问题，换通道或重试都没有意义。**`,
+      [escaping],
     )
   }
 
@@ -425,6 +478,23 @@ async function extractTgz(tgzPath: string, destDir: string): Promise<string | un
         const landed = isNonEmptyDir(destDir)
 
         if (!err) {
+          /**
+           * ✅ **正常解压也走一遍落地后巡检**（对端点明）：
+           * 名字判据与 `-tvf` 都可能漏（格式变体、PAX 头、实现差异），
+           * 这一步只看结果、不依赖格式解析 —— 是**最后一道网**，两条路径都要过。
+           */
+          const bad = findEscapedLinks(destDir)
+          if (bad.length > 0) {
+            const one = bad[0]!
+            reject(
+              new UnsafeArchiveError(
+                `**拒绝使用**：解压后发现链接（或巡检本身）指向目标目录之外（「${one.entry}」→「${one.target}」）。` +
+                  `**这不是网络问题，换通道或重试都没有意义。**`,
+                bad.map((x) => x.entry),
+              ),
+            )
+            return
+          }
           resolve(undefined)
           return
         }
@@ -459,9 +529,11 @@ async function extractTgz(tgzPath: string, destDir: string): Promise<string | un
           if (escaped.length > 0) {
             const one = escaped[0]!
             reject(
-              new Error(
-                `**拒绝使用**：解压后发现有链接指向目标目录之外（「${one.entry}」→「${one.target}」）—— ` +
-                  `这类包可能借此读写你机器上的其它文件，适配层不安装它。`,
+              new UnsafeArchiveError(
+                `**拒绝使用**：解压后发现链接（或巡检本身）指向目标目录之外（「${one.entry}」→「${one.target}」）—— ` +
+                  `这类包可能借此读写你机器上的其它文件。` +
+                  `**这不是网络问题，换通道或重试都没有意义。**`,
+                escaped.map((x) => x.entry),
               ),
             )
             return
@@ -1550,6 +1622,19 @@ export async function installCard(
     }
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e)
+    /**
+     * ⚠️ **安全违规要单独标记**（对端点明的"动作不同"）：
+     *
+     *     下载失败  ⇒ 可重试、可换通道
+     *     安全违规  ⇒ **不可重试** —— 换源重试只会把同一个有问题的包**再下一遍**
+     *
+     * 所以这里带一个 `unsafe` 标记出去，调用方/界面据此**不给"重试"按钮**、
+     * 也不把它归到"网络问题"里。
+     */
+    if (e instanceof UnsafeArchiveError) {
+      auditLog(`卡片安装被**安全策略**拒绝（${raw}）：${reason}`)
+      return { ok: false, reason, unsafe: true }
+    }
     auditLog(`卡片安装失败（${raw}）：${reason}`)
     return { ok: false, reason }
   } finally {
