@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 
 import { checkPackage, ensureAdapterManifest, looksLikeDshPlugin } from '../lib/card-host/package-check.js'
-import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, probeChannel, expandGitHubRepoUrl, bytesFromExecError, partSizeOnDisk, classifyCurlExit, classifyFetchError, maskUrl } from '../lib/card-host/installer.js'
+import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, probeChannel, expandGitHubRepoUrl, bytesFromExecError, partSizeOnDisk, classifyCurlExit, classifyFetchError, maskUrl, pruneStaleCardDirs } from '../lib/card-host/installer.js'
 
 let pass = 0
 let fail = 0
@@ -485,6 +485,39 @@ try {
       maskUrl('https://codeload.github.com/a/b/tar.gz?token=X').startsWith('https://codeload.github.com/'),
       '打码只动敏感部分，不改地址本身',
     )
+  }
+
+  /* ═══════════ 10. 启动清理：只删"没被指针指向的"旧版本 ═══════════ */
+
+  console.log('── 10. 启动清理（补一张空头支票：注释承诺过、但从未实现）')
+
+  {
+    /**
+     * 背景：注释与**用户文案**一直写着"旧目录留给'清理旧版本'在宿主重启后删"，
+     * 但那个清理**从来没被实现** ⇒ 删不掉的目录永久堆积，而我们对用户说"重启后会清"。
+     * 现在补上（`pruneStaleCardDirs`），这里钉住它的**边界**。
+     */
+    const cleanRoot = join(root, 'cards-prune')
+    mkdirSync(join(cleanRoot, 'demo@1.0.0-aaaaaaaa'), { recursive: true }) // 旧版本
+    mkdirSync(join(cleanRoot, 'demo@1.0.0-bbbbbbbb'), { recursive: true }) // 正在用
+    mkdirSync(join(cleanRoot, 'orphan@2.0.0-cccccccc'), { recursive: true }) // 没有指针（孤儿）
+    writeFileSync(join(cleanRoot, 'demo.current'), 'demo@1.0.0-bbbbbbbb')
+
+    const logs = []
+    const removed = pruneStaleCardDirs(cleanRoot, (m) => logs.push(String(m)))
+
+    ok(!existsSync(join(cleanRoot, 'demo@1.0.0-aaaaaaaa')), '旧版本目录被删掉')
+    ok(existsSync(join(cleanRoot, 'demo@1.0.0-bbbbbbbb')), '**正在用的那份绝不能被删**（指针指向它）')
+    ok(!existsSync(join(cleanRoot, 'orphan@2.0.0-cccccccc')), '没有指针的孤儿目录也清掉（否则永久堆积）')
+    eq(removed, 2, '返回实际删掉的数量（2 个）')
+    ok(
+      logs.some((l) => /启动清理/.test(l)),
+      '清理留了审计（"重启会清"这句承诺要能被验证）',
+    )
+    /** 幂等：再跑一次不该出错、也不该删掉正在用的。 */
+    const second = pruneStaleCardDirs(cleanRoot, () => {})
+    eq(second, 0, '再跑一次 ⇒ 0（幂等，且不误删）')
+    ok(existsSync(join(cleanRoot, 'demo@1.0.0-bbbbbbbb')), '第二次跑完仍在用的那份还在')
   }
 } finally {
   rmSync(root, { recursive: true, force: true })

@@ -1848,6 +1848,57 @@ export async function installCard(
   }
 }
 
+/**
+ * 清理**没被指针指向的**旧版本目录 —— 宿主启动时调一次。
+ *
+ * ## 为什么必须有它（它在补一张**空头支票**）
+ *
+ * 代码注释与**用户文案**一直写着"旧目录留给'清理旧版本'在宿主重启后删"，
+ * 但全仓 grep 发现 —— **那个清理从来没被实现** ✗。
+ * 后果：卸载/更新后删不掉的目录会**永久堆积**，而我们对用户承诺"重启后会清"。
+ *
+ * 所以补上，让那句承诺成真。**这也是文案诚实性的前提**：
+ * 文案里敢写"不需要你动手"，就得**真有人动手**。
+ *
+ * 判定：目录名形如 `<id>@<ver>-<fp>`；若没有对应 `<id>.current` 指针
+ * （或指针指向的不是它）⇒ 它是旧版本 ⇒ 尽力删掉。
+ * **删不掉（仍被占用）不算错** —— 下次启动再试。
+ *
+ * @returns 实际删掉的数量
+ */
+export function pruneStaleCardDirs(cardsRoot: string, auditLog: (msg: string) => void): number {
+  let removed = 0
+  let entries: string[]
+  try {
+    entries = readdirSync(cardsRoot)
+  } catch {
+    return 0
+  }
+
+  for (const name of entries) {
+    const parsed = parseVersionedDirName(name)
+    if (!parsed) continue
+
+    // 这张卡片当前的指针指向哪个目录
+    let pointed = ''
+    try {
+      pointed = readFileSync(join(cardsRoot, currentPointerName(parsed.cardId)), 'utf8').trim()
+    } catch {
+      pointed = ''
+    }
+    if (pointed === name) continue // 正在用的那一份，绝不能动
+
+    const dir = join(cardsRoot, name)
+    removeDirRecursive(dir)
+    if (!existsSync(dir)) removed++
+  }
+
+  if (removed > 0) {
+    auditLog(`[card-host] 启动清理：删掉了 ${removed} 个旧版本目录（当时被占用、现在锁已释放）`)
+  }
+  return removed
+}
+
 /** 从已安装目录卸载一张卡片。 */
 export function uninstallCard(cardId: string, cardsRoot: string): { ok: boolean; reason?: string } {
   const safe = basename(cardId)
@@ -1893,9 +1944,10 @@ export function uninstallCard(cardId: string, cardsRoot: string): { ok: boolean;
       return {
         ok: false,
         reason:
-          `指针删不掉：${pointer}。` +
-          `卡片会继续留在列表里 —— 这比报"已卸载"却仍在更诚实。` +
-          `常见原因：文件被占用，或安全软件拦下了删除。`,
+          `指针删不掉，卡片仍会留在列表里（这比报"已卸载"却还在更诚实）。\n` +
+          `**不需要你动手** —— 宿主下次启动时会再试一次；如果一直删不掉，` +
+          `多半是安全软件占着这个文件，那时再考虑关掉它重试。\n` +
+          `文件：${pointer}`,
       }
     }
   }
@@ -1909,7 +1961,20 @@ export function uninstallCard(cardId: string, cardsRoot: string): { ok: boolean;
     if (existsSync(dir)) locked++
   }
 
+  /**
+   * ⚠️ 文案按"**谁负责清理 + 什么时候 + 用户要不要动手**"三段写（对端点明的形状）：
+   * 用户读到"被占用"时的第一反应是"那我该干什么"—— 所以要**先回答"不需要你动手"**，
+   * 再给时间点（下次启动），最后才提"什么情况下才轮到你"（一直清不掉 = 安全软件）。
+   *
+   * ⚠️ 而且这句承诺**必须为真** —— 由 `pruneStaleCardDirs()` 在宿主启动时兑现
+   * （那个函数原先根本不存在，是补上的空头支票）。
+   */
   return locked > 0
-    ? { ok: true, reason: `已卸载；有 ${locked} 个旧目录被占用（重启后清理）` }
+    ? {
+        ok: true,
+        reason:
+          `已卸载 ✓ 有 ${locked} 个旧版本目录当时被占用（卡片正在跑，Windows 会锁住它的文件）。\n` +
+          `**不需要你动手** —— 它们不影响使用，宿主下次启动时会清掉（启动清理）。`,
+      }
     : { ok: true }
 }

@@ -205,6 +205,18 @@ export function apply(ctx: HostContext, _config?: Record<string, unknown>): void
     })
     debug(`apply: cardHost ready（${adapterHost.describe()}）`)
 
+    /**
+     * **启动清理**：删掉没被指针指向的旧版本目录。
+     *
+     * 补的是一张**空头支票** —— 注释与用户文案一直写"旧目录留给'清理旧版本'在宿主重启后删"，
+     * 但那个清理从来没实现过（全仓 grep 确认）。没有这一步，卸载后删不掉的目录会永久堆积，
+     * 而我们对用户说"不需要你动手，重启后会清"。
+     *
+     * 放在重放**之前**：先清掉不用的，再挂要用的 —— 顺序反了会先挂上再删（无意义且更慢）。
+     */
+    const pruned = cardHost.pruneStaleVersions()
+    if (pruned > 0) debug(`apply: 启动清理删掉 ${pruned} 个旧版本目录`)
+
     // 启动重放：连接是从 connections.json 恢复的，卡片挂在连接上，
     // 但 apply()（事件订阅 / 工具注册）不会自动重跑 —— 不重放卡片就是"哑"的。
     void cardHost

@@ -318,6 +318,25 @@ export declare function maskUrl(url: string): string;
  * 但先校验来源合法再动目标目录 —— 不能校验失败还把旧的删了。
  */
 export declare function installCard(spec: string, cardsRoot: string, auditLog: (msg: string) => void): Promise<InstallResult>;
+/**
+ * 清理**没被指针指向的**旧版本目录 —— 宿主启动时调一次。
+ *
+ * ## 为什么必须有它（它在补一张**空头支票**）
+ *
+ * 代码注释与**用户文案**一直写着"旧目录留给'清理旧版本'在宿主重启后删"，
+ * 但全仓 grep 发现 —— **那个清理从来没被实现** ✗。
+ * 后果：卸载/更新后删不掉的目录会**永久堆积**，而我们对用户承诺"重启后会清"。
+ *
+ * 所以补上，让那句承诺成真。**这也是文案诚实性的前提**：
+ * 文案里敢写"不需要你动手"，就得**真有人动手**。
+ *
+ * 判定：目录名形如 `<id>@<ver>-<fp>`；若没有对应 `<id>.current` 指针
+ * （或指针指向的不是它）⇒ 它是旧版本 ⇒ 尽力删掉。
+ * **删不掉（仍被占用）不算错** —— 下次启动再试。
+ *
+ * @returns 实际删掉的数量
+ */
+export declare function pruneStaleCardDirs(cardsRoot: string, auditLog: (msg: string) => void): number;
 /** 从已安装目录卸载一张卡片。 */
 export declare function uninstallCard(cardId: string, cardsRoot: string): {
     ok: boolean;

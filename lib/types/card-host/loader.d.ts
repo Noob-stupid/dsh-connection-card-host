@@ -107,6 +107,15 @@ export declare class CardHost {
     private installedRoot;
     /** 已安装卡片的根目录（安装器要往这里落盘）。 */
     installedCardsRoot(): string;
+    /**
+     * **启动时的旧版本清理**（幂等、尽力而为、绝不抛）。
+     *
+     * 补的是一张**空头支票**：注释与用户文案一直写着"旧目录留给'清理旧版本'在宿主重启后删"，
+     * 但那个清理从来没被实现 —— 于是删不掉的目录会永久堆积，而我们对用户说"重启后会清"。
+     *
+     * 现在由宿主在加载时调一次；删不掉的留到下次（锁在重启后自然释放）。
+     */
+    pruneStaleVersions(): number;
     /** 扫描两个根目录下的卡片包（幂等）。 */
     scanTemplates(force?: boolean): void;
     private scanRoot;
