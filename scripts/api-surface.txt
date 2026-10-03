@@ -72,7 +72,7 @@ src/adapter/shim.ts:classifySpecifier/1
 src/adapter/shim.ts:describePlan/1
 src/adapter/shim.ts:hasFacade/1
 src/adapter/shim.ts:packageRootOf/1
-src/adapter/shim.ts:planShims/4
+src/adapter/shim.ts:planShims/5
 src/adapter/shim.ts:removeShimRoot/1
 src/adapter/shim.ts:resolveRealModule/2
 src/adapter/shim.ts:scanBareSpecifiers/3

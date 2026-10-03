@@ -105,8 +105,10 @@ export declare function hasFacade(pkg: string): boolean;
  * @param shimRoot  垫片根（其下的 `node_modules` 会被创建）
  * @param depSourceDir 第三方依赖从哪里解析；默认同 pluginDir
  *        —— 卡片被拷进 `cards/` 后，依赖往往要从**原安装位置**解析，故可分开指定。
+ * @param entry **宿主入口的相对路径**（如 `lib/index.js`）。给了它 ⇒ 只扫**入口闭包** ✓；
+ *        不给 ⇒ 回退整目录扫描（保守，但会包含 `tests/` `bin/` 那些假依赖 ✗）。
  */
-export declare function planShims(pluginDir: string, shimRoot: string, depSourceDir?: string): ShimPlan;
+export declare function planShims(pluginDir: string, shimRoot: string, depSourceDir?: string, entry?: string): ShimPlan;
 /** 规划里**没法解决**的东西（调用方据此拒绝挂载并说清缺什么）。 */
 export declare function unresolvedOf(plan: ShimPlan): string[];
 /**

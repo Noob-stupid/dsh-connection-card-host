@@ -168,6 +168,17 @@ export function scanBareSpecifiers(
         walk(full, base)
         continue
       }
+      /**
+       * ⚠️ **`.d.ts` 是纯类型文件，运行时不可能被加载** ⇒ 必须排除（对端真机实测，一行之差）。
+       *
+       * 不排的后果（实测）：`omdsh-dev/dsh_workflow` 的 `lib/*.d.ts` 把
+       * `@deepseek-ai/dsh-agent` / `dsh-subagent` / `dsh-user-approval` 报成
+       * "**致命：宿主能力缺 N 个**" ✗ —— 类型引用的包**根本不是运行时依赖** ✗。
+       *
+       * 注意顺序：必须在下面那条 `\.(mjs|cjs|js|ts)$` **之前**判，
+       * 因为 `foo.d.ts` 也匹配 `.ts` ✓。
+       */
+      if (name.endsWith('.d.ts')) continue
       if (!/\.(mjs|cjs|js|ts)$/.test(name)) continue
       /**
        * ⚠️ **客户端产物不参与宿主侧依赖规划**（见函数头说明）——
@@ -193,15 +204,38 @@ export function scanBareSpecifiers(
        * 第一版的三条分支全都要求 `from '...'` 或括号形式 ✗ ⇒ **这种写法被整类漏掉** ✗。
        * 这不是理论风险：库里到处都是 `import 'core-js/stable'` 这类写法 ✓。
        *
-       * 抓出来的方式值得一提：是**负控**（"应当不通过"的样本）把它照出来的 ——
-       * 正控当时全绿 ✓。⇒ **对端点明的纪律当场见效**：
-       * 只证明"它这次没报错"是不够的，还要证明"**它该报的时候还会报**"。
+       * ⚠️⚠️ **说明符必须禁止换行**（对端真机实测）：原先用 `([^'"]+)` 允许跨行 ✗ ⇒
+       * 从多行代码片段里抽出**假包名** ✗，实测抽到过：
+       *
+       *     `Nwflower/dsh-chat-import`  → 跨 12 行的整段代码
+       *     `lib/transfer.mjs`          → `" + filePath\n  if (target === "`
+       *     `GanyuanRan/Aegis`          → `~`（TS 路径别名 `~/threads/…` 被当成包）
+       *
+       * ⇒ 改成 `([^'"\r\n]+)`（**不许跨行**）✓，并且 `import|export` 锚到**语句边界**
+       * （行首或 `; { ( }` 这类分隔符之后）✓。
        */
-      const re =
-        /(?:^|[\s;{(])(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|(?:^|[\s;{(])import\s*['"]([^'"]+)['"]|import\s*\(\s*['"]([^'"]+)['"]\s*\)|require\s*\(\s*['"]([^'"]+)['"]\s*\)/g
+      const SPEC = `([^'"\\r\\n]+)`
+      const re = new RegExp(
+        [
+          // import ... from '…' / export ... from '…'
+          `(?:^|[\\s;{(])import\\s[^'"\\r\\n]*?from\\s*['"]${SPEC}['"]`,
+          // export ... from '…'
+          `(?:^|[\\s;{(])export\\s[^'"\\r\\n]*?from\\s*['"]${SPEC}['"]`,
+          // export * from '…'（上面那条已覆盖，但保留显式形态更稳）
+          `(?:^|[\\s;{(])export\\s*\\*\\s*from\\s*['"]${SPEC}['"]`,
+          // 副作用导入：import '…'
+          `(?:^|[\\s;{(])import\\s*['"]${SPEC}['"]`,
+          // 动态 import('…')
+          `import\\s*\\(\\s*['"]${SPEC}['"]\\s*\\)`,
+          // require('…')
+          `require\\s*\\(\\s*['"]${SPEC}['"]\\s*\\)`,
+        ].join('|'),
+        'g',
+      )
       for (const m of text.matchAll(re)) {
-        const spec = m[1] ?? m[2] ?? m[3] ?? m[4]
-        if (spec) found.add(spec)
+        const spec = m.slice(1).find((x) => typeof x === 'string' && x.length > 0)
+        /** 再兜一道：换行/空白的绝不放行（正则已禁，这里是防止将来改坏）。 */
+        if (spec && !/[\r\n]/.test(spec)) found.add(spec)
       }
     }
   }
@@ -230,9 +264,110 @@ export function resolveRealModule(pkg: string, fromDir: string): string | undefi
   }
 }
 
+/** 说明符正则（**禁止跨行** —— 见 `scanBareSpecifiers` 里那段说明）。 */
+function SPEC_RE(): RegExp {
+  const SPEC = `([^'"\\r\\n]+)`
+  return new RegExp(
+    [
+      `(?:^|[\\s;{(])import\\s[^'"\\r\\n]*?from\\s*['"]${SPEC}['"]`,
+      `(?:^|[\\s;{(])export\\s[^'"\\r\\n]*?from\\s*['"]${SPEC}['"]`,
+      `(?:^|[\\s;{(])import\\s*['"]${SPEC}['"]`,
+      `import\\s*\\(\\s*['"]${SPEC}['"]\\s*\\)`,
+      `require\\s*\\(\\s*['"]${SPEC}['"]\\s*\\)`,
+    ].join('|'),
+    'g',
+  )
+}
+
+/**
+ * **入口闭包扫描**（根因 1 的修法，对端真机实测给的）。
+ *
+ * ## 为什么必须改（原来扫**整个包目录**是错的）
+ *
+ * 真插件里除了运行时入口，还有 `tests/` `scripts/` `bin/` `client/build.mjs` 这些
+ * **只在开发/构建/CLI 时**才用的文件 ✗。把它们的 import 当成**宿主运行时依赖**，
+ * 结果就是真插件普遍**假拒绝** ✗。对端实测（`shaobeichen/dsh-pocket`，1500★）报"缺 5 个"：
+ *
+ *     esbuild, react     ← client/build.mjs（构建脚本）
+ *     qrcode-terminal    ← bin/dsh-pocket.mjs（CLI）
+ *     ws, react          ← test/*.test.js
+ *     qrcode             ← lib/service.mjs   ← **只有这一个是真运行时依赖** ✓
+ *
+ * ⇒ 5 个里 4 个是假的 ✗。
+ *
+ * ## 做法：从入口出发，只沿**相对说明符**做传递闭包
+ *
+ * 闭包内出现的 **bare specifier** 才是真正的运行时依赖 ✓。
+ * `tests/` `bin/` 不在闭包里 ⇒ **天然排除** ✓（不靠目录名黑名单 —— 那太脆 ✗）。
+ *
+ * 解析不了入口、或闭包只走到入口自己 ⇒ 返回 undefined ⇒ **回退整目录扫描** ✓（行为不倒退）。
+ */
+function scanEntryClosure(pluginDir: string, entry: string): string[] | undefined {
+  const found = new Set<string>()
+  const seen = new Set<string>()
+  const queue: string[] = []
+
+  const resolveRelative = (fromFile: string, spec: string): string | undefined => {
+    const base = resolve(dirname(fromFile), spec)
+    for (const cand of [
+      base,
+      `${base}.js`,
+      `${base}.mjs`,
+      `${base}.cjs`,
+      `${base}.ts`,
+      join(base, 'index.js'),
+      join(base, 'index.mjs'),
+      join(base, 'index.ts'),
+    ]) {
+      try {
+        if (existsSync(cand) && statSync(cand).isFile()) return cand
+      } catch {
+        /* 试下一个 */
+      }
+    }
+    return undefined
+  }
+
+  const entryAbs = resolve(pluginDir, entry)
+  try {
+    if (!existsSync(entryAbs)) return undefined
+  } catch {
+    return undefined
+  }
+  queue.push(entryAbs)
+
+  const re = SPEC_RE()
+  while (queue.length > 0) {
+    const file = queue.shift()!
+    if (seen.has(file) || seen.size > 400) continue
+    seen.add(file)
+    /** `.d.ts` 是纯类型 ⇒ 不进闭包（与扫描侧同一条纪律）。 */
+    if (file.endsWith('.d.ts')) continue
+
+    let text: string
+    try {
+      text = readFileSync(file, 'utf8')
+    } catch {
+      continue
+    }
+    for (const m of text.matchAll(re)) {
+      const spec = m.slice(1).find((x) => typeof x === 'string' && x.length > 0)
+      if (!spec || /[\r\n]/.test(spec)) continue
+      if (spec.startsWith('.')) {
+        const next = resolveRelative(file, spec)
+        if (next) queue.push(next)
+        continue
+      }
+      if (!spec.startsWith('node:')) found.add(spec)
+    }
+  }
+
+  if (seen.size <= 1) return undefined
+  return [...found].sort()
+}
+
 /** 某个 DSH 包有没有门面。 */
-export function hasFacade(pkg: string): boolean {
-  return pkg in FACADE_MODULES
+export function hasFacade(pkg: string): boolean {  return pkg in FACADE_MODULES
 }
 
 /**
@@ -242,11 +377,14 @@ export function hasFacade(pkg: string): boolean {
  * @param shimRoot  垫片根（其下的 `node_modules` 会被创建）
  * @param depSourceDir 第三方依赖从哪里解析；默认同 pluginDir
  *        —— 卡片被拷进 `cards/` 后，依赖往往要从**原安装位置**解析，故可分开指定。
+ * @param entry **宿主入口的相对路径**（如 `lib/index.js`）。给了它 ⇒ 只扫**入口闭包** ✓；
+ *        不给 ⇒ 回退整目录扫描（保守，但会包含 `tests/` `bin/` 那些假依赖 ✗）。
  */
 export function planShims(
   pluginDir: string,
   shimRoot: string,
   depSourceDir?: string,
+  entry?: string,
 ): ShimPlan {
   /**
    * ⚠️ **把客户端产物排除在宿主侧依赖规划之外**（实测踩到的假拒绝 —— 见 `scanBareSpecifiers` 的说明）。
@@ -257,8 +395,16 @@ export function planShims(
    */
   const clientEntry = readClientArtifact(pluginDir).entry
   const skip = new Set<string>(clientEntry ? [clientEntry.split('\\').join('/')] : [])
-  const scanned = scanBareSpecifiers(pluginDir, { skip })
+
+  /**
+   * ⚠️ **优先走"入口闭包"**（根因 1 的修法）—— 只扫**宿主入口真正会加载到的文件** ✓。
+   * 退而求其次才是整目录扫描（那时至少把测试/脚本目录挡掉，见 `skip` 的扩展）。
+   */
+  const closure = entry ? scanEntryClosure(pluginDir, entry) : undefined
+  const scanned = closure ?? scanBareSpecifiers(pluginDir, { skip })
   const depFrom = depSourceDir ?? pluginDir
+  /** 审计里要能看出用的是哪种扫描面（排障时这一点很关键）。 */
+  const scanScope = closure ? 'entry-closure' : 'whole-dir'
 
   const dsh: DshShimEntry[] = []
   const thirdParty: ThirdPartyEntry[] = []
