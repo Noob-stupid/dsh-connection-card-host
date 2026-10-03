@@ -38,13 +38,32 @@ interface DownloadChannel {
     url: string;
 }
 /**
+ * 把**仓库地址**展开成 archive 候选（含分支回退）。
+ *
+ * 用户贴的多半是仓库地址而不是 archive 地址：
+ *
+ *     https://github.com/<o>/<r>                 ← 最常见
+ *     https://github.com/<o>/<r>/tree/<branch>  ← 从浏览器地址栏复制来的
+ *
+ * 这两种原先都会当成"不是 archive 链接"→ 直连拉下来一个 **HTML 页面** → 解包报错 ✗。
+ * 展开成：
+ *
+ *     /tree/<branch> 给了分支 ⇒ 该分支优先
+ *     其余按 **main → master → dev** 补足，最多 3 条
+ *
+ * 为什么带 dev：对端真机记录 —— dsh-web 的默认分支就是 `dev`，
+ * 分支猜错时 archive 会 404，得能自己找回来。
+ */
+export declare function expandGitHubRepoUrl(url: string): string[];
+/**
  * 为一个 URL 排出**下载通道表**（按可信度排序）。
  *
- * GitHub 类：codeload（官方、无重定向、无配额）→ ghproxy（镜像兜底，**可能 0 B/s**）→ 原 URL。
+ * GitHub archive 类：codeload（官方、无重定向、无配额）→ ghproxy（镜像兜底，**可能 0 B/s**）→ 原 URL。
+ * GitHub **仓库**类：按分支回退展开成最多 3 条 codeload（每条各自探活）。
  * 其它：原 URL 直连。
  *
  * ⚠️ 镜像**不能硬编码成唯一出路**：对端记录 `mirror.ghproxy.com` 早已失效并被停放页接管 ——
- * 所以镜像只做**兜底**，且必须能失败后继续（见 downloadTo 的逐通道重试）。
+ * 所以镜像只做**兜底**，且必须能失败后继续。
  */
 export declare function downloadChannelsFor(url: string): DownloadChannel[];
 /** 读"上次成功的通道 id"。任何异常都当没有（绝不抛）。 */
@@ -65,7 +84,7 @@ export declare function orderChannels(channels: DownloadChannel[], preferredId: 
  * 指引里写"检测到本机加速器/代理，建议关掉再试"比"请检查网络"有用一个量级。
  */
 export declare function classifyDownloadFailure(text: string): {
-    kind: 'intercepted' | 'unreachable';
+    kind: 'intercepted' | 'unreachable' | 'timeout';
     note: string;
 };
 /**

@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 
 import { checkPackage, ensureAdapterManifest, looksLikeDshPlugin } from '../lib/card-host/package-check.js'
-import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, classifyDownloadFailure, probeChannel } from '../lib/card-host/installer.js'
+import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, classifyDownloadFailure, probeChannel, expandGitHubRepoUrl } from '../lib/card-host/installer.js'
 
 let pass = 0
 let fail = 0
@@ -261,6 +261,43 @@ try {
 
     const plain = downloadChannelsFor('https://registry.npmjs.org/x/-/x-1.0.0.tgz')
     eq(plain.map((c) => c.name), ['direct'], '非 GitHub：只有直连一条通道')
+  }
+
+  /* ═══════════ 4b. 用户贴的是**仓库地址**（不带 /archive/） ═══════════ */
+
+  console.log('── 4b. 仓库地址展开 + 分支回退（对端点明：dsh-web 默认分支是 dev）')
+
+  {
+    eq(
+      expandGitHubRepoUrl('https://github.com/o/r'),
+      [
+        'https://codeload.github.com/o/r/tar.gz/refs/heads/main',
+        'https://codeload.github.com/o/r/tar.gz/refs/heads/master',
+        'https://codeload.github.com/o/r/tar.gz/refs/heads/dev',
+      ],
+      '仓库地址 ⇒ main → master → dev（最多 3 条）',
+    )
+    eq(
+      expandGitHubRepoUrl('https://github.com/o/r/tree/dev')[0],
+      'https://codeload.github.com/o/r/tar.gz/refs/heads/dev',
+      '/tree/<branch> 给的分支**优先**',
+    )
+    const withMain = expandGitHubRepoUrl('https://github.com/o/r/tree/main')
+    eq(withMain.length, 3, '仍然 3 条')
+    eq(new Set(withMain).size, 3, '三条互不重复（不重复出 main）')
+    eq(expandGitHubRepoUrl('https://example.com/x/y'), [], '非 GitHub 不展开（不瞎猜）')
+    eq(
+      expandGitHubRepoUrl('https://github.com/o/r/archive/refs/heads/main.tar.gz'),
+      [],
+      'archive 地址不走这条（另有 codeload 规范化）',
+    )
+
+    const repoChs = downloadChannelsFor('https://github.com/o/r')
+    eq(
+      repoChs.map((c) => c.name),
+      ['codeload(main)', 'codeload(master)', 'codeload(dev)'],
+      '仓库地址 ⇒ 三条 codeload 通道（各自可探活）',
+    )
   }
 
   /* ═══════════ 5. 通道记忆：按 channelId（不是 URL 模板）+ 纯函数排序 ═══════════ */
