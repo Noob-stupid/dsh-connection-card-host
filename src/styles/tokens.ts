@@ -141,6 +141,16 @@ export const CONNECTION_CARD_CSS = `
  * 面板主体仍是 ccr-page（720 居中），侧栏占用右边的留白 ——
  * 适配卡插件的 UI 就渲染在那儿（而不是 DSH 全局界面）。
  * 没有适配卡时侧栏不渲染，布局与以前**完全一致**（justify-content: center 让主体居中）。
+ *
+ * ⚠️⚠️ height:100% 与 min-height:0 **必须留着**。
+ *
+ * 这层是怎么来的：以前 ccr-page 是宿主 main 区的**直接子项**，靠 height:100%
+ * 拿到定高、成为滚动容器。加了这层之后 ccr-page 变成**它的**子项 ——
+ * 而它默认高度 auto，于是 ccr-page 的 height:100% 退化成 auto、
+ * **不再是滚动容器**，外层也不滚 ⇒ **滚轮完全没反应**（用户实测报上来的回归）。
+ *
+ * 所以这里要把宿主给的高度**接住再往下传**；flex 项还要 min-height:0
+ * 才能收缩（否则内容把它撑高，一样滚不动）。
  */
 .ccr-page-wrap {
   display: flex;
@@ -148,11 +158,13 @@ export const CONNECTION_CARD_CSS = `
   align-items: flex-start;
   gap: 16px;
   width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 /* 窄屏时侧栏换行到下方，避免把主内容挤窄 */
 @media (max-width: 1100px) {
-  .ccr-page-wrap { flex-wrap: wrap; }
-  .ccr-page__side { width: 100%; max-width: 720px; margin: 0 auto 24px; }
+  .ccr-page-wrap { flex-wrap: wrap; height: auto; }
+  .ccr-page__side { width: 100%; max-width: 720px; margin: 0 auto 24px; height: auto; }
 }
 .ccr-page__side {
   box-sizing: border-box;
@@ -161,6 +173,11 @@ export const CONNECTION_CARD_CSS = `
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* 侧栏自己也滚：插件 UI 可能很高，不能把面板撑成不可滚 */
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 /* 捕获到的插件 UI：与面板同用主题令牌，不写死颜色 */
 .ccr-captured {
