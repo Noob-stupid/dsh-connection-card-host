@@ -152,19 +152,30 @@ const fakeReact = { createElement: (t, p, c) => ({ t, p, c }) }
 }
 
 {
-  // inject 里声明了 slots/effect 之外的服务 ⇒ 装载前拒绝
+  /**
+   * inject 里声明了 slots/effect 之外的服务 ⇒ **只告警，不拒绝**。
+   *
+   * ⚠️ 这条行为是**拿真插件实测后改的**：生态里的 UI 插件普遍声明一长串客户端服务
+   * （locale / configForms / uiWorkspace …），而它们**未必每条路径都用到**。
+   * 一律拒绝 = "因为声明太全而装不上"；放它跑、**真正访问**时再抛点名的错误，
+   * 既不放宽边界也不误伤。所以这里断言的是"不抛 + 有告警"。
+   */
+  const warns2 = []
   const needy = {
     id: 'needy',
     factory: () => ({ inject: ['slots', 'store'], apply() {} }),
   }
-  let msg = ''
+  let threw = false
   try {
-    instantiateCaptured(needy, () => fakeReact, onWarn)
-  } catch (e) {
-    msg = String(e.message)
+    instantiateCaptured(needy, () => fakeReact, (m) => warns2.push(m))
+  } catch {
+    threw = true
   }
-  ok(/声明需要 \[store\]/.test(msg), '插件声明了未提供的服务 ⇒ 拒绝')
-  ok(/拒绝捕获/.test(msg), '拒绝理由说明为什么不做静默降级')
+  ok(!threw, '声明了未提供的服务 ⇒ **不拒绝**（只告警）')
+  ok(
+    warns2.some((w) => /声明了 \[store\]/.test(w)),
+    '告警里点名它声明了什么（便于排查）',
+  )
 }
 
 {

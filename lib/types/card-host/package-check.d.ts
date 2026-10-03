@@ -52,8 +52,16 @@ export interface PackageCheck {
     /** 来源形态：卡片包 / 普通 DSH 插件包（后者要合成适配清单）。 */
     kind?: 'card' | 'dsh-plugin';
 }
-/** 合成适配卡清单时用的**最小能力面**（见文件头说明）。 */
-export declare const ADAPTER_DEFAULT_CAPABILITIES: readonly ["tools", "effect"];
+/**
+ * 合成适配卡清单时用的能力面。
+ *
+ * ⚠️ 给的是**已实现的全部能力**（tools / effect / llm / prompt），不是最初的最小集。
+ * 理由：安装时我们**无法静态推断**插件要用什么；给最小集会让"其实只想用 prompt 的插件"
+ * 在装载阶段因未申报而被拒 —— 那是**假拒绝**。而多申报**不会放宽边界**：
+ * 影子 ctx 只把申报过的服务交出去，插件用不到的就不碰；真需要未实现的能力
+ * （events / agent）时，仍会在 `reconcileInjects` 那一步被明确拒绝。
+ */
+export declare const ADAPTER_DEFAULT_CAPABILITIES: readonly ["tools", "effect", "llm", "prompt"];
 interface PackageJson {
     name?: string;
     version?: string;

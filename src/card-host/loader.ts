@@ -29,6 +29,7 @@ import { createCardApi } from './card-api.js'
 import { createShimElement } from './dom-shim.js'
 import { adapterStatusOf } from '../adapter/status.js'
 import { readClientArtifact } from './client-artifact.js'
+import { sourceRecordName, type CardSourceRecord } from './card-paths.js'
 
 /**
  * 适配宿主的**最小接口**（避免卡片宿主反向依赖适配层内部）。
@@ -435,7 +436,13 @@ export class CardHost {
       /**
        * ⚠️ 这里**不创建 CardAPI** —— 适配卡拿到的是影子 ctx（模拟 DSH 插件上下文），
        * 两者刻意不混（见 card-adapter.ts 文件头）。
+       *
+       * `depSourceDir` 取自**来源记录**：卡片被拷进 `cards/` 之后，它的第三方依赖
+       * （例如 `dsh-browser` 的 `playwright-core`）在卡片目录里解析不到，必须回到
+       * **原安装位置**解析。来源记录（`<id>.source.json`）正好记着那个位置。
+       * 不传的话垫片会报"依赖未解析"并拒绝挂载 —— 那是正确的拒绝，但没必要。
        */
+      const depSourceDir = this.sourceDirFor(template.templateId)
       await adapter.mount({
         instanceId: instance.instanceId,
         cardId: template.templateId,
@@ -443,6 +450,7 @@ export class CardHost {
         capabilities: template.manifest.adapter?.capabilities,
         connectionId,
         scope,
+        ...(depSourceDir ? { depSourceDir } : {}),
       })
     } catch (e) {
       /**
@@ -459,6 +467,25 @@ export class CardHost {
 
     this.manager.persistConnection(connectionId)
     return instance
+  }
+
+  /**
+   * 某张已安装卡片的**来源目录**（第三方依赖从那儿解析）。
+   *
+   * 只对 `kind === 'dir'` 且目录仍存在时返回 —— npm/tgz 来源没有可解析的目录，
+   * 那时依赖只能靠卡片自带（或接受"依赖未解析"的拒绝，那是有话直说）。
+   */
+  private sourceDirFor(cardId: string): string | undefined {
+    try {
+      const root = this.installedRoot()
+      const recordPath = join(root, sourceRecordName(cardId))
+      if (!existsSync(recordPath)) return undefined
+      const record = JSON.parse(readFileSync(recordPath, 'utf8')) as CardSourceRecord
+      if (record.kind !== 'dir') return undefined
+      return existsSync(record.spec) ? record.spec : undefined
+    } catch {
+      return undefined
+    }
   }
 
   /**

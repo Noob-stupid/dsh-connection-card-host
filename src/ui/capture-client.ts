@@ -161,7 +161,19 @@ export function instantiateCaptured(
     }
   }
 
+  /**
+   * 影子 ctx 提供的服务。
+   *
+   * ⚠️ `get` 是**必须**的：生态里的 UI 插件普遍这么拿服务
+   * （实测 `dsh-client-ui-voice` 全文只有一处依赖：`ctx.get('slots')`）。
+   * 而 cordis 的 `get` 契约是**未知服务返回 undefined**（插件自己判空，例如
+   * `if (slots === undefined) return`）—— 所以这里返回 undefined 是**符合契约**，
+   * 不是"静默降级"：真正的护栏是下面的 `ctx.<name>` 直接访问（那条会抛错）。
+   */
   const services: Record<string, unknown> = { slots, effect }
+  services.get = (name: unknown): unknown =>
+    typeof name === 'string' && name in services ? services[name] : undefined
+
   const seenMisses = new Set<string>()
 
   const ctx = new Proxy(
@@ -203,13 +215,20 @@ export function instantiateCaptured(
     throw new Error(`客户端 factory 没有返回 { apply } —— 它的 id 是「${captured.id}」`)
   }
 
-  // 插件声明的 inject 与实际提供的能力对账（与宿主侧同一纪律）
+  /**
+   * 插件声明的 inject 与实际提供的能力对账。
+   *
+   * ⚠️ 声明了、但我们没有的，**只告警不拒绝** —— 这一点是**拿真插件实测后改的**：
+   * 生态里的 UI 插件普遍声明一长串客户端服务（`locale` / `configForms` / `uiWorkspace` …），
+   * 而它们**未必每条路径都用到**。一律拒绝 = "因为声明太全而装不上"；
+   * 放它跑、在**真正访问**时由 Proxy 抛出点名的错误，既不放宽边界也不误伤。
+   */
   const injects = Array.isArray(plugin.inject) ? plugin.inject.map(String) : []
-  const unsupported = injects.filter((i) => i !== 'slots' && i !== 'effect')
-  if (unsupported.length > 0) {
-    throw new Error(
-      `客户端插件声明需要 [${unsupported.join(', ')}]，而适配层只提供 slots / effect —— ` +
-        `拒绝捕获（不静默降级：缺服务的 UI 迟早崩，那时更难查）。`,
+  const missing = injects.filter((i) => i !== 'slots' && i !== 'effect')
+  if (missing.length > 0) {
+    warn(
+      `客户端插件声明了 [${missing.join(', ')}]，适配层只提供 slots / effect（外加可转交的宿主服务）。` +
+        `真正访问到没有的那个时才会失败。`,
     )
   }
 

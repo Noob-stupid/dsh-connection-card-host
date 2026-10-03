@@ -128,6 +128,13 @@ export declare class CardHost {
      */
     private loadAdapterCard;
     /**
+     * 某张已安装卡片的**来源目录**（第三方依赖从那儿解析）。
+     *
+     * 只对 `kind === 'dir'` 且目录仍存在时返回 —— npm/tgz 来源没有可解析的目录，
+     * 那时依赖只能靠卡片自带（或接受"依赖未解析"的拒绝，那是有话直说）。
+     */
+    private sourceDirFor;
+    /**
      * 读某张**已装载卡片**的客户端制品（UI 捕获用）。
      *
      * 由面板经 RPC 调用：宿主读文件、把**源码文本**送回浏览器。

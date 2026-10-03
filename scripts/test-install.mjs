@@ -152,7 +152,16 @@ try {
 
     const patched = JSON.parse(readFileSync(join(copy, 'package.json'), 'utf8'))
     ok(patched.dshCard, '副本里有了 dshCard')
-    eq(patched.dshCard.adapter.capabilities, ['tools', 'effect'], '能力面默认最小集（tools/effect）')
+    /**
+     * ⚠️ 默认能力面是**已实现的全部**（tools/effect/llm/prompt），不是当初的最小集。
+     * 改这个断言时想清楚：给少了会让"其实只想用 prompt 的插件"被假拒绝；
+     * 给多了**不会放宽边界**（影子 ctx 只交申报过的服务）。
+     */
+    eq(
+      patched.dshCard.adapter.capabilities,
+      ['tools', 'effect', 'llm', 'prompt'],
+      '能力面默认 = 已实现的全部（tools/effect/llm/prompt）',
+    )
     ok(patched.dshCard.synthesized === true, '标了 synthesized（便于排查与面板区分）')
 
     const origin = JSON.parse(readFileSync(join(src, 'package.json'), 'utf8'))
