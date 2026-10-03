@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 
 import { checkPackage, ensureAdapterManifest, looksLikeDshPlugin } from '../lib/card-host/package-check.js'
-import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, classifyDownloadFailure, probeChannel, expandGitHubRepoUrl } from '../lib/card-host/installer.js'
+import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, classifyDownloadFailure, probeChannel, expandGitHubRepoUrl, bytesFromExecError } from '../lib/card-host/installer.js'
 
 let pass = 0
 let fail = 0
@@ -370,6 +370,31 @@ try {
     ok(!dead.alive, '连不上 ⇒ 判死')
     ok(cost < 9000, `判死要快（实测 ${cost}ms；上限 4s + 余量）`)
     ok(/代理|不可达|拦截/.test(dead.note), '归因文案可读（说清是网络问题还是本地拦截）')
+  }
+
+  /* ═══════════ 8. 实传字节数：决定"加时重试"还是"立刻换通道" ═══════════ */
+
+  console.log('── 8. 按字节判进度（对端判据）')
+
+  {
+    /**
+     * `execFileSync` 抛错时会把已产生的 stdout 挂在 error 上 —— 于是
+     * "中途失败但传了 3MB"我们仍然知道，可以据此判断**该加时**还是**该换通道**。
+     */
+    eq(bytesFromExecError({ stdout: '3145728 51200.0' }), 3145728, '从错误对象里取出实传字节')
+    eq(bytesFromExecError({ stdout: '0 0.0' }), 0, '0 字节 ⇒ 0（**不是** -1）')
+    eq(bytesFromExecError({ stdout: '' }), -1, '拿不到 ⇒ -1（与"传了 0 字节"区分开）')
+    eq(bytesFromExecError(new Error('boom')), -1, '普通错误 ⇒ -1')
+
+    /**
+     * 判据（对端真机结论）：
+     *   `0` 字节 ⇒ 立刻换通道（加时只是把白等拉长）
+     *   `>0` 字节 ⇒ 同通道加时重试一次（在传、只是慢）
+     */
+    const shouldExtend = (n) => n > 0
+    ok(!shouldExtend(bytesFromExecError({ stdout: '0 0.0' })), '0 字节 ⇒ 不加时（换通道）')
+    ok(shouldExtend(bytesFromExecError({ stdout: '1024 8.0' })), '有字节 ⇒ 加时重试一次')
+    ok(!shouldExtend(bytesFromExecError(new Error('x'))), '拿不到字节数 ⇒ 不加时（不赌）')
   }
 } finally {
   rmSync(root, { recursive: true, force: true })

@@ -10,6 +10,25 @@ export interface InstallResult {
     reason?: string;
 }
 /**
+ * 删除一个文件（等价于 `rmSync(p, { force: true })`，但用了**有效的** API）。
+ *
+ * ## 删不掉时：**改名降级**，而不是报失败（对端真机结论）
+ *
+ * Windows 上"删不掉"有两种完全不同的原因：
+ *   · **真被占用**（别的进程开着）—— 重试是白等
+ *   · **句柄还没释放**（刚被 kill 的子进程，`taskkill /T /F` 返回 ≠ 句柄已释放）
+ *     —— 过一会儿就好了
+ *
+ * 两者从错误码上分不开（都是 `EPERM`/`EBUSY`/"being used by another process"），
+ * 所以**一律不重试**，改成：把文件**改名挪走**（`.trash-<时间戳>-<随机>`）。
+ * 改名在同一卷上是元数据操作，**不需要删除权限、也不受"打开中"影响**（多数情况）——
+ * 于是调用方能继续干活，用户也不会看到一个"因为清理失败而失败"的安装。
+ *
+ * @returns 是否真的删掉了 —— 调用方**必须**看这个返回值：
+ *          "删不掉"与"删掉了"在这台机器上是两种真实结果。
+ */
+export declare function removeFileQuiet(target: string): boolean;
+/**
  * 把 GitHub 的 archive 链接规范化成 **codeload** 链接。
  *
  *     https://github.com/<owner>/<repo>/archive/refs/heads/<branch>.tar.gz
@@ -111,6 +130,16 @@ export declare function probeChannel(url: string, timeoutMs?: number): {
     alive: boolean;
     note: string;
 };
+/**
+ * 从 `execFileSync` 抛出的错误里取**实传字节数**。
+ *
+ * 为什么取得到：命令带了 `-w '%{size_download} …'`，而 Node 的 `execFileSync`
+ * 抛错时会把**已经产生的 stdout/stderr 挂在 error 上**（`error.stdout`）——
+ * 于是"中途失败但传了 3MB"这种情况我们仍然知道。
+ *
+ * @returns 字节数；拿不到返回 -1（与"传了 0 字节"是**两种**情况，不能混）
+ */
+export declare function bytesFromExecError(e: unknown): number;
 /**
  * 安装一张卡片到 cardsRoot/<id>/。
  *
