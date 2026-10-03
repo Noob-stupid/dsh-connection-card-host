@@ -104,7 +104,17 @@ export function readClientArtifact(cardDir: string): ClientArtifact {
       const st = statSync(abs)
       if (!st.isFile()) continue
       if (st.size > MAX_BYTES) {
-        return { ok: false, reason: `客户端制品过大（${Math.round(st.size / 1024)} KB > 上限 4 MB）` }
+        return {
+        ok: false,
+        /**
+         * ⚠️ **文案必须引用常量，不能写死数字**（对端复核抓到的"文案与常量脱节"）。
+         *
+         * 上一版这里硬写着「上限 4 MB」✗ —— 而常量早已改成 32 MB ⇒
+         * 下次真触发时**报出来的数字是错的** ✗。这类错很阴：**它只在出错的路径上出现**，
+         * 平时永远看不到 ✓（而用户恰恰是在出错时才读它 ✗）。
+         */
+        reason: `客户端制品过大（${Math.round(st.size / 1024)} KB > 上限 ${MAX_BYTES / 1024 / 1024} MB）`,
+      }
       }
       const source = readFileSync(abs, 'utf8')
       return { ok: true, entry: rel, source }

@@ -71,26 +71,86 @@ const GLOBAL_SLOT_HINTS = [
 const LOCAL_SLOT_HINTS = ['conversation.', 'message.', 'input.', 'session.', 'composer.', 'card.']
 
 /**
+ * **App 级（全局）命名空间**：命中这些**对象的注册调用** ⇒ 这张卡是"为全局而生"的 ✗。
+ *
+ * ⚠️ 为什么要有这一条（对端复核抓到的漏判，**真实样本**是主题插件）：
+ *
+ * `Tommy00748/dsh-theme-cyberpunk2077` 被上一版判成 `unclear` ⇒ **过了三门** ✗，
+ * 而它的原文是：
+ *
+ *     ctx.theme.register({ id: THEME_ID, … })      // ← 名字是**变量**，不是字面量 ✗
+ *     ctx.theme.setTheme(THEME_ID)
+ *     const THEME_ID = "cyberpunk2077"             // ← 追到常量才知道是主题 ✗
+ *
+ * 上一版 `slotNamesIn()` 只匹配 `slots.register|add|get|mount` ✗ ⇒
+ * ① `theme.register` **不在列** ② 名字是**变量**不是字面量 ✗ —— 两处都漏 ⇒ 判成"不清楚" ✗。
+ *
+ * ⇒ 修法：**按"谁在被调用"判**（命名空间 ✓），比按"名字长什么样"判可靠得多 ✓ ——
+ * `ctx.theme.register(…)` 无论 id 叫什么、是不是变量，**它都是主题 ⇒ 全局** ✓。
+ *
+ * 这与那四条根因同族：**判据面没被真实样本校准**（这次的真实样本是主题插件 ✓）。
+ */
+const GLOBAL_NAMESPACES = ['theme', 'settings', 'layout', 'sidebar', 'titlebar', 'workspace']
+
+/**
+ * 从源码里找出**App 级命名空间的注册/设置调用**（如 `ctx.theme.register(`）。
+ *
+ * 只看"调用发生在谁身上" —— 不看参数长什么样 ✓（参数可能是变量 ✓）。
+ */
+function globalNamespacesIn(source: string): string[] {
+  const out = new Set<string>()
+  const re = new RegExp(
+    `(?:^|[^\\w$])(?:ctx\\s*\\.\\s*)?(${GLOBAL_NAMESPACES.join('|')})\\s*\\.\\s*` +
+      `(?:register|setTheme|set\\w*|add|contribute|mount|apply|install|provide)\\s*\\(`,
+    'g',
+  )
+  for (const m of source.matchAll(re)) out.add(m[1])
+  return [...out]
+}
+
+/**
+ * 解析源码里的**字面量常量**（`const THEME_ID = "cyberpunk2077"`）。
+ *
+ * 用途：注册调用常常传变量而不是字面量 ✗ ⇒ 不追常量就"看不见"那个名字 ✓。
+ * 只认**直接赋字面量**（一层 ✓）：不做出跨文件的常量传播 —— 那是编译器的事，
+ * 而这里只要"够用且不猜" ✓。
+ */
+function literalConstantsIn(source: string): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const m of source.matchAll(
+    /(?:^|[\s;{(])(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*['"`]([^'"`\r\n]+)['"`]/g,
+  )) {
+    out.set(m[1], m[2])
+  }
+  return out
+}
+
+/**
  * 从客户端源码里抠出"像槽位名"的字符串字面量。
  *
- * ⚠️ **两条来源缺一不可**（负控抓出来的）：
+ * ⚠️ **三条来源缺一不可**（每一条都是被真实样本逼出来的）：
  *
- *   ① **注册调用位置**的字符串：`slots.register('sidebar', …)` / `slots.get('x')` 之类 ✓
- *      —— 这一条能抓到**单词槽位名**（`sidebar`）✗
- *   ② 形如 `a.b` 的**带点小写标识符** ✓ —— 抓那些不以调用形式出现、直接写在配置里的名字 ✓
+ *   ① **注册调用位置**的字符串：`slots.register('sidebar', …)` ✓
+ *      —— 能抓到**单词槽位名**（`sidebar`）✗（第一版只认带点的名字 ⇒ 整类漏掉 ✗）
+ *   ② 形如 `a.b` 的**带点小写标识符** ✓ —— 配置里直接写的名字 ✓
+ *   ③ **变量常量**（`const THEME_ID = "cyberpunk2077"` 然后 `register(THEME_ID)`）✓
+ *      —— 名字是变量时，只有追到常量才看得见 ✗（主题插件就是这么写的 ✓）
  *
- * 第一版**只有第 ② 条** ⇒ `'sidebar'`（无点）被整类漏掉 ✗ ⇒
- * 用户点名的那张全局卡会被判成 `unclear` ✗。
- * 是**负控**（"应当不通过"的样本）把它照出来的 ✓ —— 与 `import '@pkg/x'` 那次同一个形状 ✓。
+ * 每一条都是**负控**（"应当不通过"的样本）抓出来的 ✓ ——
+ * 只证明"它这次没报错"是不够的，还要证明"**它该报的时候还会报**" ✓。
  */
 function slotNamesIn(source: string): string[] {
   const out = new Set<string>()
+  const consts = literalConstantsIn(source)
 
-  /** ① 注册/取用调用的第一个参数（DSH 的槽位名就从这儿来）。 */
+  /** ① / ③ 注册调用：参数是字面量就直接收，是标识符就查常量 ✓。 */
   for (const m of source.matchAll(
-    /(?:slots?\s*\.\s*(?:register|add|get|contribute|mount)|register(?:Slot|UI)?|contributes?)\s*\(\s*['"`]([^'"`\r\n]+)['"`]/g,
+    /(?:slots?\s*\.\s*(?:register|add|get|contribute|mount)|register(?:Slot|UI)?|contributes?)\s*\(\s*(?:['"`]([^'"`\r\n]+)['"`]|([A-Za-z_$][\w$]*))/g,
   )) {
-    out.add(m[1])
+    const literal = m[1]
+    const ident = m[2]
+    if (literal) out.add(literal)
+    else if (ident && consts.has(ident)) out.add(consts.get(ident)!)
   }
 
   /** ② 带点的小写标识符（配置里直接写的槽位名）。 */
@@ -128,9 +188,25 @@ export function analyzeSuitability(cardDir: string, hasClient?: boolean): CardSu
   }
 
   /** 走到这里 `ok === true` ⇒ `source` 一定有 ✓（上面的分支已排除）。 */
-  const slots = slotNamesIn(artifact.source ?? '')
+  const src = artifact.source ?? ''
+  const slots = slotNamesIn(src)
+  /**
+   * **命名空间优先**：`ctx.theme.register(…)` 无论 id 叫什么、是不是变量 ⇒ **它就是全局** ✓。
+   * 这一条比"按名字猜"可靠得多 ✓（主题插件就是这么漏过去的 ✗）。
+   */
+  const ns = globalNamespacesIn(src)
   const globalHits = slots.filter((s) => GLOBAL_SLOT_HINTS.some((h) => s === h || s.startsWith(h)))
   const localHits = slots.filter((s) => LOCAL_SLOT_HINTS.some((h) => s.startsWith(h)))
+
+  if (ns.length > 0) {
+    return {
+      scope: 'global',
+      why:
+        `**全局 UI**（调用了 App 级命名空间：${ns.map((n) => `ctx.${n}`).join(' / ')}）—— ` +
+        `主题/设置/布局这类是**整个 App 的**，不属于某条连接。挂得上也不建议 ✗`,
+      globalHits: [...ns, ...globalHits],
+    }
+  }
 
   if (globalHits.length > 0) {
     return {

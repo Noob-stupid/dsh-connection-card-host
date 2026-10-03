@@ -111,6 +111,77 @@ try {
     ok(r.scope === 'global', `混着注册时按 global 算（实测 ${r.scope}）`)
     ok(r.globalHits.includes('sidebar'), '命中列表里能看到是哪个槽位导致的')
   }
+  console.log('── ⑥ ⚠️ 主题型全局（对端复核抓到的漏判，真实样本 dsh-theme-cyberpunk2077）')
+
+  {
+    /**
+     * 真实证据的原文形状：
+     *
+     *     ctx.theme.register({ id: THEME_ID, … })     ← 名字是**变量**，不是字面量 ✗
+     *     ctx.theme.setTheme(THEME_ID)
+     *     const THEME_ID = "cyberpunk2077"
+     *
+     * 上一版**两处都漏**：`theme.register` 不在匹配列表 ✗、名字是变量 ✗ ⇒ 判成 `unclear` ✗
+     * ⇒ 用户点名"不符合口径" ✓。
+     */
+    const dir = join(root, 'theme-plugin')
+    mkdirSync(join(dir, 'lib'), { recursive: true })
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({
+        name: 'theme-plugin',
+        version: '1.0.0',
+        exports: { './client': './lib/client.js' },
+        dsh: { client: { platform: 'web' } },
+      }),
+    )
+    writeFileSync(
+      join(dir, 'lib', 'client.js'),
+      [
+        `const THEME_ID = "cyberpunk2077"`,
+        `window.__ModuleLoader__.load({ id: 'theme-plugin', factory(require) {`,
+        `  ctx.theme.register({ id: THEME_ID, tokens: {} })`,
+        `  ctx.theme.setTheme(THEME_ID)`,
+        `  return { inject: ['slots'], apply() {} }`,
+        `} })`,
+      ].join('\n'),
+    )
+    const r = analyzeSuitability(dir)
+    ok(r.scope === 'global', `主题插件 ⇒ **必须**判 global（实测 ${r.scope}）`)
+    ok(
+      r.globalHits.some((h) => h === 'theme'),
+      `理由里要指出是 **ctx.theme**（而不是靠猜 id 名字；实测 [${r.globalHits.join(', ')}]）`,
+    )
+    ok(suitabilityBadge(r).kind === 'warn', '徽标语气是"警告"（不建议当卡片）')
+  }
+
+  console.log('── ⑦ 变量常量也能追（`register(NAME)` 而不是字面量）')
+
+  {
+    const dir = join(root, 'const-slot')
+    mkdirSync(join(dir, 'lib'), { recursive: true })
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({
+        name: 'const-slot',
+        version: '1.0.0',
+        exports: { './client': './lib/client.js' },
+        dsh: { client: { platform: 'web' } },
+      }),
+    )
+    writeFileSync(
+      join(dir, 'lib', 'client.js'),
+      [
+        `const SLOT = "sidebar"`,
+        `window.__ModuleLoader__.load({ id: 'const-slot', factory(require) {`,
+        `  slots.register(SLOT, () => null)`,
+        `  return { inject: ['slots'], apply() {} }`,
+        `} })`,
+      ].join('\n'),
+    )
+    const r = analyzeSuitability(dir)
+    ok(r.scope === 'global', `常量槽位名 ${'`sidebar`'} 也要追出来 ⇒ global（实测 ${r.scope}）`)
+  }
 } finally {
   rmSync(root, { recursive: true, force: true })
 }
