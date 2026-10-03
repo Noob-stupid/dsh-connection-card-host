@@ -11,12 +11,12 @@
  *
  * 跑法：node scripts/test-install.mjs
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
 
 import { checkPackage, ensureAdapterManifest, looksLikeDshPlugin } from '../lib/card-host/package-check.js'
-import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor } from '../lib/card-host/installer.js'
+import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, classifyDownloadFailure } from '../lib/card-host/installer.js'
 
 let pass = 0
 let fail = 0
@@ -261,6 +261,61 @@ try {
 
     const plain = downloadChannelsFor('https://registry.npmjs.org/x/-/x-1.0.0.tgz')
     eq(plain.map((c) => c.name), ['direct'], '非 GitHub：只有直连一条通道')
+  }
+
+  /* ═══════════ 5. 通道记忆：按 channelId（不是 URL 模板）+ 纯函数排序 ═══════════ */
+
+  console.log('── 5. 下载通道记忆（对端点明：键必须是 channelId）')
+
+  {
+    const chs = downloadChannelsFor('https://github.com/o/r/archive/refs/heads/main.tar.gz')
+
+    eq(orderChannels(chs, '').map((c) => c.id), ['codeload', 'ghproxy', 'github-direct'], '没有记忆 ⇒ 原顺序')
+    eq(
+      orderChannels(chs, 'ghproxy').map((c) => c.id),
+      ['ghproxy', 'codeload', 'github-direct'],
+      '命中记忆 ⇒ 挪到最前，其余顺序不变',
+    )
+    eq(
+      orderChannels(chs, '不存在的通道').map((c) => c.id),
+      ['codeload', 'ghproxy', 'github-direct'],
+      '记忆里的通道已不在表里 ⇒ 不动（镜像会死，不能因此崩）',
+    )
+
+    /**
+     * ⚠️ 这条是**对端点名我必须改的那处**：他们的 URL 模板与仓库无关、可复用；
+     * 我们的 archive URL 带 owner/repo/branch —— 若按模板记忆，会"每仓库一条、永远记不住"。
+     * 所以记忆里只存 **channelId**。
+     */
+    const memoFile = join(dirname(cardsRoot), 'download-memo.json')
+    ok(!existsSync(memoFile), '一开始没有记忆文件')
+    eq(readDownloadMemo(cardsRoot), '', '没有记忆 ⇒ 返回空串')
+    rememberDownloadChannel(cardsRoot, 'codeload')
+    eq(readDownloadMemo(cardsRoot), 'codeload', '记住的是 channelId（与具体仓库无关）')
+    const memoRaw = JSON.parse(readFileSync(memoFile, 'utf8'))
+    ok(!/github\.com|codeload\.github/.test(JSON.stringify(memoRaw)), '记忆里**不含 URL**（否则换个仓库就失效）')
+
+    // 读盘坏了也要能继续（记忆只是优化）
+    writeFileSync(memoFile, '{ 这不是 JSON', 'utf8')
+    eq(readDownloadMemo(cardsRoot), '', '记忆文件损坏 ⇒ 当没有（绝不抛）')
+    unlinkSync(memoFile)
+  }
+
+  /* ═══════════ 6. 失败归因：证书/代理拦截 vs 网络不可达 ═══════════ */
+
+  console.log('── 6. 失败归因（可执行的下一步）')
+
+  {
+    const cert = classifyDownloadFailure('curl: (60) SSL certificate problem: UNABLE_TO_VERIFY_LEAF_SIGNATURE')
+    eq(cert.kind, 'intercepted', '证书类 ⇒ intercepted')
+    ok(/加速器|代理/.test(cert.note), '归因里指出"本机有加速器/代理"并给出下一步')
+
+    const revoke = classifyDownloadFailure('schannel: CRYPT_E_NO_REVOCATION_CHECK')
+    eq(revoke.kind, 'intercepted', '吊销检查失败也归到 intercepted（今天真实撞到的就是它）')
+
+    const net = classifyDownloadFailure('getaddrinfo ENOTFOUND codeload.github.com')
+    eq(net.kind, 'unreachable', '域名解析不了 ⇒ unreachable')
+    ok(/网络不可达/.test(net.note), '文案区分开了')
   }
 } finally {
   rmSync(root, { recursive: true, force: true })

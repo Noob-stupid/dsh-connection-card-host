@@ -71,6 +71,39 @@ export declare const PLUGIN_SOURCE = "dsh-connection-card-host";
  * 第三方插件的规范形状是 `plugin:<包名>`，与框架自带的 V3→V4 迁移器一致。
  */
 export declare const PLUGIN_SOURCE_KIND = "plugin:dsh-connection-card-host";
+/**
+ * **冷唤醒投递的前缀** —— 只加在"对端会话当时不在线"那条路径上。
+ *
+ * ## 为什么需要（对端 2026-10-04 双侧 A/B 实测）
+ *
+ * 同一套机制，两种落点，观感差别很大：
+ *
+ *   · 对端 **live**  → 走 `agents.followup` → 落在代理收件箱 → 界面显示**折叠卡**
+ *   · 对端 **冷**    → 走 `sessionController.prompt` 兜底 → 落地成**一条普通用户消息**
+ *                      → 界面就是一大段纯文本，**没有卡片壳**
+ *
+ * 后果不是"难看"，而是**误导**：用户看到纯文本会以为"卡片功能坏了"
+ * （对端说他们被这么问过两次）。而投递方控制不了渲染 —— 只能由我们在**内容**上标出来。
+ *
+ * ## 为什么加在 content 上（而不是等对端带字段）
+ *
+ * 这条路径的 `content` 是**我们自己拼的**，所以标识完全在我们手里：
+ * 不需要对端改任何东西，也不需要约定额外字段。
+ *
+ * 措辞要**先说清不是故障**，再说缘由 —— 用户第一眼是"咦怎么没卡片"，
+ * 那句话就是回答他的。
+ */
+export declare const COLD_DELIVERY_PREFIX: string;
+/**
+ * 一次投递的**内容块**（DSH 的消息内容格式：`[{ type: 'text', text }]`）。
+ * 冷唤醒要往前插一块，所以这里按数组处理而不是字符串。
+ */
+export type DeliveryContent = {
+    type: string;
+    text?: string;
+}[];
+/** 给冷唤醒投递的内容加上可识别前缀（纯函数，便于离线断言）。 */
+export declare function markColdDelivery(content: DeliveryContent): DeliveryContent;
 export declare class SessionBridge {
     private ctx;
     private listeners;

@@ -26,7 +26,7 @@
  * —— 为了装一张卡片把包管理器拖进来不值得，而且 pnpm 会改写 profile。
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, copyFileSync, writeFileSync, statSync, unlinkSync, rmdirSync, renameSync, type Dirent } from 'node:fs'
-import { join, basename, resolve } from 'node:path'
+import { join, basename, resolve, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -167,8 +167,16 @@ export function toCodeloadUrl(url: string): string | undefined {
   return `https://codeload.github.com/${owner}/${repo}/tar.gz/refs/${kind}/${ref}`
 }
 
-/** 一个下载通道：名字（写审计用）+ 真实 URL。 */
+/** 一个下载通道：稳定 id（记忆用）+ 名字（审计用）+ 真实 URL。 */
 interface DownloadChannel {
+  /**
+   * 稳定标识（如 `codeload` / `ghproxy` / `direct`）。
+   *
+   * ⚠️ **记忆必须按 id 存，不能按 URL 模板存** —— 对端点明的一处：
+   * 他们的 git URL 与仓库无关、模板可复用；而我们的 archive URL **带 owner/repo/branch**，
+   * 存模板会"每仓库一条、永远记不住"。
+   */
+  id: string
   name: string
   url: string
 }
@@ -187,12 +195,90 @@ export function downloadChannelsFor(url: string): DownloadChannel[] {
   const codeload = toCodeloadUrl(trimmed)
   if (codeload) {
     return [
-      { name: 'codeload', url: codeload },
-      { name: 'ghproxy', url: `https://ghproxy.net/${trimmed}` },
-      { name: 'github-direct', url: trimmed },
+      { id: 'codeload', name: 'codeload', url: codeload },
+      { id: 'ghproxy', name: 'ghproxy', url: `https://ghproxy.net/${trimmed}` },
+      { id: 'github-direct', name: 'github-direct', url: trimmed },
     ]
   }
-  return [{ name: 'direct', url: trimmed }]
+  return [{ id: 'direct', name: 'direct', url: trimmed }]
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+ * 记忆：上次成功的通道（对端参考实现的第一块）
+ *
+ * 三条纪律照抄（都是他们真机踩出来的）：
+ *   1. 读盘失败**返回空**，绝不抛 —— 记忆只是优化
+ *   2. 写盘失败**静默** —— 不能因为"记不住"就装不上
+ *   3. 排序是**纯函数**，便于离线断言
+ * ══════════════════════════════════════════════════════════════════════ */
+
+/** 记忆文件放在 cards 的**同级**（`$DSH_HOME/connection-cards/download-memo.json`）。 */
+function memoPathFor(cardsRoot: string): string {
+  return join(dirname(cardsRoot), 'download-memo.json')
+}
+
+/** 读"上次成功的通道 id"。任何异常都当没有（绝不抛）。 */
+export function readDownloadMemo(cardsRoot: string): string {
+  try {
+    const raw = readFileSync(memoPathFor(cardsRoot), 'utf8')
+    const parsed = JSON.parse(raw) as { channelId?: unknown }
+    return typeof parsed.channelId === 'string' ? parsed.channelId : ''
+  } catch {
+    return ''
+  }
+}
+
+/** 记住这次成功的通道。**写盘失败静默**。 */
+export function rememberDownloadChannel(cardsRoot: string, channelId: string): void {
+  try {
+    writeFileSync(
+      memoPathFor(cardsRoot),
+      JSON.stringify({ channelId, at: Date.now() }, null, 2),
+      'utf8',
+    )
+  } catch {
+    /* 记忆只是优化 —— 写不进就算了 */
+  }
+}
+
+/**
+ * 把上次成功的通道**挪到最前**，其余顺序不变（纯函数）。
+ *
+ * 为什么值钱：在"直连不通、只有某个镜像可用"的环境里，这一步省掉一整轮无谓探活/失败等待。
+ */
+export function orderChannels(
+  channels: DownloadChannel[],
+  preferredId: string,
+): DownloadChannel[] {
+  if (!preferredId) return channels
+  const i = channels.findIndex((c) => c.id === preferredId)
+  if (i <= 0) return channels
+  const out = [...channels]
+  const [hit] = out.splice(i, 1)
+  out.unshift(hit!)
+  return out
+}
+
+/**
+ * 下载失败的**归因**（对端参考实现里最有用的一段）。
+ *
+ * 关键是识别出"**本机代理/证书拦截**"这一类 —— 今天撞的
+ * `UNABLE_TO_VERIFY_LEAF_SIGNATURE` 与 `CRYPT_E_NO_REVOCATION_CHECK` 都在这一类里。
+ * 指引里写"检测到本机加速器/代理，建议关掉再试"比"请检查网络"有用一个量级。
+ */
+export function classifyDownloadFailure(text: string): { kind: 'intercepted' | 'unreachable'; note: string } {
+  const t = String(text ?? '')
+  if (
+    /certificate|CERT_|self[- ]signed|UNABLE_TO_VERIFY|CRYPT_E_|SSL|TLS|proxy|ECONNREFUSED|ERR_PROXY/iu.test(
+      t,
+    )
+  ) {
+    return {
+      kind: 'intercepted',
+      note: `本地代理/证书拦截（${t.slice(0, 90)}）—— 检测到本机有加速器/代理，建议关闭后重试`,
+    }
+  }
+  return { kind: 'unreachable', note: `网络不可达（${t.slice(0, 90) || '连接失败'}）` }
 }
 
 /** `curl.exe` 是否存在（Windows 上必须显式带 .exe —— 见 downloadTo 的说明）。 */
@@ -242,9 +328,16 @@ async function downloadTo(
   url: string,
   destPath: string,
   auditLog: (msg: string) => void,
+  cardsRoot: string,
 ): Promise<{ ok: boolean; via?: string; reason?: string }> {
-  const channels = downloadChannelsFor(url)
+  const preferred = readDownloadMemo(cardsRoot)
+  const channels = orderChannels(downloadChannelsFor(url), preferred)
+  if (preferred && channels[0]?.id === preferred) {
+    auditLog(`按记忆优先走 ${preferred}（上次成功的通道）`)
+  }
   const errors: string[] = []
+  /** 每个通道**实际传了多少字节** —— 对端点明：失败指引里要有这个数字。 */
+  const transferred: string[] = []
 
   for (const ch of channels) {
     const partPath = `${destPath}.part`
@@ -252,7 +345,12 @@ async function downloadTo(
     // ① curl（系统 TLS 栈）—— 首选
     if (hasCurl()) {
       try {
-        execFileSync(
+        /**
+         * `--write-out` 把**实际下载字节数**与平均速率带回来：
+         * 失败指引里带上它，用户（和我们）才能一眼判断"该换源"还是"该等" ——
+         * `0 B` 说明连上但一个字节都没传（该立刻换通道），有字节在涨则值得加时重试。
+         */
+        const out = execFileSync(
           CURL_BIN,
           [
             '-sSL',
@@ -261,19 +359,24 @@ async function downloadTo(
             '--max-time', '300',
             '--speed-limit', '1',
             '--speed-time', '45',
+            '-w', '%{size_download} %{speed_download}',
             '-o', partPath,
             ch.url,
           ],
-          { stdio: 'pipe', timeout: 330_000, killSignal: 'SIGKILL' },
+          { stdio: 'pipe', timeout: 330_000, killSignal: 'SIGKILL', encoding: 'utf8' },
         )
+        const [bytes] = String(out ?? '').trim().split(/\s+/)
+        transferred.push(`${ch.name}: ${bytes || '?'} 字节`)
         if (existsSync(partPath) && statSync(partPath).size > 0) {
           renameSync(partPath, destPath)
-          if (ch.name !== 'direct') auditLog(`下载走 ${ch.name}（curl）`)
+          rememberDownloadChannel(cardsRoot, ch.id)
+          if (ch.name !== 'direct') auditLog(`下载走 ${ch.name}（curl，${bytes || '?'} 字节）`)
           return { ok: true, via: `curl:${ch.name}` }
         }
-        errors.push(`${ch.name}: curl 下到空文件`)
+        errors.push(`${ch.name}: curl 返回成功但文件为空`)
       } catch (e) {
-        errors.push(`${ch.name}: curl ${e instanceof Error ? e.message.slice(0, 90) : String(e)}`)
+        const text = e instanceof Error ? e.message.slice(0, 90) : String(e)
+        errors.push(`${ch.name}: curl ${text}`)
       }
     }
 
@@ -284,30 +387,39 @@ async function downloadTo(
         errors.push(`${ch.name}: HTTP ${resp.status}`)
       } else {
         const buf = Buffer.from(await resp.arrayBuffer())
+        transferred.push(`${ch.name}: ${buf.length} 字节`)
         if (buf.length === 0) {
-          errors.push(`${ch.name}: fetch 下到空文件`)
+          errors.push(`${ch.name}: fetch 返回空文件`)
         } else {
           writeFileSync(partPath, buf)
           renameSync(partPath, destPath)
-          auditLog(`下载走 ${ch.name}（fetch）`)
+          rememberDownloadChannel(cardsRoot, ch.id)
+          auditLog(`下载走 ${ch.name}（fetch，${buf.length} 字节）`)
           return { ok: true, via: `fetch:${ch.name}` }
         }
       }
     } catch (e) {
-      errors.push(`${ch.name}: fetch ${e instanceof Error ? e.message.slice(0, 90) : String(e)}`)
+      const text = e instanceof Error ? e.message.slice(0, 90) : String(e)
+      errors.push(`${ch.name}: fetch ${text}`)
     }
   }
 
+  /**
+   * 归因：把"证书/代理拦截"与"网络不可达"分开说 ——
+   * 前者有**可执行的下一步**（关掉加速器/代理），后者才是真的网络问题。
+   */
+  const attribution = classifyDownloadFailure(errors.join(' | '))
   return {
     ok: false,
     reason:
       `下载失败，已试过 ${channels.length} 个通道：` +
       errors.map((e) => `\n    · ${e}`).join('') +
+      (transferred.length > 0 ? `\n  各通道实传：${transferred.join('；')}` : '') +
+      `\n  归因：**${attribution.note}**` +
       `\n  可执行的下一步（按可信度排序）：` +
       `\n    1) 若能拿到 codeload 链接，直接用它（官方通道，无重定向、无 API 配额）` +
       `\n    2) 若这是 npm 包，改用包名安装（走 registry）` +
-      `\n    3) 镜像兜底：在 GitHub 链接前加 https://ghproxy.net/（镜像可能不稳，需自行探活）` +
-      `\n  若你所在机器上"Node 的网络被拦、而 curl/系统 git 仍可用"，上面第 1/3 条通常能过。`,
+      `\n    3) 镜像兜底：在 GitHub 链接前加 https://ghproxy.net/（镜像可能不稳，需自行探活）`,
   }
 }
 
@@ -448,7 +560,7 @@ export async function installCard(
       sourceDir = packageRootUnder(unpacked)
     } else if (kind === 'tgz-url') {
       const tgzPath = join(work, 'download.tgz')
-      const dl = await downloadTo(raw, tgzPath, auditLog)
+      const dl = await downloadTo(raw, tgzPath, auditLog, cardsRoot)
       if (!dl.ok) throw new Error(dl.reason ?? '下载失败')
       const unpacked = join(work, 'unpacked')
       extractTgz(tgzPath, unpacked)
