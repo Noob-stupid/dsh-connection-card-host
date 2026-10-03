@@ -319,39 +319,110 @@ export function orderChannels(
 }
 
 /**
- * 下载失败的**归因**（对端参考实现里最有用的一段）。
+ * 下载失败的**归因** —— 只吃**结构化输入**，不解析人类可读文本。
  *
- * 关键是识别出"**本机代理/证书拦截**"这一类 —— 今天撞的
- * `UNABLE_TO_VERIFY_LEAF_SIGNATURE` 与 `CRYPT_E_NO_REVOCATION_CHECK` 都在这一类里。
- * 指引里写"检测到本机加速器/代理，建议关掉再试"比"请检查网络"有用一个量级。
+ * > **能拿到结构化信号时，永远不要解析人类可读文本** ——
+ * > 文本会被人改、被工具包装、被本地化，而**退出码是契约**。
+ *
+ * ## 为什么必须有这条纪律（我们真踩过）
+ *
+ * 上一版是"拿 `error.message` 做正则"。而 Node 抛错时会把**整条命令行**回显进 message，
+ * 我们的 argv 里就有 `--connect-timeout` / `--max-time` ⇒ 正则里只要出现 `timeout` 这个词，
+ * **任何** curl 失败都会被归成"超时"（实测：一个 404 被报成"超时，包可能较大" ✗）。
+ * 换个参数名还会再中一次 —— 所以**根治办法是别拿文本判类**。
+ *
+ * ## 两条配套纪律
+ *
+ *   1. **默认桶必须是 `unknown`**（带退出码 + stderr 尾部），**绝不 default 到某个具体原因** ——
+ *      上一版 default 到"超时"**就是那个 bug 本身**
+ *   2. 文本只作**展示**（stderr 尾部原样给用户看），**不参与判类**
  */
-export function classifyDownloadFailure(text: string): { kind: 'intercepted' | 'unreachable' | 'timeout'; note: string } {
-  const t = String(text ?? '')
+export type DownloadFailureKind =
+  | 'dns'
+  | 'connect'
+  | 'http-status'
+  | 'timeout'
+  | 'ssl'
+  | 'cert'
+  | 'recv'
+  | 'partial'
+  | 'proxy'
+  | 'unknown'
+
+/** 结构化输入 —— 只有这些字段参与判类。 */
+export interface DownloadFailureInput {
+  /** curl 退出码（`execFileSync` 抛错时在 `error.status`）。 */
+  code?: number | string | undefined
+  /** 被信号杀死时的信号名。 */
+  signal?: string | undefined
+  /** stderr 尾部 —— **仅用于展示**。 */
+  stderrTail?: string | undefined
+}
+
+/**
+ * curl 退出码 → 归因。**这张表就是契约**（对端给的清单）。
+ *
+ * 其中两条对我们特别有用：
+ *   · `22` = HTTP ≥400（配 `-f` 才有）—— "这个地址没有这个包"的**正解**（上一版被误判成超时的那类）
+ *   · `18` = 传输不完整 ⇒ **"截断"的结构化信号**，零额外请求就能判
+ */
+const CURL_EXIT: Record<number, { kind: DownloadFailureKind; note: string }> = {
+  5: { kind: 'proxy', note: '代理无法解析（本机代理设置有问题）' },
+  6: { kind: 'dns', note: '域名解析失败（DNS 或该主机名不存在）' },
+  7: { kind: 'connect', note: '连接失败（被拒绝或不可达）' },
+  18: { kind: 'partial', note: '传输不完整（**截断**）—— 重试或换通道' },
+  22: { kind: 'http-status', note: '服务端返回 HTTP 错误（**这个地址没有这个包**，或需要鉴权）' },
+  28: { kind: 'timeout', note: '超时 —— 包可能较大或链路慢，可重试或换通道' },
+  35: { kind: 'ssl', note: 'SSL 连接错误' },
+  56: { kind: 'recv', note: '接收失败（连接被重置）—— 常见于镜像不稳' },
+  60: { kind: 'cert', note: '证书校验失败 —— 检测到本机有加速器/代理，建议关掉再试' },
+  92: { kind: 'recv', note: 'HTTP/2 流错误 —— 换通道或重试' },
+  97: { kind: 'proxy', note: '代理握手失败（本机代理设置有问题）' },
+}
+
+export function classifyCurlExit(input: DownloadFailureInput): {
+  kind: DownloadFailureKind
+  note: string
+} {
+  const n = typeof input.code === 'string' ? Number(input.code) : input.code
+  if (typeof n === 'number' && Number.isFinite(n) && n in CURL_EXIT) {
+    return CURL_EXIT[n]!
+  }
   /**
-   * ⚠️ **两个来源的超时都要认**（对端点明的一条）：
-   *   · 我们自己的 exec 超时 → `ETIMEDOUT` / killed
-   *   · **curl 自己的 `--max-time` 超时 → `curl: (28) Operation timed out`，不带任何标志位**
-   * 只认前者会把 curl 超时归成"未知失败"，归因就错了。
-   *
-   * ⚠️⚠️ **但绝不能只写 `timeout` 这个词**：Node 抛错时会把**整条命令行**回显在消息里，
-   * 而我们的命令行里就有 `--connect-timeout` / `--max-time` ⇒ 那会让**任何** curl 失败
-   * 都被归成"超时"（实测踩到：一个 404 被报成"超时，包可能较大" ✗）。
-   * 所以只认**精确形态**：curl 的退出码 `(28)`、`ETIMEDOUT`、`timed out`。
+   * 被信号杀死（例如我们自己的 exec 超时）：`SIGKILL` / `SIGTERM`。
+   * 这仍然**不猜具体原因**（可能真的是超时，也可能是被杀）—— 归到 timeout 是因为
+   * 我们**只在超时路径上**设 `killSignal`（调用点唯一），所以这个归因是有依据的。
    */
-  if (/curl: \(28\)|ETIMEDOUT|timed out|Operation timed out|killed/iu.test(t)) {
-    return { kind: 'timeout', note: `超时（${t.slice(0, 90)}）—— 包可能较大或链路慢，可重试或换通道` }
+  if (input.signal) {
+    return { kind: 'timeout', note: `进程被中断（${input.signal}）—— 通常是超时` }
   }
-  if (
-    /certificate|CERT_|self[- ]signed|UNABLE_TO_VERIFY|CRYPT_E_|SSL|TLS|proxy|ECONNREFUSED|ERR_PROXY/iu.test(
-      t,
-    )
-  ) {
-    return {
-      kind: 'intercepted',
-      note: `本地代理/证书拦截（${t.slice(0, 90)}）—— 检测到本机有加速器/代理，建议关闭后重试`,
-    }
+  // ⚠️ **默认桶：unknown。绝不 default 到某个具体原因。**
+  return {
+    kind: 'unknown',
+    note: `未知原因${typeof input.code === 'number' ? `（curl 退出码 ${input.code}）` : ''}`,
   }
-  return { kind: 'unreachable', note: `网络不可达（${t.slice(0, 90) || '连接失败'}）` }
+}
+
+/**
+ * `fetch` 失败的归因 —— 同样**只用结构化字段**：`error.cause.code`。
+ *
+ * 这不是文本解析：`UNABLE_TO_VERIFY_LEAF_SIGNATURE` 这类是 Node 的**错误码**（契约），
+ * 而 `error.message` 只是包装文案（不参与判类）。
+ */
+export function classifyFetchError(e: unknown): { kind: DownloadFailureKind; note: string } {
+  const code = String(
+    (e as { cause?: { code?: unknown } } | null)?.cause?.code ?? (e as { code?: unknown } | null)?.code ?? '',
+  )
+  if (/UNABLE_TO_VERIFY|CERT_|SELF_SIGNED|DEPTH_ZERO/iu.test(code)) {
+    return { kind: 'cert', note: `证书校验失败（${code}）—— 检测到本机有加速器/代理，建议关掉再试` }
+  }
+  if (/ENOTFOUND|EAI_AGAIN/iu.test(code)) return { kind: 'dns', note: `域名解析失败（${code}）` }
+  if (/ECONNREFUSED|ECONNRESET|EHOSTUNREACH|ENETUNREACH/iu.test(code)) {
+    return { kind: 'connect', note: `连接失败（${code}）` }
+  }
+  if (/ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT/iu.test(code)) return { kind: 'timeout', note: `超时（${code}）` }
+  if (/ERR_PROXY|PROXY/iu.test(code)) return { kind: 'proxy', note: `代理问题（${code}）` }
+  return { kind: 'unknown', note: `未知原因${code ? `（${code}）` : '（fetch 失败）'}` }
 }
 
 /** `curl.exe` 是否存在（Windows 上必须显式带 .exe —— 见 downloadTo 的说明）。 */
@@ -431,7 +502,7 @@ export function probeChannel(url: string, timeoutMs = 4000): { alive: boolean; n
     return { alive: true, note: '探活没拿到状态码（按活处理，交给实际下载判）' }
   } catch (e) {
     const text = e instanceof Error ? e.message : String(e)
-    return { alive: false, note: classifyDownloadFailure(text).note }
+    return { alive: false, note: classifyCurlExit({ code: (e as { status?: number }).status, signal: (e as { signal?: string }).signal }).note }
   }
 }
 
@@ -656,7 +727,19 @@ async function downloadTo(
           const got = partSizeOnDisk(partPath)
           if (got > 0) transferred.push(`${ch.name}: ${got} 字节后中断（磁盘口径）`)
           else transferred.push(`${ch.name}: 0 字节（磁盘口径；-w 报 ${bytesFromExecError(e)}）`)
-          errors.push(`${ch.name}: curl ${text}`)
+
+          /**
+           * 归因走**结构化退出码**（`error.status`），不解析文本 ——
+           * 文本（Node 回显的整条命令行）**只作为展示**附在后面。
+           */
+          const cls = classifyCurlExit({
+            code: (e as { status?: number }).status,
+            signal: (e as { signal?: string }).signal,
+          })
+          const stderrTail = String((e as { stderr?: unknown }).stderr ?? '').trim().slice(-160)
+          errors.push(
+            `${ch.name}: curl 失败【${cls.note}】` + (stderrTail ? ` :: ${stderrTail}` : ''),
+          )
 
           /**
            * 只加时**一次**，且只在"确实传了东西"时。
@@ -692,23 +775,35 @@ async function downloadTo(
         }
       }
     } catch (e) {
+      /** fetch 也走**结构化**：`error.cause.code` 是契约，`message` 只是包装文案。 */
+      const cls = classifyFetchError(e)
       const text = e instanceof Error ? e.message.slice(0, 90) : String(e)
-      errors.push(`${ch.name}: fetch ${text}`)
+      errors.push(`${ch.name}: fetch 失败【${cls.note}】 :: ${text}`)
     }
   }
 
   /**
-   * 归因：把"证书/代理拦截"与"网络不可达"分开说 ——
-   * 前者有**可执行的下一步**（关掉加速器/代理），后者才是真的网络问题。
+   * 归因：**不再从错误文本里猜**（那正是上一版"任何失败都成超时"的根因）。
+   *
+   * 上面每条 `errors` 里已经带了**逐通道的结构化归因**，这里只做**汇总**：
+   * 若所有通道都指向同一类，就把它抬成总归因；否则如实说"原因不一，看上面逐条"。
+   * 默认桶是"未知"，**绝不默认到某个具体原因**。
    */
-  const attribution = classifyDownloadFailure(errors.join(' | '))
+  const kinds = errors.map((e) => /【([^】]+)】/.exec(e)?.[1] ?? '').filter(Boolean)
+  const unique = [...new Set(kinds)]
+  const attribution =
+    unique.length === 1
+      ? `各通道一致：${unique[0]}`
+      : unique.length > 1
+        ? `各通道原因不同（${unique.length} 种）—— 看上面逐条`
+        : '未能确定原因（没有拿到结构化退出码）'
   return {
     ok: false,
     reason:
       `下载失败，已试过 ${channels.length} 个通道：` +
       errors.map((e) => `\n    · ${e}`).join('') +
       (transferred.length > 0 ? `\n  各通道实传（磁盘口径）：${transferred.join('；')}` : '') +
-      `\n  归因：**${attribution.note}**` +
+      `\n  归因：**${attribution}**` +
       `\n  可执行的下一步（按可信度排序）：` +
       `\n    1) 若能拿到 codeload 链接，直接用它（官方通道，无重定向、无 API 配额）` +
       `\n    2) 若这是 npm 包，改用包名安装（走 registry）` +

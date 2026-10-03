@@ -96,14 +96,46 @@ export declare function rememberDownloadChannel(cardsRoot: string, channelId: st
  */
 export declare function orderChannels(channels: DownloadChannel[], preferredId: string): DownloadChannel[];
 /**
- * 下载失败的**归因**（对端参考实现里最有用的一段）。
+ * 下载失败的**归因** —— 只吃**结构化输入**，不解析人类可读文本。
  *
- * 关键是识别出"**本机代理/证书拦截**"这一类 —— 今天撞的
- * `UNABLE_TO_VERIFY_LEAF_SIGNATURE` 与 `CRYPT_E_NO_REVOCATION_CHECK` 都在这一类里。
- * 指引里写"检测到本机加速器/代理，建议关掉再试"比"请检查网络"有用一个量级。
+ * > **能拿到结构化信号时，永远不要解析人类可读文本** ——
+ * > 文本会被人改、被工具包装、被本地化，而**退出码是契约**。
+ *
+ * ## 为什么必须有这条纪律（我们真踩过）
+ *
+ * 上一版是"拿 `error.message` 做正则"。而 Node 抛错时会把**整条命令行**回显进 message，
+ * 我们的 argv 里就有 `--connect-timeout` / `--max-time` ⇒ 正则里只要出现 `timeout` 这个词，
+ * **任何** curl 失败都会被归成"超时"（实测：一个 404 被报成"超时，包可能较大" ✗）。
+ * 换个参数名还会再中一次 —— 所以**根治办法是别拿文本判类**。
+ *
+ * ## 两条配套纪律
+ *
+ *   1. **默认桶必须是 `unknown`**（带退出码 + stderr 尾部），**绝不 default 到某个具体原因** ——
+ *      上一版 default 到"超时"**就是那个 bug 本身**
+ *   2. 文本只作**展示**（stderr 尾部原样给用户看），**不参与判类**
  */
-export declare function classifyDownloadFailure(text: string): {
-    kind: 'intercepted' | 'unreachable' | 'timeout';
+export type DownloadFailureKind = 'dns' | 'connect' | 'http-status' | 'timeout' | 'ssl' | 'cert' | 'recv' | 'partial' | 'proxy' | 'unknown';
+/** 结构化输入 —— 只有这些字段参与判类。 */
+export interface DownloadFailureInput {
+    /** curl 退出码（`execFileSync` 抛错时在 `error.status`）。 */
+    code?: number | string | undefined;
+    /** 被信号杀死时的信号名。 */
+    signal?: string | undefined;
+    /** stderr 尾部 —— **仅用于展示**。 */
+    stderrTail?: string | undefined;
+}
+export declare function classifyCurlExit(input: DownloadFailureInput): {
+    kind: DownloadFailureKind;
+    note: string;
+};
+/**
+ * `fetch` 失败的归因 —— 同样**只用结构化字段**：`error.cause.code`。
+ *
+ * 这不是文本解析：`UNABLE_TO_VERIFY_LEAF_SIGNATURE` 这类是 Node 的**错误码**（契约），
+ * 而 `error.message` 只是包装文案（不参与判类）。
+ */
+export declare function classifyFetchError(e: unknown): {
+    kind: DownloadFailureKind;
     note: string;
 };
 /**

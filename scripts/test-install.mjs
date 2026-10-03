@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 
 import { checkPackage, ensureAdapterManifest, looksLikeDshPlugin } from '../lib/card-host/package-check.js'
-import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, classifyDownloadFailure, probeChannel, expandGitHubRepoUrl, bytesFromExecError, partSizeOnDisk } from '../lib/card-host/installer.js'
+import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, probeChannel, expandGitHubRepoUrl, bytesFromExecError, partSizeOnDisk, classifyCurlExit, classifyFetchError } from '../lib/card-host/installer.js'
 
 let pass = 0
 let fail = 0
@@ -338,33 +338,50 @@ try {
     unlinkSync(memoFile)
   }
 
-  /* ═══════════ 6. 失败归因：证书/代理拦截 vs 网络不可达 ═══════════ */
+  /* ═══════════ 6. 失败归因：**结构化退出码**，不解析文本 ═══════════ */
 
-  console.log('── 6. 失败归因（可执行的下一步）')
+  console.log('── 6. 失败归因（结构化退出码 = 契约）')
 
   {
-    const cert = classifyDownloadFailure('curl: (60) SSL certificate problem: UNABLE_TO_VERIFY_LEAF_SIGNATURE')
-    eq(cert.kind, 'intercepted', '证书类 ⇒ intercepted')
-    ok(/加速器|代理/.test(cert.note), '归因里指出"本机有加速器/代理"并给出下一步')
-
-    const revoke = classifyDownloadFailure('schannel: CRYPT_E_NO_REVOCATION_CHECK')
-    eq(revoke.kind, 'intercepted', '吊销检查失败也归到 intercepted（今天真实撞到的就是它）')
-
-    const net = classifyDownloadFailure('getaddrinfo ENOTFOUND codeload.github.com')
-    eq(net.kind, 'unreachable', '域名解析不了 ⇒ unreachable')
-    ok(/网络不可达/.test(net.note), '文案区分开了')
+    /**
+     * 上一版是"拿 `error.message` 做正则"，而 Node 抛错会把**整条命令行**回显进消息，
+     * 我们的 argv 里又有 `--connect-timeout` ⇒ 正则里只要出现 `timeout` 这个词，
+     * **任何** curl 失败都被归成"超时"（实测：404 被报成"超时，包可能较大" ✗）。
+     *
+     * 根治：**只吃结构化退出码**，文本只作展示。所以这里**只喂 code**，不喂文本。
+     */
+    eq(classifyCurlExit({ code: 22 }).kind, 'http-status', '22 ⇒ HTTP 错误（"这个地址没有这个包"的正解）')
+    ok(/没有这个包/.test(classifyCurlExit({ code: 22 }).note), '22 的文案能直接指向"地址不对"')
+    eq(classifyCurlExit({ code: 28 }).kind, 'timeout', '28 ⇒ 超时')
+    eq(classifyCurlExit({ code: 60 }).kind, 'cert', '60 ⇒ 证书校验失败（本机代理/加速器的正解）')
+    ok(/加速器|代理/.test(classifyCurlExit({ code: 60 }).note), '60 的文案给出可执行的下一步')
+    eq(classifyCurlExit({ code: 6 }).kind, 'dns', '6 ⇒ 域名解析失败')
+    eq(classifyCurlExit({ code: 7 }).kind, 'connect', '7 ⇒ 连接失败')
+    eq(classifyCurlExit({ code: 18 }).kind, 'partial', '18 ⇒ 传输不完整（**截断**的结构化信号）')
+    eq(classifyCurlExit({ code: 56 }).kind, 'recv', '56 ⇒ 接收失败（镜像被重置）')
+    eq(classifyCurlExit({ code: 97 }).kind, 'proxy', '97 ⇒ 代理握手失败')
+    eq(classifyCurlExit({ code: 35 }).kind, 'ssl', '35 ⇒ SSL 连接错误')
 
     /**
-     * ⚠️ **回归断言（真踩过）**：Node 抛错时会把**整条命令行**回显进消息，
-     * 而命令行里就带 `--connect-timeout` / `--max-time` —— 只要正则里写 `timeout` 这个词，
-     * **任何** curl 失败都会被归成"超时"（实测：一个 404 被报成"超时，包可能较大" ✗）。
+     * ⚠️ **默认桶必须是 unknown**（对端点明的纪律）：
+     * 上一版 default 到"超时"**就是那个 bug 本身** —— 不知道原因时不能猜一个具体原因，
+     * 那会把用户引向错误的排查方向。
      */
-    const cmdEcho = classifyDownloadFailure(
-      'Command failed: curl.exe -sSLf --ssl-no-revoke --connect-timeout 15 --max-time 300 -o x.part https://x/y',
+    eq(classifyCurlExit({ code: 999 }).kind, 'unknown', '不认识的退出码 ⇒ unknown（**不猜**）')
+    eq(classifyCurlExit({}).kind, 'unknown', '没有退出码也没有信号 ⇒ unknown')
+    ok(/999/.test(classifyCurlExit({ code: 999 }).note), 'unknown 也要带上有用的信息（退出码）')
+
+    /** 被信号杀死（我们只在超时路径上设 killSignal，所以这个归因是有依据的）。 */
+    eq(classifyCurlExit({ signal: 'SIGKILL' }).kind, 'timeout', '被信号杀死 ⇒ 超时（调用点唯一）')
+
+    /** fetch 侧同样只用结构化字段：`cause.code`，不解析 message。 */
+    eq(
+      classifyFetchError({ cause: { code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' } }).kind,
+      'cert',
+      'fetch 的证书错误 ⇒ cert（读 cause.code）',
     )
-    ok(cmdEcho.kind !== 'timeout', '命令行回显（含 --connect-timeout）**不得**被当成超时')
-    eq(classifyDownloadFailure('curl: (28) Operation timed out').kind, 'timeout', 'curl 退出码 28 ⇒ 超时')
-    eq(classifyDownloadFailure('spawnSync curl.exe ETIMEDOUT').kind, 'timeout', 'exec 超时 ⇒ 超时')
+    eq(classifyFetchError({ cause: { code: 'ENOTFOUND' } }).kind, 'dns', 'ENOTFOUND ⇒ dns')
+    eq(classifyFetchError(new Error('fetch failed')).kind, 'unknown', '没有结构化码 ⇒ unknown（不猜）')
   }
 
   /* ═══════════ 7. 探活：判死要快（不能自己变成白等） ═══════════ */
