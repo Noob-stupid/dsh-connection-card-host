@@ -69,6 +69,30 @@ export declare function classifyDownloadFailure(text: string): {
     note: string;
 };
 /**
+ * **通道探活** —— "提前判死"，别让一个死镜像把安装拖满超时。
+ *
+ * ## 策略（对端真机结论，照抄）
+ *
+ *   · 超时**只给 4 秒** —— 它是"提前判死"用的，不能自己变成白等
+ *   · **403 / 405 按活着处理** —— 很多镜像不支持 HEAD，判死会误杀
+ *   · 404 才算真死（地址没有这个包）
+ *
+ * ## 为什么用 curl（而不是 fetch）
+ *
+ * 与本文件其它地方同因：这台机器上 Node 的 fetch 连 github 类主机会
+ * `UNABLE_TO_VERIFY_LEAF_SIGNATURE`，拿它探活等于**永远判死**。
+ * 没有 curl 时**不探活**（按活着处理）—— 宁可多试一次，也不能因为探不了就跳过。
+ *
+ * ## 与对端实现的差异（按我们的边界裁剪）
+ *
+ * 他们探的是 **git 智能 HTTP**（`…/info/refs?service=git-upload-pack` + pkt-line 校验）；
+ * 我们只下 HTTP archive，`HEAD` 判活足够 —— git 那套整块不抄。
+ */
+export declare function probeChannel(url: string, timeoutMs?: number): {
+    alive: boolean;
+    note: string;
+};
+/**
  * 安装一张卡片到 cardsRoot/<id>/。
  *
  * 幂等：目标已存在时**覆盖**（用户重装/升级的场景），

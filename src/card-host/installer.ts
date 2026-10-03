@@ -304,7 +304,61 @@ function hasCurl(): boolean {
 const CURL_BIN = process.platform === 'win32' ? 'curl.exe' : 'curl'
 
 /**
- * 下载一个文件到本地 —— **通道表 + 逐通道重试**。
+ * **通道探活** —— "提前判死"，别让一个死镜像把安装拖满超时。
+ *
+ * ## 策略（对端真机结论，照抄）
+ *
+ *   · 超时**只给 4 秒** —— 它是"提前判死"用的，不能自己变成白等
+ *   · **403 / 405 按活着处理** —— 很多镜像不支持 HEAD，判死会误杀
+ *   · 404 才算真死（地址没有这个包）
+ *
+ * ## 为什么用 curl（而不是 fetch）
+ *
+ * 与本文件其它地方同因：这台机器上 Node 的 fetch 连 github 类主机会
+ * `UNABLE_TO_VERIFY_LEAF_SIGNATURE`，拿它探活等于**永远判死**。
+ * 没有 curl 时**不探活**（按活着处理）—— 宁可多试一次，也不能因为探不了就跳过。
+ *
+ * ## 与对端实现的差异（按我们的边界裁剪）
+ *
+ * 他们探的是 **git 智能 HTTP**（`…/info/refs?service=git-upload-pack` + pkt-line 校验）；
+ * 我们只下 HTTP archive，`HEAD` 判活足够 —— git 那套整块不抄。
+ */
+export function probeChannel(url: string, timeoutMs = 4000): { alive: boolean; note: string } {
+  if (!hasCurl()) return { alive: true, note: '没有 curl，跳过探活（直接试下载）' }
+  const secs = Math.max(1, Math.ceil(timeoutMs / 1000))
+  try {
+    const out = execFileSync(
+      CURL_BIN,
+      [
+        '-sS',
+        '-I',
+        '-o', process.platform === 'win32' ? 'NUL' : '/dev/null',
+        '-w', '%{http_code}',
+        '--max-time', String(secs),
+        '--ssl-no-revoke',
+        url,
+      ],
+      { stdio: 'pipe', timeout: timeoutMs + 2000, killSignal: 'SIGKILL', encoding: 'utf8' },
+    )
+    const code = Number(String(out ?? '').trim().split(/\s+/).pop())
+    if (Number.isFinite(code)) {
+      if (code >= 200 && code < 400) return { alive: true, note: `HTTP ${code}` }
+      // 镜像常不支持 HEAD —— 判死会误杀
+      if (code === 403 || code === 405) {
+        return { alive: true, note: `HTTP ${code}（不支持 HEAD，按活处理）` }
+      }
+      if (code === 404) return { alive: false, note: 'HTTP 404（该地址没有这个包）' }
+      return { alive: false, note: `HTTP ${code}` }
+    }
+    return { alive: true, note: '探活没拿到状态码（按活处理，交给实际下载判）' }
+  } catch (e) {
+    const text = e instanceof Error ? e.message : String(e)
+    return { alive: false, note: classifyDownloadFailure(text).note }
+  }
+}
+
+/**
+ * 下载一个文件到本地 —— **通道表 + 探活 + 逐通道重试**。
  *
  * ## 为什么 curl 优先，而不是 Node 的 fetch（对端真机结论，与我们实测一致）
  *
@@ -339,8 +393,25 @@ async function downloadTo(
   /** 每个通道**实际传了多少字节** —— 对端点明：失败指引里要有这个数字。 */
   const transferred: string[] = []
 
-  for (const ch of channels) {
+  for (const [i, ch] of channels.entries()) {
     const partPath = `${destPath}.part`
+
+    /**
+     * 探活**只对非首选通道**做。
+     *
+     * 首选通道（记忆命中的、或表里第一个）直接试 —— 它最可能成功，
+     * 先探一次纯属多一个来回。而**镜像兜底位**值得先花 4 秒判死：
+     * 死镜像的典型形态是挂住不动（对端记录：精确的 0 B/s），
+     * 那会白等到停滞判死（45 秒）才换下一个。
+     */
+    if (i > 0) {
+      const probe = probeChannel(ch.url)
+      if (!probe.alive) {
+        auditLog(`跳过通道 ${ch.name}：${probe.note}`)
+        errors.push(`${ch.name}: 探活未过（${probe.note}）`)
+        continue
+      }
+    }
 
     // ① curl（系统 TLS 栈）—— 首选
     if (hasCurl()) {

@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 
 import { checkPackage, ensureAdapterManifest, looksLikeDshPlugin } from '../lib/card-host/package-check.js'
-import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, classifyDownloadFailure } from '../lib/card-host/installer.js'
+import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, classifyDownloadFailure, probeChannel } from '../lib/card-host/installer.js'
 
 let pass = 0
 let fail = 0
@@ -316,6 +316,23 @@ try {
     const net = classifyDownloadFailure('getaddrinfo ENOTFOUND codeload.github.com')
     eq(net.kind, 'unreachable', '域名解析不了 ⇒ unreachable')
     ok(/网络不可达/.test(net.note), '文案区分开了')
+  }
+
+  /* ═══════════ 7. 探活：判死要快（不能自己变成白等） ═══════════ */
+
+  console.log('── 7. 通道探活')
+
+  {
+    /**
+     * 连不上的地址 ⇒ 判死。**这条不需要外网**：连本机空端口会立刻被拒。
+     * 顺带卡耗时 —— 探活是"提前判死"用的，**不能自己变成白等**。
+     */
+    const t0 = Date.now()
+    const dead = probeChannel('http://127.0.0.1:1/nothing-here.tar.gz')
+    const cost = Date.now() - t0
+    ok(!dead.alive, '连不上 ⇒ 判死')
+    ok(cost < 9000, `判死要快（实测 ${cost}ms；上限 4s + 余量）`)
+    ok(/代理|不可达|拦截/.test(dead.note), '归因文案可读（说清是网络问题还是本地拦截）')
   }
 } finally {
   rmSync(root, { recursive: true, force: true })
