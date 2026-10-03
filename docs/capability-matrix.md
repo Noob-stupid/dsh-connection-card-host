@@ -88,9 +88,62 @@
 
 ---
 
-## 4. 下一步
+## 4. 实验计划（用户要求：**真找几个增强能力的普通 DSH 插件实验**）
 
-1. 修体检脚本支持"包根 `.mjs`"布局 → 重跑 `dsh-memory-plugin`
-2. 按 §2.1 给 `dsh-browser` 写**第一份适配器草案**（含申报清单），作为协议章节的实例
-3. 用 `dsh-graded-mode` 验证 §4 的 **UI 捕获四步**（它是唯一的 UI 样本）
-4. 产出协议章节 → 与对端对齐 → 再动实现代码
+### 4.0 实验用插件池（全部是**真实存在、可复跑**的）
+
+| 插件 | 来源 | 形态 | 用它验证什么 |
+|:--|:--|:--|:--|
+| **`dsh-browser`** v0.1.0 | profile 安装 | 纯工具、无 UI | **实验一：能力桥接**（最小面：`tools`+`effect`） |
+| **`@dsh-external/dsh-graded-mode`** v0.0.1-rc1 | `plugin-src`（有源码） | 能力 + **client UI** | **实验二：UI 捕获**（唯一 UI 样本） |
+| **`@openviking/dsh-memory-plugin`** v0.5.11 | `plugin-src`（有源码） | 能力 + 依赖图 + `provide` | **实验三：依赖图与拒绝路径** |
+| `@deepseek-ai/dsh-experimental-auto-review` | profile 安装（官方实验） | 能力 | 备选：官方实验插件能否同样挂 |
+| `@deepseek-ai/dsh-experimental-agent-team` | profile 安装（官方实验） | 能力 | 备选：同上 |
+| `@dsh-external/dsh-super-injector` v0.3.5 | `plugin-src` | 宿主手术刀 | **反例**：硬判据应自动拒绝 |
+| `dsh-whale-widget` v0.3.16 | profile 安装 | 挂件/装饰 | **范围外**（装饰类，按 §0.1 不纳入） |
+
+> 备注：profile 的 `@deepseek-ai` 下还装着 7 个官方实验包（全部构建完好），
+> 其中 `dsh-experimental-auto-review` / `dsh-experimental-agent-team` 属**能力型**，可作第二梯队样本。
+
+### 4.1 实验一 —— 能力桥接（`dsh-browser`）
+
+- **做法**：把它挂成卡片 → 适配层提供 `tools` + `effect` 影子 ctx → 它的 `ctx.tools.register` 被捕获 →
+  桥接进全局工具面 + 按会话过滤（复用 `tool-scoping` 的 waterfall，F4）
+- **成功判据**（缺一不可）：
+  1. A 端会话**能真正调到**它的工具（不是只在 schema 里出现 —— 要真跑一次）
+  2. B 端会话**看不到也调不到**
+  3. 卸载卡片后，工具从注册表消失（无幽灵工具，F3）
+  4. **全局界面零变化**（它本来就没有 UI，正好先隔离变量）
+- **前置**：垫片层（让 `@deepseek-ai/cordis` 解析）+ 影子 ctx + 工具桥接
+
+### 4.2 实验二 —— UI 捕获（`dsh-graded-mode`）
+
+- **做法**：取它的 client 制品 → 影子 `__ModuleLoader__` 捕获 factory → 影子 slots facade → 渲染进面板留白处
+- **成功判据**：UI 出现在 **[连接] 面板**里且可交互；**全局界面一处都不出现**
+- **额外观察**：它要 `webServer` / `commands` / `userQuestions` 等更多能力 → 记录"申报清单要写多长"
+- **风险对照**：R1（构建产物同形性）/ R3（服务依赖）/ R4（交互是否真能用）
+
+### 4.3 实验三 —— 依赖图与拒绝路径（`dsh-memory-plugin`）
+
+- **做法**：尝试适配，重点看**拒绝路径**
+- **成功判据**：对 `provide`（向全局提供服务）与 `dsh-llm` / `dsh-mcp-client` 依赖，
+  适配层给出**明确拒绝 + 缺什么说清楚**，而**不是**崩溃、也不是静默降级
+- **价值**：证明"不可适配"是一等公民的输出，而不是错误兜底
+
+### 4.4 反例实验 —— 硬判据预检（`dsh-super-injector`）
+
+- **做法**：直接让体检脚本判定 → 应在**安装/申报阶段**就被拒
+- **成功判据**：拒绝文案指出是 `loader`/`fiber`/`reflect`/`registry` 触发了硬判据
+
+---
+
+## 5. 下一步
+
+1. ~~修体检脚本支持"包根 `.mjs`"布局~~ ✅ 已做（`src/` → `lib/` → 包根三级回退）
+2. ~~登记实验用的真实插件池~~ ✅ 见 §4.0
+3. 按 §2.1 给 `dsh-browser` 写**第一份适配器草案**（含申报清单），作为协议章节的实例
+4. 用 `dsh-graded-mode` 验证 `adapter-design.md` §4 的 **UI 捕获四步**（它是唯一的 UI 样本）
+5. 产出协议章节 → 与对端对齐 → 再动实现代码
+
+> **顺序理由**：先做**实验一（能力桥接）** —— `dsh-browser` 无 UI，可以把"UI 捕获"这个变量**隔离掉**，
+> 单独验证"能力按端生效 + 生命周期干净"。等这条通了，再叠加 UI 捕获，出问题时故障面才不会混在一起。

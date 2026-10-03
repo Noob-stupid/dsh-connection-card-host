@@ -48,6 +48,21 @@
 
 ⇒ 普通 DSH 插件的宿主入口**原样塞进卡片运行时连加载都过不了**（模块级 `import … from '@deepseek-ai/…'` → `ERR_MODULE_NOT_FOUND`）。
 
+> **✅ 已用真运行验证（不再是推理）** —— 同一份探针文件（`import { Context } from '@deepseek-ai/cordis'`）：
+>
+> | 位置 | 结果 |
+> |:--|:--|
+> | 卡片那种目录（外层无 `@deepseek-ai`） | ❌ `Cannot find **package** '@deepseek-ai/cordis'` |
+> | 干净对照（profile 目录，包可解析） | ✅ `ok= function` |
+>
+> **唯一差别就是解析路径** —— 结论成立。
+>
+> ⚠️ 过程留痕：第一版"对照"选在了我们自己的包目录里，结果**也失败**。
+> 查错误消息才发现是**两回事**：那是 `Cannot find **module** …/cordis/lib/index.js`
+> —— 包找到了，但那个 junction 指向的是**源码检出**（`lib/` 里只有 `types/`，没有 `index.js`）。
+> 即"对照位置无效"，不是结论错误。换成 profile 目录后对照成立。
+> **教训**：探针也要自查；只看 `e.code` 会把"包找不到"和"入口文件不存在"混为一谈。
+
 **这条把"透明直通"从"我们不选的方案"变成"不存在的路"** —— 除非主动加 module resolution 钩子把 DSH 包映射进卡片解析链，而那等于在隔离墙上开洞。
 **所以适配只能是申报制（见 §3 护栏②），没有第二个选项。**
 
