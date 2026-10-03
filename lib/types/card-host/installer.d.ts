@@ -8,6 +8,12 @@ export interface InstallResult {
     name?: string;
     version?: string;
     reason?: string;
+    /**
+     * **装上了，但有话要说**（例如解包时跳过了符号链接）。
+     *
+     * 对端的原则，照抄：**宁可"成功了但带警告"，也不要"其实成功了却报失败"**。
+     */
+    warning?: string;
 }
 /**
  * 删除一个文件（等价于 `rmSync(p, { force: true })`，但用了**有效的** API）。
