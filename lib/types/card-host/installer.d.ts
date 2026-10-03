@@ -114,15 +114,21 @@ export declare function orderChannels(channels: DownloadChannel[], preferredId: 
  *      上一版 default 到"超时"**就是那个 bug 本身**
  *   2. 文本只作**展示**（stderr 尾部原样给用户看），**不参与判类**
  */
-export type DownloadFailureKind = 'dns' | 'connect' | 'http-status' | 'timeout' | 'ssl' | 'cert' | 'recv' | 'partial' | 'proxy' | 'unknown';
+export type DownloadFailureKind = 'dns' | 'connect' | 'http-status' | 'timeout' | 'ssl' | 'cert' | 'recv' | 'partial' | 'proxy'
+/** 写盘失败（磁盘满 / 目录不可写）。 */
+ | 'write'
+/** URL 本身不合法（我们拼错了，或用户贴错了）。 */
+ | 'bad-url'
+/** **我们自己主动中止的**（超时杀进程 / 用户取消）—— 与"未知故障"必须分开。 */
+ | 'aborted' | 'unknown';
 /** 结构化输入 —— 只有这些字段参与判类。 */
 export interface DownloadFailureInput {
-    /** curl 退出码（`execFileSync` 抛错时在 `error.status`）。 */
-    code?: number | string | undefined;
-    /** 被信号杀死时的信号名。 */
-    signal?: string | undefined;
+    /** curl 退出码（`execFile` 回调里是 `error.code`；**超时被杀时是 `null`**）。 */
+    code?: number | string | null | undefined;
+    /** 被信号杀死时的信号名（`error.signal`）。 */
+    signal?: string | null | undefined;
     /** stderr 尾部 —— **仅用于展示**。 */
-    stderrTail?: string | undefined;
+    stderrTail?: string | null | undefined;
 }
 export declare function classifyCurlExit(input: DownloadFailureInput): {
     kind: DownloadFailureKind;
@@ -158,10 +164,10 @@ export declare function classifyFetchError(e: unknown): {
  * 他们探的是 **git 智能 HTTP**（`…/info/refs?service=git-upload-pack` + pkt-line 校验）；
  * 我们只下 HTTP archive，`HEAD` 判活足够 —— git 那套整块不抄。
  */
-export declare function probeChannel(url: string, timeoutMs?: number): {
+export declare function probeChannel(url: string, timeoutMs?: number): Promise<{
     alive: boolean;
     note: string;
-};
+}>;
 /**
  * **磁盘口径的实传字节数** —— 判进度以它为准。
  *

@@ -28,7 +28,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, copyFileSync, writeFileSync, statSync, unlinkSync, rmdirSync, renameSync, type Dirent } from 'node:fs'
 import { join, basename, resolve, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import {
   versionedDirName,
@@ -157,10 +157,26 @@ export function removeFileQuiet(target: string): boolean {
   }
 }
 
-/** 解压 tgz 到目标目录（用系统 tar —— Windows 10+ 自带 bsdtar）。 */
-function extractTgz(tgzPath: string, destDir: string): void {
+/**
+ * 解压 tgz 到目标目录（用系统 tar —— Windows 10+ 自带 bsdtar）。
+ *
+ * ⚠️ **异步**：解压可能要好几秒（大包更久），而我们是宿主侧插件 ——
+ * 同步解压会把整个 DSH 事件循环挡住（同一类问题，见 `runCurlAsync` 的说明）。
+ * 顺带这也让 `tar` 的**截断报错**（gzip 尾部 CRC32/ISIZE 对不上）以 Promise 拒绝的形式
+ * 稳稳传上来，不会被吞掉。
+ */
+async function extractTgz(tgzPath: string, destDir: string): Promise<void> {
   mkdirSync(destDir, { recursive: true })
-  execFileSync('tar', ['-xzf', tgzPath, '-C', destDir], { stdio: 'pipe' })
+  await new Promise<void>((resolve, reject) => {
+    execFile('tar', ['-xzf', tgzPath, '-C', destDir], { timeout: 300_000 }, (err, _out, stderr) => {
+      if (!err) {
+        resolve()
+        return
+      }
+      const tail = String(stderr ?? '').trim().split('\n').slice(-2).join(' / ')
+      reject(new Error(`解压失败（tar）：${tail || (err instanceof Error ? err.message : String(err))}`))
+    })
+  })
 }
 
 /**
@@ -347,16 +363,22 @@ export type DownloadFailureKind =
   | 'recv'
   | 'partial'
   | 'proxy'
+  /** 写盘失败（磁盘满 / 目录不可写）。 */
+  | 'write'
+  /** URL 本身不合法（我们拼错了，或用户贴错了）。 */
+  | 'bad-url'
+  /** **我们自己主动中止的**（超时杀进程 / 用户取消）—— 与"未知故障"必须分开。 */
+  | 'aborted'
   | 'unknown'
 
 /** 结构化输入 —— 只有这些字段参与判类。 */
 export interface DownloadFailureInput {
-  /** curl 退出码（`execFileSync` 抛错时在 `error.status`）。 */
-  code?: number | string | undefined
-  /** 被信号杀死时的信号名。 */
-  signal?: string | undefined
+  /** curl 退出码（`execFile` 回调里是 `error.code`；**超时被杀时是 `null`**）。 */
+  code?: number | string | null | undefined
+  /** 被信号杀死时的信号名（`error.signal`）。 */
+  signal?: string | null | undefined
   /** stderr 尾部 —— **仅用于展示**。 */
-  stderrTail?: string | undefined
+  stderrTail?: string | null | undefined
 }
 
 /**
@@ -367,12 +389,15 @@ export interface DownloadFailureInput {
  *   · `18` = 传输不完整 ⇒ **"截断"的结构化信号**，零额外请求就能判
  */
 const CURL_EXIT: Record<number, { kind: DownloadFailureKind; note: string }> = {
+  3: { kind: 'bad-url', note: 'URL 格式不合法（检查一下这个地址）' },
   5: { kind: 'proxy', note: '代理无法解析（本机代理设置有问题）' },
   6: { kind: 'dns', note: '域名解析失败（DNS 或该主机名不存在）' },
   7: { kind: 'connect', note: '连接失败（被拒绝或不可达）' },
   18: { kind: 'partial', note: '传输不完整（**截断**）—— 重试或换通道' },
   22: { kind: 'http-status', note: '服务端返回 HTTP 错误（**这个地址没有这个包**，或需要鉴权）' },
+  23: { kind: 'write', note: '写盘失败（磁盘满或目录不可写）' },
   28: { kind: 'timeout', note: '超时 —— 包可能较大或链路慢，可重试或换通道' },
+  33: { kind: 'http-status', note: '服务端不支持 Range 请求（换通道）' },
   35: { kind: 'ssl', note: 'SSL 连接错误' },
   56: { kind: 'recv', note: '接收失败（连接被重置）—— 常见于镜像不稳' },
   60: { kind: 'cert', note: '证书校验失败 —— 检测到本机有加速器/代理，建议关掉再试' },
@@ -384,17 +409,18 @@ export function classifyCurlExit(input: DownloadFailureInput): {
   kind: DownloadFailureKind
   note: string
 } {
+  /**
+   * ⚠️ **`status == null && signal` ⇒ 这是我们自己杀的**（超时路径上我们设了 `killSignal`）。
+   * 这条必须**单独一个 kind**，不能落进 `unknown` —— 否则"我们主动中止"
+   * 会被当成"未知故障"，用户和我们都读错方向。
+   */
+  if (typeof input.code !== 'number' && input.signal) {
+    return { kind: 'aborted', note: `已主动中止（${input.signal}，通常是超时）—— 可重试或换通道` }
+  }
+
   const n = typeof input.code === 'string' ? Number(input.code) : input.code
   if (typeof n === 'number' && Number.isFinite(n) && n in CURL_EXIT) {
     return CURL_EXIT[n]!
-  }
-  /**
-   * 被信号杀死（例如我们自己的 exec 超时）：`SIGKILL` / `SIGTERM`。
-   * 这仍然**不猜具体原因**（可能真的是超时，也可能是被杀）—— 归到 timeout 是因为
-   * 我们**只在超时路径上**设 `killSignal`（调用点唯一），所以这个归因是有依据的。
-   */
-  if (input.signal) {
-    return { kind: 'timeout', note: `进程被中断（${input.signal}）—— 通常是超时` }
   }
   // ⚠️ **默认桶：unknown。绝不 default 到某个具体原因。**
   return {
@@ -425,7 +451,67 @@ export function classifyFetchError(e: unknown): { kind: DownloadFailureKind; not
   return { kind: 'unknown', note: `未知原因${code ? `（${code}）` : '（fetch 失败）'}` }
 }
 
-/** `curl.exe` 是否存在（Windows 上必须显式带 .exe —— 见 downloadTo 的说明）。 */
+/**
+ * **异步**跑一次 curl。
+ *
+ * ## 为什么必须异步（对端点明的一条用户级事故）
+ *
+ * 我们是**宿主侧插件**，跑在 DSH 的 Node 进程里。`execFileSync` 会**阻塞事件循环** ——
+ * 不是"这个插件在等"，而是**整个宿主进程在等**：其他会话、正在跑的 agent、
+ * GUI 的 API 响应**全部停摆**。
+ *
+ * 而下载预算是 300 秒、按字节判有进度还会**同通道加时 1.75× = 525 秒** ⇒
+ * 最坏一次安装能把用户的整个 DSH 冻住 ≈ **14 分钟**（多通道更长）。
+ * 用户看到的现象是"**整个界面卡死**"，而不是"某个插件在下载"—— 他会以为 DSH 挂了。
+ *
+ * > 同步执行确实"天然等到子进程退出"，省掉了"kill 返回但还在写"的窗口；
+ * > 但**代价是宿主冻结**，而那个窗口用异步 + 等退出就能消掉。两害相权，异步是必须的。
+ *
+ * ## 退出语义
+ *
+ * `execFile` 的回调在**进程真的退出后**才触发（超时路径也一样：Node 发 killSignal 之后
+ * 仍然等进程退出才回调）—— 所以"先等退出、再动 `.part`"这条**天然满足** ✓。
+ * Windows 上"`taskkill` 返回 ≠ 句柄已释放"的残余风险，由 `removeFileQuiet()` 的
+ * **改名降级**做第二层保险 ✓。
+ */
+function runCurlAsync(
+  args: string[],
+  timeoutMs: number,
+): Promise<
+  | { ok: true; stdout: string }
+  | { ok: false; status: number | null; signal: string | null; stdout: string; stderrTail: string }
+> {
+  return new Promise((resolve) => {
+    execFile(
+      CURL_BIN,
+      args,
+      { timeout: timeoutMs, killSignal: 'SIGKILL', encoding: 'utf8', maxBuffer: 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (!err) {
+          resolve({ ok: true, stdout: String(stdout ?? '') })
+          return
+        }
+        const e = err as { code?: number | string | null; signal?: string | null }
+        resolve({
+          ok: false,
+          status: typeof e.code === 'number' ? e.code : null,
+          signal: e.signal ?? null,
+          stdout: String(stdout ?? ''),
+          stderrTail: String(stderr ?? '').trim().slice(-160),
+        })
+      },
+    )
+  })
+}
+
+/**
+ * `curl.exe` 是否存在（Windows 上必须显式带 .exe —— 见 `CURL_BIN` 的说明）。
+ *
+ * ⚠️ **这是全文件唯一保留的同步外部调用**，且刻意如此：只跑**一次**（结果缓存）、
+ * 耗时几十毫秒、且发生在任何下载之前 —— 阻塞窗口可忽略。
+ * 其余所有外部进程（curl 下载、curl 探活、tar 解包）**必须异步**，
+ * 否则会冻住整个 DSH 宿主（见 `runCurlAsync` 的说明）。
+ */
 let curlChecked = false
 let curlAvailable = false
 function hasCurl(): boolean {
@@ -467,43 +553,46 @@ const CURL_BIN = process.platform === 'win32' ? 'curl.exe' : 'curl'
  * 他们探的是 **git 智能 HTTP**（`…/info/refs?service=git-upload-pack` + pkt-line 校验）；
  * 我们只下 HTTP archive，`HEAD` 判活足够 —— git 那套整块不抄。
  */
-export function probeChannel(url: string, timeoutMs = 4000): { alive: boolean; note: string } {
+export async function probeChannel(
+  url: string,
+  timeoutMs = 4000,
+): Promise<{ alive: boolean; note: string }> {
   if (!hasCurl()) return { alive: true, note: '没有 curl，跳过探活（直接试下载）' }
   const secs = Math.max(1, Math.ceil(timeoutMs / 1000))
-  try {
-    const out = execFileSync(
-      CURL_BIN,
-      [
-        /**
-         * ⚠️ `-f`（fail on HTTP error）在探活里**不能**加：`-f` 会让 4xx/5xx 直接变退出码，
-         * 于是我们就拿不到状态码、没法实现"**403/405 按活着处理**"那条策略了。
-         * 探活靠 `%{http_code}` 判，不靠退出码。
-         */
-        '-sS',
-        '-I',
-        '-o', process.platform === 'win32' ? 'NUL' : '/dev/null',
-        '-w', '%{http_code}',
-        '--max-time', String(secs),
-        '--ssl-no-revoke',
-        url,
-      ],
-      { stdio: 'pipe', timeout: timeoutMs + 2000, killSignal: 'SIGKILL', encoding: 'utf8' },
-    )
-    const code = Number(String(out ?? '').trim().split(/\s+/).pop())
-    if (Number.isFinite(code)) {
-      if (code >= 200 && code < 400) return { alive: true, note: `HTTP ${code}` }
-      // 镜像常不支持 HEAD —— 判死会误杀
-      if (code === 403 || code === 405) {
-        return { alive: true, note: `HTTP ${code}（不支持 HEAD，按活处理）` }
-      }
-      if (code === 404) return { alive: false, note: 'HTTP 404（该地址没有这个包）' }
-      return { alive: false, note: `HTTP ${code}` }
-    }
-    return { alive: true, note: '探活没拿到状态码（按活处理，交给实际下载判）' }
-  } catch (e) {
-    const text = e instanceof Error ? e.message : String(e)
-    return { alive: false, note: classifyCurlExit({ code: (e as { status?: number }).status, signal: (e as { signal?: string }).signal }).note }
+  /** ⚠️ 异步 —— 同步会阻塞宿主事件循环（见 runCurlAsync 的说明）。 */
+  const res = await runCurlAsync(
+    [
+      /**
+       * ⚠️ `-f`（fail on HTTP error）在探活里**不能**加：`-f` 会让 4xx/5xx 直接变退出码，
+       * 于是我们就拿不到状态码、没法实现"**403/405 按活着处理**"那条策略了。
+       * 探活靠 `%{http_code}` 判，不靠退出码。
+       */
+      '-sS',
+      '-I',
+      '-o', process.platform === 'win32' ? 'NUL' : '/dev/null',
+      '-w', '%{http_code}',
+      '--max-time', String(secs),
+      '--ssl-no-revoke',
+      url,
+    ],
+    timeoutMs + 2000,
+  )
+
+  if (!res.ok) {
+    return { alive: false, note: classifyCurlExit({ code: res.status, signal: res.signal }).note }
   }
+
+  const code = Number(String(res.stdout ?? '').trim().split(/\s+/).pop())
+  if (Number.isFinite(code) && code > 0) {
+    if (code >= 200 && code < 400) return { alive: true, note: `HTTP ${code}` }
+    // 镜像常不支持 HEAD —— 判死会误杀
+    if (code === 403 || code === 405) {
+      return { alive: true, note: `HTTP ${code}（不支持 HEAD，按活处理）` }
+    }
+    if (code === 404) return { alive: false, note: 'HTTP 404（该地址没有这个包）' }
+    return { alive: false, note: `HTTP ${code}` }
+  }
+  return { alive: true, note: '探活没拿到状态码（按活处理，交给实际下载判）' }
 }
 
 /** curl 下载的总时限（秒）。对端 archive 给 180 秒（真机 429MB / 4MB/s ≈ 105 秒），我们取更宽。 */
@@ -652,7 +741,7 @@ async function downloadTo(
      * 那会白等到停滞判死（45 秒）才换下一个。
      */
     if (i > 0) {
-      const probe = probeChannel(ch.url)
+      const probe = await probeChannel(ch.url)
       if (!probe.alive) {
         auditLog(`跳过通道 ${ch.name}：${probe.note}`)
         errors.push(`${ch.name}: 探活未过（${probe.note}）`)
@@ -674,37 +763,40 @@ async function downloadTo(
        */
       const timeouts = [CURL_MAX_TIME_SEC]
       for (let a = 0; a < timeouts.length; a++) {
-        try {
-          const out = execFileSync(
-            CURL_BIN,
-            [
-              /**
-               * ⚠️ **`-f` 必须有**（对端点明的一条）：不带它时，站点返回 404/500 的
-               * **错误页会被原样存成 tar.gz**，随后 tar 报"这不是 gzip 文件"之类，
-               * 把排查方向带偏。带上 `-f`，HTTP 层错误直接算失败，归因才准。
-               *
-               * 其它参数的分工：
-               *   `--max-time`  总上限（archive 给宽些：对端真机 429MB / 4MB/s ≈ 105 秒）
-               *   `--speed-limit/--speed-time` 停滞判死（45 秒内 <1 B/s 即中止）
-               *
-               * 进程退出语义：这里用 **`execFileSync`（同步）** —— 它**必然等到子进程退出**
-               * 才返回/抛错。对端点明的那条 Windows 陷阱（"taskkill 返回 ≠ 句柄已释放"）
-               * 因此天然不适用于这条路径；真正需要防的是**清理/改名撞上未释放的句柄**，
-               * 那个由 `removeFileQuiet()` 的"改名降级"兜住。
-               */
-              '-sSLf',
-              '--ssl-no-revoke',
-              '--connect-timeout', '15',
-              '--max-time', String(timeouts[a]),
-              '--speed-limit', '1',
-              '--speed-time', '45',
-              '-w', '%{size_download} %{speed_download}',
-              '-o', partPath,
-              ch.url,
-            ],
-            { stdio: 'pipe', timeout: (timeouts[a]! + 30) * 1000, killSignal: 'SIGKILL', encoding: 'utf8' },
-          )
-          const [bytes, speed] = String(out ?? '').trim().split(/\s+/)
+        /**
+         * ⚠️ **异步**（`runCurlAsync`），不是 `execFileSync` —— 同步会**冻住整个宿主进程**。
+         * 见 `runCurlAsync` 的说明（用户级事故：最坏 14 分钟界面卡死）。
+         */
+        const res = await runCurlAsync(
+          [
+            /**
+             * ⚠️ **`-f` 必须有**（对端点明的一条）：不带它时，站点返回 404/500 的
+             * **错误页会被原样存成 tar.gz**，随后 tar 报"这不是 gzip 文件"之类，
+             * 把排查方向带偏。带上 `-f`，HTTP 层错误直接算失败，归因才准。
+             *
+             * 其它参数的分工：
+             *   `--max-time`  总上限（archive 给宽些：对端真机 429MB / 4MB/s ≈ 105 秒）
+             *   `--speed-limit/--speed-time` 停滞判死（45 秒内 <1 B/s 即中止）
+             *
+             * ⚠️ **刻意不加 `--retry`**（对端点明）：curl 自己的重试会和我们的
+             * "通道级重试 + 加时"**叠乘**，把预算吃穿（3 × 加时 × 多通道 ⇒ 十几分钟）。
+             * 瞬时错误的重试由我们的通道机制负责，预算才管得住。
+             */
+            '-sSLf',
+            '--ssl-no-revoke',
+            '--connect-timeout', '15',
+            '--max-time', String(timeouts[a]),
+            '--speed-limit', '1',
+            '--speed-time', '45',
+            '-w', '%{size_download} %{speed_download}',
+            '-o', partPath,
+            ch.url,
+          ],
+          (timeouts[a]! + 30) * 1000,
+        )
+
+        if (res.ok) {
+          const [bytes, speed] = String(res.stdout ?? '').trim().split(/\s+/)
           /** ⚠️ 判进度用**磁盘口径**（`-w` 被杀时可能没有输出；见 partSizeOnDisk 的说明）。 */
           const onDisk = partSizeOnDisk(partPath)
           transferred.push(`${ch.name}: ${onDisk} 字节（磁盘口径）`)
@@ -721,38 +813,43 @@ async function downloadTo(
           }
           errors.push(`${ch.name}: curl 返回成功但磁盘上是 0 字节（-w 报 ${bytes || '(无)'}）`)
           break
-        } catch (e) {
-          const text = e instanceof Error ? e.message.slice(0, 90) : String(e)
-          /** 磁盘口径 —— 中途被杀也拿得到（这正是换它的原因）。 */
-          const got = partSizeOnDisk(partPath)
-          if (got > 0) transferred.push(`${ch.name}: ${got} 字节后中断（磁盘口径）`)
-          else transferred.push(`${ch.name}: 0 字节（磁盘口径；-w 报 ${bytesFromExecError(e)}）`)
-
-          /**
-           * 归因走**结构化退出码**（`error.status`），不解析文本 ——
-           * 文本（Node 回显的整条命令行）**只作为展示**附在后面。
-           */
-          const cls = classifyCurlExit({
-            code: (e as { status?: number }).status,
-            signal: (e as { signal?: string }).signal,
-          })
-          const stderrTail = String((e as { stderr?: unknown }).stderr ?? '').trim().slice(-160)
-          errors.push(
-            `${ch.name}: curl 失败【${cls.note}】` + (stderrTail ? ` :: ${stderrTail}` : ''),
-          )
-
-          /**
-           * 只加时**一次**，且只在"确实传了东西"时。
-           * 记得清掉半截文件 —— 否则下一轮"非空即成功"会把残包当成品。
-           */
-          if (a === 0 && got > 0) {
-            timeouts.push(Math.round(CURL_MAX_TIME_SEC * 1.75))
-            auditLog(`${ch.name} 已传 ${got} 字节后中断 ⇒ 同通道加时重试一次`)
-            removeFileQuiet(partPath)
-            continue
-          }
-          break
         }
+
+        /** 磁盘口径 —— 中途被杀也拿得到（这正是换它的原因）。 */
+        const got = partSizeOnDisk(partPath)
+        /** 均速**失败时也打**（对端建议）：配合磁盘字节数，一眼分辨"连上但不传"vs"慢但在涨"。 */
+        const [wBytes, wSpeed] = String(res.stdout ?? '').trim().split(/\s+/)
+        const speedNote =
+          got > 0 || Number(wBytes) > 0
+            ? `，-w 报 ${wBytes || '?'} 字节` +
+              (Number(wSpeed) > 0 ? `／均速 ${Math.round(Number(wSpeed) / 1024)} KB/s` : '')
+            : ''
+        transferred.push(
+          got > 0
+            ? `${ch.name}: ${got} 字节后中断（磁盘口径${speedNote}）`
+            : `${ch.name}: 0 字节（磁盘口径${speedNote}）`,
+        )
+
+        /**
+         * 归因走**结构化退出码**（`status`/`signal`），不解析文本 ——
+         * 文本（Node 回显的整条命令行）**只作为展示**附在后面。
+         */
+        const cls = classifyCurlExit({ code: res.status, signal: res.signal })
+        errors.push(
+          `${ch.name}: curl 失败【${cls.note}】` + (res.stderrTail ? ` :: ${res.stderrTail}` : ''),
+        )
+
+        /**
+         * 只加时**一次**，且只在"确实传了东西"时。
+         * 记得清掉半截文件 —— 否则下一轮"非空即成功"会把残包当成品。
+         */
+        if (a === 0 && got > 0) {
+          timeouts.push(Math.round(CURL_MAX_TIME_SEC * 1.75))
+          auditLog(`${ch.name} 已传 ${got} 字节后中断 ⇒ 同通道加时重试一次`)
+          removeFileQuiet(partPath)
+          continue
+        }
+        break
       }
     }
 
@@ -960,14 +1057,14 @@ export async function installCard(
       sourceDir = resolve(raw)
     } else if (kind === 'tgz-file') {
       const unpacked = join(work, 'unpacked')
-      extractTgz(resolve(raw), unpacked)
+      await extractTgz(resolve(raw), unpacked)
       sourceDir = packageRootUnder(unpacked)
     } else if (kind === 'tgz-url') {
       const tgzPath = join(work, 'download.tgz')
       const dl = await downloadTo(raw, tgzPath, auditLog, cardsRoot)
       if (!dl.ok) throw new Error(dl.reason ?? '下载失败')
       const unpacked = join(work, 'unpacked')
-      extractTgz(tgzPath, unpacked)
+      await extractTgz(tgzPath, unpacked)
       sourceDir = packageRootUnder(unpacked)
     } else {
       sourceDir = await fetchNpm(raw, work)

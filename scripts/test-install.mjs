@@ -372,7 +372,7 @@ try {
     ok(/999/.test(classifyCurlExit({ code: 999 }).note), 'unknown 也要带上有用的信息（退出码）')
 
     /** 被信号杀死（我们只在超时路径上设 killSignal，所以这个归因是有依据的）。 */
-    eq(classifyCurlExit({ signal: 'SIGKILL' }).kind, 'timeout', '被信号杀死 ⇒ 超时（调用点唯一）')
+    eq(classifyCurlExit({ signal: 'SIGKILL' }).kind, 'aborted', '被信号杀死 ⇒ aborted（**主动中止**，不落进 unknown）')
 
     /** fetch 侧同样只用结构化字段：`cause.code`，不解析 message。 */
     eq(
@@ -394,7 +394,7 @@ try {
      * 顺带卡耗时 —— 探活是"提前判死"用的，**不能自己变成白等**。
      */
     const t0 = Date.now()
-    const dead = probeChannel('http://127.0.0.1:1/nothing-here.tar.gz')
+    const dead = await probeChannel('http://127.0.0.1:1/nothing-here.tar.gz')
     const cost = Date.now() - t0
     ok(!dead.alive, '连不上 ⇒ 判死')
     ok(cost < 9000, `判死要快（实测 ${cost}ms；上限 4s + 余量）`)
