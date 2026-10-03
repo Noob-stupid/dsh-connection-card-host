@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 
 import { checkPackage, ensureAdapterManifest, looksLikeDshPlugin } from '../lib/card-host/package-check.js'
-import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, classifyDownloadFailure, probeChannel, expandGitHubRepoUrl, bytesFromExecError } from '../lib/card-host/installer.js'
+import { installCard, uninstallCard, toCodeloadUrl, downloadChannelsFor, orderChannels, readDownloadMemo, rememberDownloadChannel, classifyDownloadFailure, probeChannel, expandGitHubRepoUrl, bytesFromExecError, partSizeOnDisk } from '../lib/card-host/installer.js'
 
 let pass = 0
 let fail = 0
@@ -353,6 +353,18 @@ try {
     const net = classifyDownloadFailure('getaddrinfo ENOTFOUND codeload.github.com')
     eq(net.kind, 'unreachable', '域名解析不了 ⇒ unreachable')
     ok(/网络不可达/.test(net.note), '文案区分开了')
+
+    /**
+     * ⚠️ **回归断言（真踩过）**：Node 抛错时会把**整条命令行**回显进消息，
+     * 而命令行里就带 `--connect-timeout` / `--max-time` —— 只要正则里写 `timeout` 这个词，
+     * **任何** curl 失败都会被归成"超时"（实测：一个 404 被报成"超时，包可能较大" ✗）。
+     */
+    const cmdEcho = classifyDownloadFailure(
+      'Command failed: curl.exe -sSLf --ssl-no-revoke --connect-timeout 15 --max-time 300 -o x.part https://x/y',
+    )
+    ok(cmdEcho.kind !== 'timeout', '命令行回显（含 --connect-timeout）**不得**被当成超时')
+    eq(classifyDownloadFailure('curl: (28) Operation timed out').kind, 'timeout', 'curl 退出码 28 ⇒ 超时')
+    eq(classifyDownloadFailure('spawnSync curl.exe ETIMEDOUT').kind, 'timeout', 'exec 超时 ⇒ 超时')
   }
 
   /* ═══════════ 7. 探活：判死要快（不能自己变成白等） ═══════════ */

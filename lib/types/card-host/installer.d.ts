@@ -131,11 +131,36 @@ export declare function probeChannel(url: string, timeoutMs?: number): {
     note: string;
 };
 /**
- * 从 `execFileSync` 抛出的错误里取**实传字节数**。
+ * **磁盘口径的实传字节数** —— 判进度以它为准。
+ *
+ * ## 为什么不解析 curl 的 `-w`（对端点明的更权威口径）
+ *
+ * `-w` 的输出**在进程被杀时可能根本没有**（我们这边表现为"空串"，
+ * 见 `bytesFromExecError` 那一串判空）。而 `.part` 的**实际大小是权威口径**：
+ * 跨平台、跨 curl 版本、**被杀也准**，还不依赖 stdout 是否被捕获。
+ *
+ * 于是"拿不到字节数就只能不赌"这件事**从根上消失** —— 永远拿得到。
+ * `-w` 的数字退化为**辅助信息**（平均速率有意义，字节数以磁盘为准）。
+ *
+ * ⚠️ 这只是"量了多少"，**不代表完整性**：截断由后面的 `tar -xzf` 兜住
+ * （截断的 gzip 解包会报错，不会被当成成功）。
+ */
+export declare function partSizeOnDisk(partPath: string): number;
+/**
+ * 从 `execFileSync` 抛出的错误里取 curl `-w` 报的**实传字节数**（辅助信息）。
  *
  * 为什么取得到：命令带了 `-w '%{size_download} …'`，而 Node 的 `execFileSync`
- * 抛错时会把**已经产生的 stdout/stderr 挂在 error 上**（`error.stdout`）——
- * 于是"中途失败但传了 3MB"这种情况我们仍然知道。
+ * 抛错时会把**已经产生的 stdout/stderr 挂在 error 上**（`error.stdout`）。
+ *
+ * ⚠️ **JS 的"空/无"与"零"默认会被混为一谈**，这一族坑值得一起记：
+ *
+ *     Number('')  === 0       // ← 我们真踩到的那个
+ *     Number(' ') === 0       // 空格同理
+ *     +' '        === 0
+ *     parseInt('') === NaN    // 唯独 parseInt 例外；但 parseInt('12abc') === 12（部分解析）
+ *
+ * 所以凡"缺失"与"计数为 0"**结论相反**的地方，都要**前置判空** ——
+ * 并且"结论相反的两个分支"必须**各自有断言**，否则它就以"偶尔误判"的形态永远活着。
  *
  * @returns 字节数；拿不到返回 -1（与"传了 0 字节"是**两种**情况，不能混）
  */
