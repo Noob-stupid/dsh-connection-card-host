@@ -20,7 +20,7 @@
  *
  * 跑法：node scripts/test-symlink-tar.mjs
  */
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
@@ -152,15 +152,40 @@ try {
   ])
   const evilPath = join(work, 'evil.tgz')
   writeFileSync(evilPath, gzipSync(evilTar))
+
+  /**
+   * ⚠️ **哨兵探针**（对端建议，比"文件不存在"更强）：
+   * 先在目标目录**同级**放一个内容已知的文件，事后断言**内容未变** ——
+   * 这样连"写了又删"也能抓到（只断言"不存在"是抓不到的）。
+   */
+  const sentinel = join(work, 'outside.txt')
+  writeFileSync(sentinel, 'SENTINEL-UNTOUCHED')
+
   const evilRoot = join(work, 'cards-evil')
   const evilRes = await installCard(evilPath, evilRoot, () => {})
 
   ok(!evilRes.ok, '含逃逸条目的包 ⇒ **拒绝安装**')
   ok(/拒绝解压|目标目录之外/.test(evilRes.reason ?? ''), '拒绝理由说清是"会写到目标目录之外"')
   ok(
-    !existsSync(join(work, 'outside.txt')),
-    '**目标目录之外没有被写入**（这才是这条判据真正要保证的事）',
+    readFileSync(sentinel, 'utf8') === 'SENTINEL-UNTOUCHED',
+    '**哨兵内容未变**（比"文件不存在"更强：连"写了又删"都能抓到）',
   )
+
+  /* ═══════════ 链接目标逃逸：条目名正常，**目标**指向目录外 ═══════════ */
+
+  console.log('── 链接目标逃逸（只看条目名是**抓不到**的）')
+
+  const linkEvil = Buffer.concat([
+    tarFile('package.json', JSON.stringify({ name: 'linkevil', version: '1.0.0', dsh: { bundle: {} } })),
+    tarHeader('lib/leak.js', 0, '2', '../../../../etc/passwd'), // ← 名字正常，目标逃逸
+    Buffer.alloc(1024),
+  ])
+  const linkPath = join(work, 'linkevil.tgz')
+  writeFileSync(linkPath, gzipSync(linkEvil))
+  const linkRes = await installCard(linkPath, join(work, 'cards-link'), () => {})
+
+  ok(!linkRes.ok, '链接目标指向目录外 ⇒ **拒绝安装**')
+  ok(/拒绝|目标目录之外/.test(linkRes.reason ?? ''), '拒绝理由说清原因（靠"看链接目标"才抓得到）')
 } finally {
   rmSync(work, { recursive: true, force: true })
 }

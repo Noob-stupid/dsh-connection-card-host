@@ -35,22 +35,54 @@ export interface InstallResult {
  */
 export declare function removeFileQuiet(target: string): boolean;
 /**
- * 挑出**逃逸类**条目（zip-slip）：绝对路径，或含 `..` 段的相对路径。
+ * 判定一个归档条目名是否**逃逸**（会写到目标目录之外）。
  *
- * ## 为什么必须**拒绝**，而不是像 bsdtar 那样"跳过并警告"
+ * ## 为什么不能只查 `..` 与绝对路径（对端点明）
  *
- * 对端点明的一条边界，我照抄：
+ * `..` 和绝对路径只是**最粗的两种**。Windows 上同一类还有一堆绕过：
  *
- * > 外部工具**容忍类**差异（symlink/硬链接/设备文件/长路径）⇒ **降级警告**；
- * > **逃逸类**条目 ⇒ **必须拦** —— 即使 tar 自己肯解，也不该落到我们目录外。
+ *     分隔符     `..\outside`、`a//../b`、`./../x`  ⇒ **先规范化再判**，别只 startsWith('..')
+ *     盘符相对   `C:foo`   —— **不是**绝对路径，但落到 C 盘当前目录 = 逃逸
+ *     UNC        `\\server\share\x`
+ *     备用数据流 `file.txt:stream`（NTFS ADS）—— 名字看着在目录内，实际写到别的流
+ *     保留设备名 `CON`/`NUL`/`COM1`…（含 `CON.txt`）
+ *     结尾点/空格 `foo. ` ⇒ Windows 解析成 `foo`，与已有文件**碰撞覆盖**
  *
- * 两类**不能混在一个判据里**：容忍类的后果是"少几个文件"，逃逸类的后果是
- * **写到目标目录之外**（我们装的是任意 GitHub 仓库 ⇒ 那是一条真实的攻击面）。
+ * 所以判据是：**先把名字规范化，再看它会不会跑出目标目录** —— 而不是列举几个坏前缀。
  *
- * 也不依赖 tar 自己的默认行为（不同实现策略不同，有的剥前缀、有的跳过、`-P` 还能放行）——
- * **我们自己的判据要自己立**。
+ * ## 两条纪律
+ *
+ *   · **绝不传 `-P` / `--absolute-names`**（`-P` 会放行绝对路径）
+ *   · 也**不依赖** tar 的默认行为或 `--no-same-owner` 之类替我们做安全判断 ——
+ *     不同实现策略不同（剥前缀 / 跳过 / 放行），**判据在我们自己手里**
+ *
+ * @returns 命中原因（没命中返回 undefined）；`warn` 表示"容忍类"（碰撞风险，值得提示但不必拒绝）
+ */
+export declare function classifyTarEntry(raw: string): {
+    escape?: string;
+    warn?: string;
+};
+/**
+ * 逃逸类判据的**入口**：任一条目逃逸即返回它（供安装前拦截）。
+ *
+ * ⚠️ 除了**条目名**，还必须看**链接目标**（对端点明的最关键一条）：
+ * `'2'` 符号链接 / `'1'` 硬链接的**目标**同样可能是绝对路径或 `..` ——
+ * 即使我们把 symlink 当"容忍类"跳过，**硬链接**或"先建链再往里写"的组合仍是逃逸路径。
  */
 export declare function findEscapingEntry(entries: string[]): string | undefined;
+/**
+ * **最后一道网**：解压后遍历一遍，任何**符号链接**的目标若解析不到目标目录之内 ⇒ 报出来。
+ *
+ * 为什么还要这一步（对端点明的）：`tar -tzf` 只给条目名、`-tvf` 才带 `-> target`，
+ * 而且**任何解析都可能漏**（格式变体、PAX 头、实现差异）。
+ * 这一步**不依赖格式解析**，直接看落地结果 —— 正好补前者没覆盖到的情况。
+ *
+ * @returns 越界的条目（相对路径 + 它指向哪儿）
+ */
+export declare function findEscapedLinks(destDir: string, limit?: number): {
+    entry: string;
+    target: string;
+}[];
 /**
  * 把 GitHub 的 archive 链接规范化成 **codeload** 链接。
  *

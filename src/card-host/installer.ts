@@ -25,8 +25,8 @@
  * npm 走 registry **tarball**（一次 HTTPS GET），**不引 pnpm**
  * —— 为了装一张卡片把包管理器拖进来不值得，而且 pnpm 会改写 profile。
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, copyFileSync, writeFileSync, statSync, unlinkSync, rmdirSync, renameSync, type Dirent } from 'node:fs'
-import { join, basename, resolve, dirname } from 'node:path'
+import { existsSync, readlinkSync, mkdirSync, readFileSync, readdirSync, copyFileSync, writeFileSync, statSync, unlinkSync, rmdirSync, renameSync, type Dirent } from 'node:fs'
+import { join, basename, resolve, dirname, relative, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFile, execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -164,6 +164,37 @@ export function removeFileQuiet(target: string): boolean {
 }
 
 /**
+ * 取 tar 里**链接条目的目标**（`tar -tvf` 输出里的 `-> target`）。
+ *
+ * 对端点明的最关键一条：`tar -tzf` **只给条目名**，而符号链接（`'2'`）与硬链接（`'1'`）
+ * 的**目标**同样可能是绝对路径或 `..` —— 那是与"条目名逃逸"并列的另一条逃逸路径。
+ *
+ * 解析失败（输出格式不认识）⇒ 返回空数组，**不阻塞** ——
+ * 因为还有**最后一道网**：解压后 `findEscapedLinks()` 直接看落地结果，不依赖格式解析。
+ */
+async function listTarLinkTargets(tgzPath: string): Promise<string[]> {
+  return await new Promise<string[]>((resolve) => {
+    execFile(
+      'tar',
+      ['-tvf', tgzPath],
+      { timeout: 60_000, killSignal: 'SIGKILL', maxBuffer: MAX_CHILD_BUFFER, encoding: 'utf8' },
+      (err, stdout) => {
+        if (err) {
+          resolve([])
+          return
+        }
+        const out: string[] = []
+        for (const line of String(stdout ?? '').split('\n')) {
+          const m = /->\s*(.+?)\s*$/u.exec(line)
+          if (m?.[1]) out.push(m[1])
+        }
+        resolve(out)
+      },
+    )
+  })
+}
+
+/**
  * 列出 tar 里的条目名（`tar -tzf`，异步）。
  *
  * 用途只有一个：**解压前拦"逃逸类"条目**（见 `findEscapingEntry`）。
@@ -191,30 +222,130 @@ async function listTarEntries(tgzPath: string): Promise<string[]> {
   })
 }
 
+/** Windows 保留设备名（带不带扩展名都一样危险：`CON.txt` 也是 CON）。 */
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/iu
+
 /**
- * 挑出**逃逸类**条目（zip-slip）：绝对路径，或含 `..` 段的相对路径。
+ * 判定一个归档条目名是否**逃逸**（会写到目标目录之外）。
  *
- * ## 为什么必须**拒绝**，而不是像 bsdtar 那样"跳过并警告"
+ * ## 为什么不能只查 `..` 与绝对路径（对端点明）
  *
- * 对端点明的一条边界，我照抄：
+ * `..` 和绝对路径只是**最粗的两种**。Windows 上同一类还有一堆绕过：
  *
- * > 外部工具**容忍类**差异（symlink/硬链接/设备文件/长路径）⇒ **降级警告**；
- * > **逃逸类**条目 ⇒ **必须拦** —— 即使 tar 自己肯解，也不该落到我们目录外。
+ *     分隔符     `..\outside`、`a//../b`、`./../x`  ⇒ **先规范化再判**，别只 startsWith('..')
+ *     盘符相对   `C:foo`   —— **不是**绝对路径，但落到 C 盘当前目录 = 逃逸
+ *     UNC        `\\server\share\x`
+ *     备用数据流 `file.txt:stream`（NTFS ADS）—— 名字看着在目录内，实际写到别的流
+ *     保留设备名 `CON`/`NUL`/`COM1`…（含 `CON.txt`）
+ *     结尾点/空格 `foo. ` ⇒ Windows 解析成 `foo`，与已有文件**碰撞覆盖**
  *
- * 两类**不能混在一个判据里**：容忍类的后果是"少几个文件"，逃逸类的后果是
- * **写到目标目录之外**（我们装的是任意 GitHub 仓库 ⇒ 那是一条真实的攻击面）。
+ * 所以判据是：**先把名字规范化，再看它会不会跑出目标目录** —— 而不是列举几个坏前缀。
  *
- * 也不依赖 tar 自己的默认行为（不同实现策略不同，有的剥前缀、有的跳过、`-P` 还能放行）——
- * **我们自己的判据要自己立**。
+ * ## 两条纪律
+ *
+ *   · **绝不传 `-P` / `--absolute-names`**（`-P` 会放行绝对路径）
+ *   · 也**不依赖** tar 的默认行为或 `--no-same-owner` 之类替我们做安全判断 ——
+ *     不同实现策略不同（剥前缀 / 跳过 / 放行），**判据在我们自己手里**
+ *
+ * @returns 命中原因（没命中返回 undefined）；`warn` 表示"容忍类"（碰撞风险，值得提示但不必拒绝）
+ */
+export function classifyTarEntry(raw: string): { escape?: string; warn?: string } {
+  const name = String(raw ?? '').replace(/\\/gu, '/')
+  if (!name) return {}
+
+  // 绝对路径：以 / 开头，或带盘符前缀（`C:/…`）
+  if (name.startsWith('/') || /^[A-Za-z]:\//u.test(name)) return { escape: `绝对路径：${raw}` }
+
+  // 盘符**相对**路径：`C:foo`（不是绝对，但落到该盘当前目录 —— 同样是逃逸）
+  if (/^[A-Za-z]:/u.test(name)) return { escape: `盘符相对路径：${raw}` }
+
+  // UNC：`\\server\share\x`（规范化后是 `//server/...`）
+  if (name.startsWith('//')) return { escape: `UNC 路径：${raw}` }
+
+  // NTFS 备用数据流：冒号不在盘符位置却出现（目录名里也可能有）
+  const segs = name.split('/')
+  for (const s of segs) {
+    if (s.includes(':')) return { escape: `备用数据流（NTFS ADS）：${raw}` }
+    if (WINDOWS_RESERVED.test(s)) return { escape: `Windows 保留设备名：${raw}` }
+  }
+
+  // **先规范化再判**：把 `.` / `..` 真正算一遍，看会不会走出去
+  let depth = 0
+  for (const s of segs) {
+    if (s === '' || s === '.') continue
+    if (s === '..') {
+      depth -= 1
+      if (depth < 0) return { escape: `上跳到目标目录之外：${raw}` }
+      continue
+    }
+    depth += 1
+  }
+
+  // 容忍类：结尾点/空格在 Windows 上会被吃掉 ⇒ 可能与已有文件碰撞（不拒绝，但值得提示）
+  for (const s of segs) {
+    if (/[. ]$/u.test(s)) return { warn: `条目名以点/空格结尾，Windows 上会与同名文件碰撞：${raw}` }
+  }
+
+  return {}
+}
+
+/**
+ * 逃逸类判据的**入口**：任一条目逃逸即返回它（供安装前拦截）。
+ *
+ * ⚠️ 除了**条目名**，还必须看**链接目标**（对端点明的最关键一条）：
+ * `'2'` 符号链接 / `'1'` 硬链接的**目标**同样可能是绝对路径或 `..` ——
+ * 即使我们把 symlink 当"容忍类"跳过，**硬链接**或"先建链再往里写"的组合仍是逃逸路径。
  */
 export function findEscapingEntry(entries: string[]): string | undefined {
   for (const raw of entries) {
-    const name = raw.replace(/\\/gu, '/')
-    const isAbsolute = name.startsWith('/') || /^[A-Za-z]:\//u.test(name)
-    const hasDotDot = name.split('/').includes('..')
-    if (isAbsolute || hasDotDot) return raw
+    if (classifyTarEntry(raw).escape) return raw
   }
   return undefined
+}
+
+/**
+ * **最后一道网**：解压后遍历一遍，任何**符号链接**的目标若解析不到目标目录之内 ⇒ 报出来。
+ *
+ * 为什么还要这一步（对端点明的）：`tar -tzf` 只给条目名、`-tvf` 才带 `-> target`，
+ * 而且**任何解析都可能漏**（格式变体、PAX 头、实现差异）。
+ * 这一步**不依赖格式解析**，直接看落地结果 —— 正好补前者没覆盖到的情况。
+ *
+ * @returns 越界的条目（相对路径 + 它指向哪儿）
+ */
+export function findEscapedLinks(destDir: string, limit = 5000): { entry: string; target: string }[] {
+  const out: { entry: string; target: string }[] = []
+  const root = resolve(destDir)
+  let seen = 0
+
+  const walk = (dir: string): void => {
+    if (seen > limit) return
+    let items: Dirent[]
+    try {
+      items = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const it of items) {
+      if (++seen > limit) return
+      const abs = join(dir, it.name)
+      if (it.isSymbolicLink()) {
+        try {
+          const target = resolve(dir, readlinkSync(abs))
+          // 解析结果必须仍在目标目录之内（前缀比较要带分隔符，避免 /a/bc 匹配 /a/b）
+          if (target !== root && !target.startsWith(root + sep)) {
+            out.push({ entry: relative(root, abs), target })
+          }
+        } catch {
+          /* 读不到链接目标：不阻塞（上面的名字判据已经拦过一轮） */
+        }
+        continue
+      }
+      if (it.isDirectory()) walk(abs)
+    }
+  }
+
+  walk(root)
+  return out
 }
 
 /**
@@ -249,7 +380,14 @@ async function extractTgz(tgzPath: string, destDir: string): Promise<string | un
    * ⚠️ **解压前先拦逃逸类条目**（zip-slip）。这一步与"容忍类差异降级警告"是**两回事**：
    * 前者是**安全**（绝不能写到目标目录之外），后者是**兼容**（少几个文件无所谓）。
    */
-  const escaping = findEscapingEntry(await listTarEntries(tgzPath))
+  const entries = await listTarEntries(tgzPath)
+  /**
+   * ⚠️ 除条目名，还要看**链接目标**（对端点明的最关键一条）：
+   * `tar -tzf` 只给名字；符号链接/硬链接的**目标**同样可能是绝对路径或 `..`。
+   * 我们额外跑一次 `-tvf` 取 `-> target`，用**同一个判据**过一遍。
+   */
+  const linkTargets = await listTarLinkTargets(tgzPath)
+  const escaping = findEscapingEntry(entries) ?? findEscapingEntry(linkTargets)
   if (escaping) {
     throw new Error(
       `**拒绝解压**：归档里有会写到目标目录之外的条目（「${escaping.slice(0, 80)}」）—— ` +
@@ -312,6 +450,22 @@ async function extractTgz(tgzPath: string, destDir: string): Promise<string | un
             .filter((l) => /symlink|Cannot create|Operation not permitted|not permitted/iu.test(l))
             .length
           const tail = stderrText.trim().split('\n').slice(-1)[0] ?? ''
+          /**
+           * ⚠️ **最后一道网**：名字判据与 `-tvf` 都可能漏（格式变体、PAX 头、实现差异），
+           * 所以落地后再遍历一遍 —— 看有没有**链接指到目标目录之外**。
+           * 这一步**不依赖任何格式解析，只看结果**（对端点名的"最后一道网"）。
+           */
+          const escaped = findEscapedLinks(destDir)
+          if (escaped.length > 0) {
+            const one = escaped[0]!
+            reject(
+              new Error(
+                `**拒绝使用**：解压后发现有链接指向目标目录之外（「${one.entry}」→「${one.target}」）—— ` +
+                  `这类包可能借此读写你机器上的其它文件，适配层不安装它。`,
+              ),
+            )
+            return
+          }
           resolve(
             `解压完成了，但 tar 报了警告（退出码 ${String(code ?? '?')}）` +
               (skipped > 0 ? `：**有 ${skipped} 个条目（多半是符号链接）没落地**` : '') +
