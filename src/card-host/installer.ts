@@ -25,7 +25,7 @@
  * npm 走 registry **tarball**（一次 HTTPS GET），**不引 pnpm**
  * —— 为了装一张卡片把包管理器拖进来不值得，而且 pnpm 会改写 profile。
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, cpSync, writeFileSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, copyFileSync, writeFileSync, statSync, unlinkSync, rmdirSync, type Dirent } from 'node:fs'
 import { join, basename, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
@@ -69,10 +69,114 @@ function classify(spec: string): SourceKind {
   return 'npm'
 }
 
+/**
+ * 递归删除目录 —— **不要用 `fs.rmSync`**。
+ *
+ * ## 为什么换掉 rmSync（2026-10-02 实测，比 cpSync 那条更隐蔽）
+ *
+ * 本机上 `rmSync` 对 `C:\Users\<用户>\.dsh\…` 下的路径**静默无效**：
+ * **不抛异常、也不删除**。实测：
+ *
+ *     rmSync(hello-card.current, { force: true })     → 调用返回，文件仍在
+ *     unlinkSync(hello-card.current)                  → 真的删掉了
+ *
+ * 后果比"报错"严重得多 —— 卸载卡片时：
+ *   ① 指针删不掉 ⇒ 卡片**仍留在列表里**，用户以为没卸掉
+ *   ② 而函数返回 `{ ok: true }` ⇒ 界面显示"已卸载" —— **成功是假的**
+ *
+ * ## 与 cpSync 同源
+ *
+ * `cpSync` 在同样位置报 `EIO, Access is denied`，`rmSync` 则静默不动；
+ * 两者的共同点是都走**批量/目录级**的文件系统 API。
+ * 逐个条目的 `copyFileSync` / `unlinkSync` / `rmdirSync` 一律正常。
+ * 所以本文件的规矩是：**只使用逐条目 API**，不用批量 API。
+ */
+function removeDirRecursive(target: string): void {
+  let entries: Dirent[]
+  try {
+    entries = readdirSync(target, { withFileTypes: true })
+  } catch {
+    return // 不存在或读不到：按"已删除"处理（等价于 rmSync 的 force 语义）
+  }
+  for (const entry of entries) {
+    const p = join(target, entry.name)
+    if (entry.isDirectory()) {
+      removeDirRecursive(p)
+      try {
+        rmdirSync(p)
+      } catch {
+        /* 非空或占用：留给下一次（不抛，调用方按需统计） */
+      }
+    } else {
+      try {
+        unlinkSync(p)
+      } catch {
+        /* 被占用：留给下一次 */
+      }
+    }
+  }
+  try {
+    rmdirSync(target)
+  } catch {
+    /* 目录里还有删不掉的条目：保留它比假装删掉更诚实 */
+  }
+}
+
+/**
+ * 删除一个文件（等价于 `rmSync(p, { force: true })`，但用了**有效的** API）。
+ *
+ * @returns 是否真的删掉了 —— 调用方**必须**看这个返回值：
+ *          "删不掉"与"删掉了"在这台机器上是两种真实结果。
+ */
+function removeFileQuiet(target: string): boolean {
+  try {
+    unlinkSync(target)
+    return true
+  } catch {
+    return !existsSync(target) // 本来就没有 = 视作成功
+  }
+}
+
 /** 解压 tgz 到目标目录（用系统 tar —— Windows 10+ 自带 bsdtar）。 */
 function extractTgz(tgzPath: string, destDir: string): void {
   mkdirSync(destDir, { recursive: true })
   execFileSync('tar', ['-xzf', tgzPath, '-C', destDir], { stdio: 'pipe' })
+}
+
+/**
+ * 递归拷贝目录 —— **不要用 `fs.cpSync`**。
+ *
+ * ## 为什么换掉 cpSync（2026-10-02 实测）
+ *
+ * 本机上 `cpSync` 写入 `C:\Users\<用户>\.dsh\…`（正是卡片目录所在）与 `%TEMP%`
+ * 一律 `EIO, Access is denied`，写 `D:\` 却正常；而 `copyFileSync` 三种位置都能写。
+ * 于是**安装卡片整个失败**：
+ *
+ *     installCard('D:\…\hello-card', …)
+ *     → ok:false  reason: "EIO, Access is denied.
+ *        '\\?\C:\Users\花火\.dsh\connection-cards\cards\hello-card@1.0.0-43da4a94'"
+ *
+ * 复现方式很直接：对同一份源、同一目标，`cpSync` 必失败、逐文件 `copyFileSync` 必成功。
+ * 怀疑与安全软件/文件系统过滤驱动对 `cpSync` 所用的批量复制 API 有关，
+ * 但**不必查清根因**：逐文件拷贝是等价且更可控的实现。
+ *
+ * ## 顺带的好处
+ *
+ * · 逐文件拷贝对"目标被占用"的容错更好（可跳过单个失败项而不是整体失败）
+ * · 不跟随符号链接（避免把链接目标整棵树拷进来）
+ */
+function copyDirRecursive(src: string, dst: string): void {
+  mkdirSync(dst, { recursive: true })
+  for (const entry of readdirSync(src, { withFileTypes: true })) {
+    const from = join(src, entry.name)
+    const to = join(dst, entry.name)
+    if (entry.isDirectory()) {
+      copyDirRecursive(from, to)
+    } else if (entry.isFile()) {
+      copyFileSync(from, to)
+    }
+    // 其它类型（符号链接/设备等）跳过：卡片包不该依赖它们
+  }
 }
 
 /**
@@ -235,7 +339,7 @@ export async function installCard(
       // 同名目录已存在 = 同一份来源装过 → 不重写（这正是避开文件锁的关键）
       skipped = true
     } else {
-      cpSync(sourceDir, destDir, { recursive: true })
+      copyDirRecursive(sourceDir, destDir)
     }
 
     // 改指针（内容极小，不会被锁）
@@ -275,7 +379,7 @@ export async function installCard(
     auditLog(`卡片安装失败（${raw}）：${reason}`)
     return { ok: false, reason }
   } finally {
-    rmSync(work, { recursive: true, force: true })
+    removeDirRecursive(work)
   }
 }
 
@@ -313,10 +417,21 @@ export function uninstallCard(cardId: string, cardsRoot: string): { ok: boolean;
 
   // 1) 删指针 —— 关键一步，卡片立刻消失
   if (hasPointer) {
-    try {
-      rmSync(pointer, { force: true })
-    } catch (e) {
-      return { ok: false, reason: `指针删不掉：${e instanceof Error ? e.message : String(e)}` }
+    /**
+     * ⚠️ 必须**看返回值**，不能只看"有没有抛错"。
+     *
+     * 本机上删除失败是**静默**的（`rmSync` 时代连异常都没有，文件还在、
+     * 函数却返回 ok:true ⇒ 界面显示"已卸载"而卡片仍在列表里 —— 假成功）。
+     * 所以：删不掉就**如实报失败**并说清后果。
+     */
+    if (!removeFileQuiet(pointer)) {
+      return {
+        ok: false,
+        reason:
+          `指针删不掉：${pointer}。` +
+          `卡片会继续留在列表里 —— 这比报"已卸载"却仍在更诚实。` +
+          `常见原因：文件被占用，或安全软件拦下了删除。`,
+      }
     }
   }
 
@@ -324,11 +439,9 @@ export function uninstallCard(cardId: string, cardsRoot: string): { ok: boolean;
   let locked = 0
   const targets = [...versionedDirs.map((n) => join(cardsRoot, n)), ...(hasLegacy ? [legacyDir] : [])]
   for (const dir of targets) {
-    try {
-      rmSync(dir, { recursive: true, force: true })
-    } catch {
-      locked++
-    }
+    removeDirRecursive(dir)
+    // 用"还在不在"判断，而不是"有没有抛错" —— 这台机器上删不掉是不抛错的
+    if (existsSync(dir)) locked++
   }
 
   return locked > 0
