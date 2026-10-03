@@ -63,6 +63,19 @@ export interface CardHostOptions {
   installedRoot?: string
   /** 适配宿主（可选注入；不注入则适配卡不可用）。 */
   adapterHost?: CardAdapterHostLike
+  /**
+   * **卡片投递通道**（晚绑定：会话桥在 CardHost 之后才创建）。
+   *
+   * 取值函数而不是实例 —— 建 CardHost 时桥还不存在；拿不到就返回 undefined，
+   * 于是 `api.sendMessage` 会**明确拒绝**而不是悄悄不发 ✓（fail-closed）。
+   */
+  deliverVia?: () =>
+    | ((
+        sessionId: string,
+        text: string,
+        urgency: 'quiet' | 'normal' | 'urgent' | 'preempt',
+      ) => Promise<{ ok: boolean; via?: string; live?: boolean; reason?: string }>)
+    | undefined
 }
 
 /** 面板里展示的模板摘要。 */
@@ -101,6 +114,42 @@ export class CardHost {
   /** 连接两端的规范交流记录（CardAPI.send/read 走它）。 */
   private messageLog: ConnectionMessageLog
   private options: CardHostOptions
+
+  /**
+   * 造一张卡片的 API —— **三处调用点共用这一个**（装载 / 重挂 / 启动重放）。
+   *
+   * 放在一个地方是为了让**授权与目标端判定只有一份实现**：
+   * 三处各写一遍，迟早有一处忘了带 `send_message` 授权检查 ✗。
+   */
+  private makeApi(instance: CardInstance): CardAPI {
+    const template = this.registry.getTemplate(instance.templateId)
+    const write = template?.manifest?.requires?.write
+    const granted = Array.isArray(write) ? write : []
+    const scope = instance.scope
+
+    return createCardApi({
+      instance,
+      eventBus: this.eventBus,
+      adapter: this.adapter,
+      messageLog: this.messageLog,
+      manager: this.manager,
+      /** ② 授权（fail-closed）：manifest 的 `requires.write` 里声明了 `send_message` 才算拿到。 */
+      canSendMessage: () => granted.includes('send_message'),
+      /** 目标端：单端卡片 → **对端**；`both` → 判不出来 ⇒ 返回 undefined ⇒ 拒绝。 */
+      resolvePeerSession: () => {
+        const conn = this.manager.getById(instance.connectionId)
+        if (!conn) return undefined
+        if (scope === 'a') return conn.sessionB
+        if (scope === 'b') return conn.sessionA
+        return undefined
+      },
+      /** ① 宿主既有投递路径（晚绑定）。 */
+      ...(() => {
+        const d = this.options.deliverVia?.()
+        return d ? { deliver: d } : {}
+      })(),
+    })
+  }
   /**
    * 卡片适配宿主（**可选**）：清单里带 `dshCard.adapter` 的卡片交给它挂载。
    *
@@ -393,13 +442,7 @@ export class CardHost {
     conn.cards.push(instance)
     conn.updatedAt = Date.now()
 
-    const api = createCardApi({
-      instance,
-      eventBus: this.eventBus,
-      adapter: this.adapter,
-      messageLog: this.messageLog,
-      manager: this.manager,
-    })
+    const api = this.makeApi(instance)
     this.apiByInstance.set(instance.instanceId, api)
 
     try {
@@ -591,13 +634,7 @@ export class CardHost {
 
     const mod = this.registry.getModule(instance.templateId)
     if (mod) {
-      const api = createCardApi({
-        instance,
-        eventBus: this.eventBus,
-        adapter: this.adapter,
-        messageLog: this.messageLog,
-        manager: this.manager,
-      })
+      const api = this.makeApi(instance)
       this.apiByInstance.set(instanceId, api)
     }
 
@@ -804,13 +841,7 @@ export class CardHost {
           this.registry.setModule(instance.templateId, mod)
 
           this.registry.registerInstance(instance)
-          const api = createCardApi({
-            instance,
-            eventBus: this.eventBus,
-            adapter: this.adapter,
-            messageLog: this.messageLog,
-            manager: this.manager,
-          })
+          const api = this.makeApi(instance)
           this.apiByInstance.set(instance.instanceId, api)
           mod.apply?.(api)
           restored++

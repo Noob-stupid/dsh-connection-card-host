@@ -122,4 +122,22 @@ export interface CardAPI {
   send(kind: MessageKind, text: string, options?: { from?: 'a' | 'b'; replyTo?: string }): SendGate
   /** 读取本连接的消息（默认只读新的）。 */
   read(options?: { since?: number; limit?: number }): ConnectionMessage[]
+  /**
+   * **卡片代用户向对端投递一条消息**（走宿主既有的会话投递路径）。
+   *
+   * `urgency` 四档与宿主侧连接消息**同一套语义**：
+   * `quiet` 只告知不唤醒 / `normal` 排队 / `urgent` 插话 / `preempt` 抢占插话。
+   *
+   * ⚠️ 两个 **fail-closed** 前提（未满足就**直接拒绝**，不静默、不降级）：
+   *   · 卡片 manifest 的 `requires.write` 必须声明 `"send_message"`（**用户授权**，不是默认权利）
+   *   · `scope` 为 `both` 时**无法判定该对哪一端说话** ⇒ 拒绝
+   *
+   * 不重试；失败以**结构化结果**返回，不抛异常。preempt 的既有约束
+   * （默认关闭 / 需写权限 / 每连接 5 分钟 1 次 / 不满足自动退化为 urgent）由宿主自动生效 ——
+   * 卡片侧不必也不应自己实现一套。
+   */
+  sendMessage(
+    text: string,
+    options?: { urgency?: 'quiet' | 'normal' | 'urgent' | 'preempt'; kind?: 'say' | 'ask' | 'reply' },
+  ): Promise<{ ok: boolean; via?: string; live?: boolean; reason?: string }>
 }

@@ -20,5 +20,33 @@ export interface CardApiDeps {
     adapter: DSHAdapter;
     messageLog: ConnectionMessageLog;
     manager: ConnectionManager;
+    /**
+     * **这张卡片是否被用户授权"代我对外说话"**。
+     *
+     * ⚠️ **fail-closed**：`undefined` 或返回 false ⇒ `sendMessage` **直接拒绝**。
+     * "卡片代用户对外说话"是**能力**，不是默认权利 —— 授权来自
+     * manifest 的 `requires.write` 里声明 `send_message`（由装载器判定后注入）。
+     */
+    canSendMessage?: () => boolean;
+    /**
+     * 解析"这条连接上、这张卡片该说话的那一端"的 sessionId。
+     *
+     * `scope` 为 `'a'`/`'b'` 时是**对端**；`'both'` 时**无法判定** ⇒ 返回 undefined ⇒ 拒绝
+     * （fail-closed：宁可不说，也不要对着错的一端说话）。
+     */
+    resolvePeerSession?: () => string | undefined;
+    /**
+     * **宿主既有的投递路径**（`session-bridge.deliver`）。
+     *
+     * ⚠️ 刻意**复用**它而不是另写一套 —— 于是 preempt 的那套约束
+     * （默认关闭、需写权限、每连接 5 分钟 1 次、不满足自动退化为 urgent）**全部自动生效** ✓。
+     * 晚绑定（桥接在 CardHost 之后创建）⇒ 用取值函数而不是直接传实例。
+     */
+    deliver?: (sessionId: string, text: string, urgency: 'quiet' | 'normal' | 'urgent' | 'preempt') => Promise<{
+        ok: boolean;
+        via?: string;
+        live?: boolean;
+        reason?: string;
+    }>;
 }
 export declare function createCardApi(deps: CardApiDeps): CardAPI;

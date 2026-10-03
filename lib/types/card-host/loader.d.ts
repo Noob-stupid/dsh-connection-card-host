@@ -35,6 +35,18 @@ export interface CardHostOptions {
     installedRoot?: string;
     /** 适配宿主（可选注入；不注入则适配卡不可用）。 */
     adapterHost?: CardAdapterHostLike;
+    /**
+     * **卡片投递通道**（晚绑定：会话桥在 CardHost 之后才创建）。
+     *
+     * 取值函数而不是实例 —— 建 CardHost 时桥还不存在；拿不到就返回 undefined，
+     * 于是 `api.sendMessage` 会**明确拒绝**而不是悄悄不发 ✓（fail-closed）。
+     */
+    deliverVia?: () => ((sessionId: string, text: string, urgency: 'quiet' | 'normal' | 'urgent' | 'preempt') => Promise<{
+        ok: boolean;
+        via?: string;
+        live?: boolean;
+        reason?: string;
+    }>) | undefined;
 }
 /** 面板里展示的模板摘要。 */
 export interface CardTemplateInfo {
@@ -74,6 +86,13 @@ export declare class CardHost {
     /** 连接两端的规范交流记录（CardAPI.send/read 走它）。 */
     private messageLog;
     private options;
+    /**
+     * 造一张卡片的 API —— **三处调用点共用这一个**（装载 / 重挂 / 启动重放）。
+     *
+     * 放在一个地方是为了让**授权与目标端判定只有一份实现**：
+     * 三处各写一遍，迟早有一处忘了带 `send_message` 授权检查 ✗。
+     */
+    private makeApi;
     /**
      * 卡片适配宿主（**可选**）：清单里带 `dshCard.adapter` 的卡片交给它挂载。
      *

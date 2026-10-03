@@ -199,9 +199,21 @@ export function apply(ctx: HostContext, _config?: Record<string, unknown>): void
       })(),
     })
 
+    /**
+     * **晚绑定**的会话桥引用（卡片投递通道要它，但它在本行之后才创建）。
+     *
+     * 拿不到 ⇒ 返回 undefined ⇒ `api.sendMessage` **明确拒绝**（fail-closed），
+     * 而不是悄悄不发 —— 卡片侧会看到"宿主投递通道不可用"这句明确原因。
+     */
+    let bridgeRef: SessionBridge | undefined
+
     const cardHost = new CardHost(manager, eventBus, adapter, {
       installedRoot: cardsRoot,
       adapterHost,
+      deliverVia: () =>
+        bridgeRef
+          ? (sessionId, text, urgency) => bridgeRef!.deliver(sessionId, text, urgency)
+          : undefined,
     })
     debug(`apply: cardHost ready（${adapterHost.describe()}）`)
 
@@ -256,6 +268,8 @@ export function apply(ctx: HostContext, _config?: Record<string, unknown>): void
       // 构造函数里说明了"不传就永不抢占"的保守默认。
       (sid) => workState.busyWithTool(sid),
     )
+    /** 桥就绪 ⇒ 卡片投递通道随之可用（上面那个取值函数从这里开始返回真东西）。 */
+    bridgeRef = bridge
     const relay = new ConnectionRelay(manager, bridge, auditLog)
 
     manager.attachBox(box)
