@@ -1,537 +1,479 @@
 # dsh-connection-card-host
 
-**中文** | [English](README.en.md)
+[中文](README.zh.md) | **English**
 
-> **让 DSH 的多个会话互相看得见、说得上话、共用得上工具 —— 而互不打扰。**
+> **Let your DSH sessions see each other, talk to each other, and share tools — without getting in each other's way.**
 
-在一个 DSH 里同时开着好几个会话（一个查资料、一个写代码、一个跑实验）是常态，
-但它们**互相隔离**：不知道对方在干什么，也没法把结论递过去。
+Running several DSH sessions at once (one researching, one coding, one running experiments)
+is normal — but they're **isolated**: they can't see what the others are doing, and can't
+hand conclusions over.
 
-这个插件把「连接」做成 DSH 里的一等对象：**会话是节点，连接是容器，卡片是连接级插件**。
+This plugin makes a **connection** a first-class object in DSH:
+**sessions are nodes, a connection is the container, cards are connection-scoped plugins.**
 
 <table>
 <tr>
 <td width="50%">
 
-**实际操作**（录屏）
+**In practice** (screen recording)
 
-<img src="docs/assets/demo-drag-anchor.gif" alt="从输入框左侧锚点拖出连线" />
+<img src="docs/assets/demo-drag-anchor.gif" alt="Dragging a connection line out from the anchor beside the composer" />
 
 </td>
 <td width="50%">
 
-**结构示意**（[架构图](docs/capabilities.md)）
+**Structure** (diagram)
 
-<img src="docs/assets/demo-drag.svg" alt="拖拽建连的结构：锚点 → 会话行 → 竖轨" />
+<img src="docs/assets/demo-drag.svg" alt="Drag-to-connect structure: anchor → session row → rail" />
 
 </td>
 </tr>
 </table>
 
 <p align="center">
-  <sub>左：真实操作（<a href="docs/assets/demo-drag-anchor.mp4">原视频</a>） · 右：同一动作的结构示意，标出了「开关语义」</sub>
+  <sub>Left: the real thing (<a href="docs/assets/demo-drag-anchor.mp4">source video</a>) · Right: the same action as a diagram, showing the toggle semantics</sub>
 </p>
 
 ---
 
-## 目录
+## Contents
 
-- [它能做什么](#它能做什么)
-- [三十秒上手](#三十秒上手)
-- [三个层次：感知 / 约定 / 传话](#三个层次感知--约定--传话)
-- [连接上的卡片](#连接上的卡片)
-- [挂载能力与边界](#挂载能力与边界能挂什么--不能挂什么--为什么)
-- [架构速览](#架构速览)
-- [为什么这样做](#为什么这样做)
-- [省在哪](#省在哪)
-- [安装](#安装)
-- [卡片开发](#卡片开发)
-- [当前状态](#当前状态)
+- [What it does](#what-it-does)
+- [Quick start](#quick-start)
+- [What can be mounted, and what cannot](#what-can-be-mounted-and-what-cannot)
+- [Three layers: awareness / conventions / messaging](#three-layers-awareness--conventions--messaging)
+- [Cards on a connection](#cards-on-a-connection)
+- [Architecture at a glance](#architecture-at-a-glance)
+- [Why it works this way](#why-it-works-this-way)
+- [Where it saves](#where-it-saves)
+- [Install](#install)
+- [Configuration](#configuration)
+- [Uninstalling](#uninstalling)
+- [FAQ](#faq)
+- [Writing a card](#writing-a-card)
+- [Status](#status)
 
 ---
 
-## 它能做什么
+## What it does
 
 | | |
 |:---|:---|
-| **互相看得见** | 查得到对方**正在改哪个文件、计划进行到第几步、最近用了什么工具** —— 自动采集，对方不需要专门告诉你 |
-| **说得上话** | 给对端发消息，**三档紧急度自己判断**：只告知（不打断）／排队／插话 |
-| **共用得上工具** | 连接上可以挂**卡片**：卡片能给会话提供工具，甚至带几十 MB 的真依赖 |
-| **共用前提** | 「公约盒」存放双方说好的事：接口、单位、命名、分工边界 |
-| **互不打扰** | 感知是**拉取式**的 —— 对方不查就零成本；不相关的连接**不会吵到你** |
+| **See each other** | Look up **which files the other session is editing, how far its plan has got, what tools it last used** — collected automatically, no effort required from the other side |
+| **Talk to each other** | Send a message with **one of three urgencies you choose**: notify only (no interruption) / queue / interject |
+| **Share tools** | Mount **cards** on a connection: a card can provide tools to the sessions, even with tens of MB of real dependencies |
+| **Shared premises** | A "convention box" holds what you agreed on: interfaces, units, naming, who owns what |
+| **Stay out of the way** | Awareness is **pull-based** — zero cost unless the other side asks. Unrelated connections **never interrupt you** |
 
 <p align="center">
-  <img src="docs/assets/demo-permission.svg" width="680" alt="连线颜色表示该方向的权限：灰=只读，蓝=可建议，橙=可写入；两端可不对称" />
+  <img src="docs/assets/demo-permission.svg" width="680" alt="Line colour shows the permission in that direction: grey = read-only, blue = can suggest, orange = can write; the two ends can differ" />
 </p>
 
 ---
 
-## 三十秒上手
+## Quick start
 
-1. **建连接**：按住输入框左侧的圆点（或会话行上的「…」），拖到左侧会话列表里的某一行。
+1. **Connect**: hold the circle to the left of the composer (or the `…` on a session row)
+   and drag it onto a row in the session list.
 
 <table>
 <tr>
 <td width="50%">
 
-**从锚点拖**（录屏）
+**Drag from the anchor** (recording)
 
-<img src="docs/assets/demo-drag-anchor.gif" alt="从输入框左侧锚点拖出弧线" />
+<img src="docs/assets/demo-drag-anchor.gif" alt="Dragging an arc out from the anchor beside the composer" />
 
 </td>
 <td width="50%">
 
-**从会话行拖 → 连上之后**（录屏）
+**Drag from a session row → after connecting** (recording)
 
-<img src="docs/assets/demo-drag-rail.gif" alt="从会话行拖出连线，松手后出现竖轨与权限彩点" />
+<img src="docs/assets/demo-drag-rail.gif" alt="Dragging from a session row; after release a rail appears with per-end permission dots" />
 
 </td>
 </tr>
 </table>
 
 <p align="center">
-  <sub><a href="docs/assets/demo-drag-anchor.mp4">锚点原视频</a> · <a href="docs/assets/demo-drag-rail.mp4">会话行原视频</a></sub>
+  <sub><a href="docs/assets/demo-drag-anchor.mp4">anchor source video</a> · <a href="docs/assets/demo-drag-rail.mp4">session-row source video</a></sub>
 </p>
 
-   - **开关语义**：拖到未连的行 = 连接；拖到**已连**的行 = 断开（悬停时会提示）
-   - 也可以从侧栏「连接」面板里选两个会话
-2. **完事**。两端各自收到一条静默通知（说清了连上了谁、能做什么），**不打断任何人**。
-3. 想看得更细：点侧栏「连接」，或者让会话自己调 `connection_peer_work`。
+   - **Toggle semantics**: drop on an unconnected row = connect; drop on an **already
+     connected** row = disconnect (the hover hint tells you which)
+   - You can also pick two sessions from the "Connections" panel in the sidebar
+2. **Done.** Both ends get one quiet notice (who you're connected to, what it enables) —
+   **nobody is interrupted**.
+3. Want more detail? Open "Connections" in the sidebar, or have the session call
+   `connection_peer_work` itself.
 
-连接建立后，会话行右侧会出现**竖轨**，两端各一个**彩色圆点** —— 那是该方向的权限：
+Once connected, a **rail** appears beside the session rows, with a **coloured dot at each
+end** — that's the permission for that direction:
 
 <p align="center">
-  <img src="docs/assets/shot-connections.png" width="620" alt="连接面板：每个连接的权限可以两个方向分别设置，卡片、感知、约定都在同一条连接下" />
+  <img src="docs/assets/shot-connections.png" width="620" alt="Connections panel: permissions are set per direction, and cards, awareness and conventions all live under the same connection" />
 </p>
 
 ---
 
-## 三个层次：感知 / 约定 / 传话
+## Three layers: awareness / conventions / messaging
 
-这三层是**分开的**，因为它们的代价差别很大：
+These are **separate**, because their costs differ enormously:
 
-| 层 | 机制 | 进对方上下文吗 | 迫使对方行动吗 | 成本 |
+| Layer | Mechanism | Enters the other's context? | Forces the other to act? | Cost |
 |:---|:---|:---|:---|:---|
-| **A 工作状态** | 拉取（对端主动查） | 只在它查的时候 | ❌ 不会 | **0** |
-| **B 公约盒** | 拉取（对端主动查） | 只在它查的时候 | ❌ 不会 | **0** |
-| **C 传话** | 推送（进对方收件箱） | **无条件** | ✅ **必然** | 每条都花 |
+| **A. Work state** | pull (the other asks) | only when it asks | ❌ no | **0** |
+| **B. Convention box** | pull (the other asks) | only when it asks | ❌ no | **0** |
+| **C. Messaging** | push (into its inbox) | **unconditionally** | ✅ **always** | every message |
 
-**关键事实**：在 DSH 里投递一条消息 = **迫使对方跑一轮**（agent loop 没有"看到但不理"这个状态）。
-所以「说话」和「感知」必须分开做 —— 想要对方**知道**，用 A/B；想要对方**做事**，才用 C。
+**The key fact**: in DSH, delivering a message **forces the other session to run a turn** —
+the agent loop has no "saw it but ignored it" state. So "talking" and "being aware" have to
+be built separately: to make the other side **know**, use A/B; only to make it **act**, use C.
 
-### A. 工作状态（自动，0 成本）
+### A. Work state (automatic, zero cost)
 
-自动从运行事件里采集，**不要求模型额外产出任何东西**：
+Collected from runtime events — **it asks nothing extra of the model**:
 
 ```
 【session-bd5ac1b1】
-状态：正在执行命令（2 秒前）
-最近动过的文件：water-boat/src/water.js
-进度：第 69 轮 / 第 39 步
+status: running a command (2s ago)
+recently touched: water-boat/src/water.js
+progress: turn 69 / step 39
 ```
 
-### B. 公约盒（显式，0 成本）
+### B. Convention box (explicit, zero cost)
 
-双方说好的标准：接口签名、单位、坐标系、命名、**谁的活归谁**。
-面板上可增删；会话用 `connection_conventions` / `connection_declare` 读写。
+What you agreed on: interface signatures, units, coordinate systems, naming, **who owns what**.
+Editable in the panel; sessions read and write it with `connection_conventions` / `connection_declare`.
 
-> **为什么是"拉"不是"推"**：推送会把对方上下文慢慢填满，而大部分时候它用不上。
-> 做成"存在盒子里、需要时自己查"，成本就是 0。
+> **Why pull, not push**: pushing slowly fills the other's context, and most of it is
+> never needed. Keeping it in a box that the other queries on demand costs zero.
 
-### C. 传话（三档紧急度，**由发起方判断**）
+### C. Messaging (three urgencies, **chosen by the sender**)
 
-| 档位 | 底层 | 对方会怎样 |
+| Urgency | Under the hood | What the other sees |
 |:---|:---|:---|
-| `quiet` | `inject` | 放进上下文**但不唤醒** —— 它下次干活时看到，**不被打断** |
-| `normal` | `followup` | **排队** —— 处理完手头的事就看到 |
-| `urgent` | `steer` | **插话** —— 插进它**正在跑的那一轮**，当场读到 |
+| `quiet` | `inject` | placed in context **without waking it** — it sees the message next time it works, **uninterrupted** |
+| `normal` | `followup` | **queued** — it sees the message once it finishes what it's doing |
+| `urgent` | `steer` | **interjected** — inserted into the turn it's **currently running**, read immediately |
 
-`urgent` 而对端空闲时**自动降级为排队**（下一轮立刻开始，效果等同即时），不会失败。
+`urgent` on an idle peer **degrades to queued** automatically (the next turn starts
+immediately, so the effect is the same), and never fails.
 
-> **判断原则**（写在工具描述里）：打断是有代价的（对方要中断当前思路）。
-> 大部分消息不急 —— 默认 `normal`，只有确实需要它**立刻**改变行为时才 `urgent`。
+> **The rule** (written into the tool description): interrupting has a cost — the other
+> session has to drop its current line of thought. Most messages aren't urgent: default to
+> `normal`, and use `urgent` only when it genuinely must change behaviour **right now**.
 
 ---
 
-## 连接上的卡片
+## Cards on a connection
 
-**卡片 = 挂在连接上、且能分端可见的插件。**
+**A card = a plugin mounted on a connection, with per-side visibility.**
 
-| | DSH 插件 | 卡片 |
+| | DSH plugin | Card |
 |:---|:---|:---|
-| 装在哪 | 整个 DSH（profile） | **一条连接** |
-| 谁能调 | 所有会话 | **只这条连接上的会话** |
-| 可见性 | 全局 | **可分端**：两端 / 仅 A / 仅 B |
-| 生命周期 | 随 DSH 起停 | 随连接上的装载卸载 |
+| Mounted on | the whole DSH (profile) | **one connection** |
+| Who can call it | every session | **only sessions on that connection** |
+| Visibility | global | **per side**: both / A only / B only |
+| Lifetime | DSH start/stop | mounted and unmounted with the connection |
 
 <p align="center">
-  <img src="docs/assets/demo-card-tool.svg" width="680" alt="会话用一个常驻桥接工具，按需发现并调用卡片提供的工具，且受可见范围约束" />
+  <img src="docs/assets/demo-card-tool.svg" width="680" alt="A session uses one resident bridge tool to discover and call tools provided by cards, subject to visibility scope" />
 </p>
 
-### 卡片能给会话提供工具
+### Cards can provide tools to sessions
 
-卡片里 `api.registerTool(name, fn)` 注册的工具，连接上的会话可以用
-**一个**常驻桥接工具按需发现并调用：
-
-```
-connection_card_tool                                  ← 唯一常驻的（1 个 schema）
-  ├─ 不传 tool → 列出本连接上「对你在的这一端可见」的卡片与工具
-  └─ 传 tool   → 调用它
-```
-
-**为什么是一个桥接、而不是每个工具各占一个 schema**：后者会让**每个会话**都为
-每个卡片工具付常驻成本，而卡片是随连接动态装载的。桥接只占 1 个，
-而且天然能在桥接层强制可见范围。
-
-**可见范围真的拦得住**（实测）：
+Tools registered with `api.registerTool(name, fn)` inside a card are reachable by sessions
+on that connection through **one** resident bridge tool:
 
 ```
-A 端可见该卡片        ✅
-B 端看不到            ✅
-B 端硬调它 → 拒绝     「这张卡片只对 A 端可见（你在 B 端）」
+connection_card_tool                                  ← the only resident one (1 schema)
+  ├─ no `tool` argument → list the cards and tools visible to *your* side of this connection
+  └─ with `tool`        → call it
 ```
 
-### 卡片里可以塞真依赖
+**Why one bridge instead of one schema per tool**: the latter would make **every session**
+pay a resident cost for every card tool, while cards are mounted and unmounted dynamically.
+The bridge costs one schema, and it's the natural place to enforce visibility.
 
-实测：把社区插件 `dsh-pdf` 的解析核 + **pdfjs-dist（33 MB）** 包成一张卡片，
-装到 `$DSH_HOME/connection-cards/cards/`，**不碰 DSH profile**。
-会话通过桥接调用，拿回真实解析结果。
+**Visibility actually blocks**:
 
-### 面板内安装与更新
+```
+Side A can see the card      ✅
+Side B cannot see it         ✅
+Side B calls it anyway       → 「这张卡片只对 A 端可见（你在 B 端）」
+```
+
+### Cards can carry real dependencies
+
+A card can carry real dependencies: wrapping a parsing core plus
+**pdfjs-dist** as a card, installed under `$DSH_HOME/connection-cards/cards/`,
+**without touching the DSH profile**. A session called it through the bridge and got real
+parse results back.
+
+### Install and update from the panel
 
 <p align="center">
-  <img src="docs/assets/shot-card-picker.png" width="620" alt="卡片选择器：内置卡片一键加；也可以给包名、仓库 tgz 地址或本地目录来安装" />
+  <img src="docs/assets/shot-card-picker.png" width="620" alt="Card picker: built-in cards install in one click; you can also give a package name, a repo tgz URL or a local directory" />
 </p>
 
-- **装**：包名 / 仓库 tgz 地址 / 本地目录 → 装进我们自己的目录，**不跑 pnpm、不改 profile**
-- **卸**：已安装的卡片带「卸载」入口（**点击前确认一次**，并说清会连同它的卡片实例一起移除）。
-  内置卡**不给卸载** —— 它们随插件分发，删了下次升级又回来，给按钮只会让人白点。
-  卸载后**如实回报**清了什么、什么被占用没清掉。
-- **更新**：已安装的卡片带「检查更新」入口，三态分列
+- **Install**: package name / repo tgz URL / local directory → into our own directory,
+  **no pnpm, no profile changes**
+- **Update**: installed cards get a "check for updates" entry with three distinct states
   ```
   「检查更新」→「↑ 更新到 x.y.z」/「已是最新」/「无法检查」
   ```
-  **"无法检查"绝不显示成"已是最新"** —— 那是谎报。
+  **"Couldn't check" is never shown as "up to date"** — that would be lying.
 
 ---
 
-## 挂载能力与边界（能挂什么 / 不能挂什么 / 为什么）
+## Architecture at a glance
 
-> 这一节全部来自**实测**，不是推断。凡标"实测"的数字都有原始日志。
-
-任何普通 DSH 插件都能当卡片挂到某条连接上。但它要**按顺序过三扇门**：
-
-| 门 | 判据 | 不过会怎样 |
-|---|---|---|
-| ① **作用域门** | 注册到**连接级**位置（`conversation.*` / `message.*` / `input.*`）或**纯能力**（无客户端）⇒ ✓ | 注册到 **App 级**（侧栏 / 布局 / 设置页 / **主题** / 标题栏 / 工作区）⇒ **不建议当卡片**（装得上也没意义：全局 UI 塞进连接级面板既装不下、也会和 App 布局打架） |
-| ② **模块门** | 宿主**入口的 import 闭包**内依赖必须可解析 | 拒绝挂载，并**分类**说清：**致命**（缺宿主能力，改设计才行）/ **可选**（缺第三方依赖，补上就能过） |
-| ③ **能力门** | `inject` ⊆ `{tools, effect, llm, prompt}` | 拒绝挂载（它要的是宿主服务，我们没有 —— **拒绝是正确行为**，不靠放宽能力面解决） |
-
-② 的**扫描面**很关键：只看**入口真正会加载到的文件** ✓ ——
-`tests/` `bin/` `client/build.mjs` `*.d.ts` 里的 import **不算运行时依赖** ✗
-（曾经因为扫了整个包目录，把真插件普遍误判成"缺依赖"）。
-
-### 实测（社区生态，stars ≥ 8 且仓库 ≤ 1.8 MB，扫到 123 个含 `package.json` 的仓）
-
-```
-排除全局型         50
-挂不上（模块门）   63
-能力门不过          5
-可挂但 UI 受限      3
-可挂 + UI 可用      2
-```
-
-⇒ **星多的正规插件今天多数挂不上**，而且原因各不相同：
-
-- **3979★**（社区最高星 UI 插件）：**作者没提交构建产物**（只有源码）⇒ 宿主**不跑 pnpm、不执行构建** ✗
-- **1500★**：能力门不过（`connection` / `webServer`）
-- **865★**：能力门不过（`credentials` / `commands` / `subprocess`…）
-
-### 客户端 UI 的三层事实（**别把"能挂"读成"能显示"**）
-
-```
-能挂  ≠  能取源码  ≠  能注册槽位  ≠  能渲染
-```
-
-| 情况 | 结果 |
-|---|---|
-| **薄客户端**（只用 `slots` / `effect`） | **能渲染** ✓ 实测 `dsh-client-ui-voice`：捕获成功 **且**元素真的渲染出来了 |
-| 依赖客户端 hook（`useScene` / `useEnabled` / `locale` / `configForms` …） | **挂得上、槽位也注册了，但渲染失败** —— **显示原因、不白屏** ✓ 实测 `gal-view`（194★）：模块门 ✓、制品 ✓、2 个槽位 ✓、渲染 ✗ |
-| 客户端制品上限 | **32 MB**（自包含 bundle 到 5.9 MB 是正常的：内联字体/素材） |
-| 组件的调用方式 | `createElement(component, {})` ⇒ **不给 props**（需要槽位 props 的组件会报错，被错误边界接住） |
-
-> 想扩这一层，方向是把那些**客户端 hook 纳入适配层的客户端能力面** ——
-> 而这一步也需要**真实样本**来校准（`gal-view` 就是现成的验收对象）。
-
-### 候选列表会**提前标出来**
-
-徽标：**适配 / 能力 / 局部 / 全局 / 未判定**
-
-- **只标注、不阻断** —— 用户仍然可以挂（判定是启发式的 ✓）
-- 目的：**用户看不出"哪张卡天生不是卡片材料"，逐个试才发现的成本最高**
-
----
-
-## 架构速览
-
-三层，边界很硬 —— 每层只跟下一层说话：
+Three layers, with hard boundaries — each talks only to the one below:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  卡片层（连接级插件）                                        │
-│  只依赖 CardAPI，绝不 import @deepseek-ai/*                  │
-│  → DSH 升级不影响卡片；我们改 CardAPI 才影响（有版本护栏）    │
+│  Card layer (connection-scoped plugins)                     │
+│  Depends only on CardAPI; NEVER imports @deepseek-ai/*      │
+│  → DSH upgrades don't affect cards; our CardAPI changes do  │
+│    (guarded by a version declaration)                       │
 ├─────────────────────────────────────────────────────────────┤
-│  连接层（本插件）                                            │
-│  连接 / 权限 / 感知 / 公约盒 / 卡片宿主 / 消息投递            │
-│  → DSH 升级时，只需要改这一层                                 │
+│  Connection layer (this plugin)                             │
+│  connections / permissions / awareness / conventions /      │
+│  card host / message delivery                               │
+│  → on a DSH upgrade, this is the only layer to change       │
 ├─────────────────────────────────────────────────────────────┤
-│  DSH 适配层（DSHAdapter + 白名单 + 审计）                    │
-│  所有 DSH 交互的唯一出口；不重写 DSH 的通信/权限/插件系统      │
+│  DSH adapter layer (DSHAdapter + allowlist + audit)         │
+│  the single exit point for all DSH interaction; we do not   │
+│  rewrite DSH's transport, permissions or plugin system      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 权限是**分方向**的
+### Permissions are **per direction**
 
-一根线两端各一个圆点，颜色是**那个方向**的权限 —— 两个方向互不影响，
-可以做成「甲能发、乙只能看」：
+One line, one dot at each end; the colour is the permission **for that direction** — the two
+directions are independent, so you can have "A may send, B may only watch":
 
 <p align="center">
-  <img src="docs/assets/demo-permission.svg" width="640" alt="连线颜色表示该方向的权限：灰=只读，蓝=可建议，橙=可写入；两端可不对称" />
+  <img src="docs/assets/demo-permission.svg" width="640" alt="Line colour shows the permission in that direction: grey = read-only, blue = can suggest, orange = can write; the two ends can differ" />
 </p>
 
-**只读不影响感知**：工作状态与公约盒都是对端**主动查询**的，与权限无关。
-降低权限立即生效；提高权限需要被授权的一方确认。
+**Read-only does not affect awareness**: work state and the convention box are both
+**queried by the other side**, independent of permission. Lowering a permission takes effect
+immediately; raising one requires confirmation from the side being granted it.
 
-### 卡片工具怎么到会话手里
+### How card tools reach a session
 
-卡片注册的工具**不各占一个 schema** —— 会话只看得见**一个**常驻桥接，
-按需发现、按需调用，且在桥接层强制可见范围：
+Tools registered by cards **do not each take a schema** — a session sees **one** resident
+bridge, discovers on demand, calls on demand, and visibility is enforced at the bridge:
 
 <p align="center">
-  <img src="docs/assets/demo-card-tool.svg" width="640" alt="会话用一个常驻桥接工具，按需发现并调用卡片提供的工具，且受可见范围约束" />
+  <img src="docs/assets/demo-card-tool.svg" width="640" alt="A session uses one resident bridge tool to discover and call tools provided by cards, subject to visibility scope" />
 </p>
 
 ---
 
-## 为什么这样做
+## Where it saves
 
-### 1. 不重写 DSH
-
-不碰 DSH 的通信、权限、插件系统；卡片**不注册到 DSH 全局 Loader**。
-所有 DSH 交互走中间适配层，DSH 升级时**只需要改这个插件**。
-
-### 2. 双向自动镜像 —— 我们把它关掉了
-
-早期版本会自动把会话内容转发给对方。**实测下来这是错的**，三次事故：
-
-1. 用户给 A 下的指令被镜像给 B → **B 当成自己的任务去做**
-2. 助手的汇报被镜像 → 对端当成用户指令去响应
-3. 助手对用户说的旁白被镜像 → 对端显示「收到执行请求」并**真的跑了一轮**
-
-对端的量化：**30 条 / 12,765 字的镜像占它会话"用户侧字符"的 77.8%，其中没有一条产生了有用动作。**
-
-**所以默认不自动转发任何东西。** 跨会话传话走显式发送，感知走 A/B 两层。
-
-### 3. 打断是要花钱的
-
-旧实现的投递策略是"对端在跑就插话"—— 等价于**每条消息都是最高优先级**。
-现在紧急度由发起方判断，默认排队。
-
----
-
-## 省在哪
-
-| 项 | 数字 | 说明 |
+| Item | Number | Notes |
 |:---|:---|:---|
-| **感知（A + B 两层）** | **0 上下文** | 拉取式；对端不查就不产生任何成本 |
-| **卡片工具** | **1 个常驻 schema** | 而不是每个卡片工具各占一个 |
-| **自动镜像** | **0（已关闭）** | 关闭前实测 77.8% 是无用内容 |
-| **不相关的连接** | **0 打扰** | 搭线不唤醒；不相关的会话照常干活 |
+| **Awareness (layers A + B)** | **0 context** | pull-based; costs nothing unless the peer queries |
+| **Card tools** | **1 resident schema** | instead of one per card tool |
+| **Automatic mirroring** | **0 (disabled)** | mostly irrelevant content before it was turned off |
+| **Unrelated connections** | **0 interruptions** | connecting doesn't wake anyone; unrelated sessions carry on |
 
-**唯一固定成本**：本插件 5 个 `connection_*` 工具的 schema ≈ **1700 tokens 常驻** ——
-**且只在参与了连接的会话里常驻**：没连接的会话由 `system-prompt/assemble` 自动摘掉
-（实测：一个 0 连接的会话被摘 5 个工具，日志 `按会话 scope 隐藏了 5 个感知工具`）。
+**The one fixed cost**: this plugin's five `connection_*` tools cost roughly **1,700 tokens
+resident** — **and only in sessions that have connections**: sessions with none have them
+stripped automatically by `system-prompt/assemble` (a 0-connection session has 5
+tools removed, logged as `按会话 scope 隐藏了 5 个感知工具`).
 
 ---
 
-## 安装
+## What can be mounted, and what cannot
 
-> **你正在看的是预览线仓库。** 对外发布走[稳定门面](https://github.com/Noob-stupid/dsh-connection-card-host)。
-> 下面第一、二条对两个仓库都成立（npm 包与门面同源）。
+Any ordinary DSH plugin can be mounted as a card on a connection. Three **static** conditions decide it:
 
-**npm（推荐，可锁版本）**：
+| Condition | Supported | Not supported |
+|---|---|---|
+| **Scope** | Registers into a **connection-level** location (conversation, input area), or is **capability-only** (no client UI) | Registers into an **app-level** location (sidebar, overall layout, settings page, theme, title bar, workspace) — those are meant to be installed into the app, not onto a connection |
+| **Host dependencies** | Everything the **entry actually loads** can be resolved | A real runtime dependency is missing. Install reports it in two classes: missing host capability → the card needs a design change; missing third-party dependency → just add the dependency |
+| **Host capabilities** | Uses only `tools` / `effect` / `llm` / `prompt` | Needs other host services (credentials, web server, session control, commands, subprocess, …) — not provided; the mount is **refused with a reason** |
+
+> Only files the **entry actually loads** count: tests, build scripts, CLIs and type declarations are not runtime dependencies.
+
+### Client UI: what works
+
+| Client shape | Result |
+|---|---|
+| Uses only slot registration and effect hooks (`slots` / `effect`) | **Renders**, and stays interactive |
+| Needs more client services (localization, config forms, connection, routing, settings pages) | **Mounts and registers slots, but cannot render** — the panel shows **the specific reason** instead of a blank area |
+| Client artifact size | Up to **32 MB** (self-contained bundles with inlined assets are fine) |
+| Component props | Components are called **without props** — ones that require slot props will error; the error is contained to that card |
+
+### Badges in the candidate list
+
+Each card carries one badge: **adapter / capability / local / global / undecided**.
+It tells you *before* mounting whether a plugin suits a connection — **advisory only, nothing is blocked**.
+
+---
+
+## Install
+
+**This plugin is not published to npm** (DSH's peer dependencies aren't on the public
+registry, so `npm install` is guaranteed to fail — verified). Install from GitHub:
 
 ```sh
-dsh plugin --profile web add @noob-stupid/dsh-connection-card-host
-```
-
-**GitHub 直装**（装**默认分支最新提交**，不是固定版本）：
-
-```sh
-# 稳定线
-dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
-
-# 预览线（最新开发版，就是本仓库）
+# Preview line (latest development build — the repo you're reading)
 dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host-preview
 
-# 同上，GitHub 简写（可省 github:）—— 带斜杠就走 GitHub 仓库
-dsh plugin --profile web add Noob-stupid/dsh-connection-card-host
+# Stable line (the public facade, synced only at release time)
+dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
+
+# Or a pinned tarball (grab the asset URL from the Releases page)
+dsh plugin --profile web add https://github.com/…/releases/download/v1.0.0/noob-stupid-dsh-connection-card-host-1.0.0.tgz
 ```
 
-**固定版本：用 Releases 的 tgz 附件**：
+> The two `github:` commands above are **verified working** (161 files land in `lib`, using
+> the profile's own settings: `autoInstallPeers: false`). The bare names
+> `dsh-connection-card-host` and `@noob-stupid/dsh-connection-card-host` both **404** on
+> npm and won't work for anyone else — don't use them.
 
-```sh
-dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/v1.0.2/noob-stupid-dsh-connection-card-host-1.0.2.tgz
-```
-
-- ⚠️ `github:` 与简写装的是**默认分支的最新提交**，**不是固定版本**；要固定版本请用
-  npm 的版本号（`@noob-stupid/dsh-connection-card-host@1.0.2`）或上面的 Releases tgz。
-- `lib/` 已随仓库提交（npm 包里也带上）：装完即可用，不需要构建步骤。
-
-**判据**：**带斜杠 → 当 GitHub 仓库；不带斜杠 → 当 npm 包名。**
-（`dsh-connection-card-host` 这个不带斜杠的裸名在 npm 上不存在，会 404 —— 别用。）
-
-**兼容性**：`peerDependencies` 声明 `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0` ——
-DSH 会在安装时**按版本门控**，不匹配会明确拒绝并说明原因（而不是装上再崩）。
-
-这四个 peer 还都标了 `peerDependenciesMeta.optional`。原因有两条，都实测过：
-
-- `@deepseek-ai/dsh-client-runtime` 在公开 registry 上**没有**满足区间的版本
-  （最高停在 `0.1.1-rc.2`）—— 不标 optional，pnpm 直接
-  `ERR_PNPM_NO_MATCHING_VERSION`，**装不上**；
-- 只标那一个也不行：pnpm 会把**整棵 `@deepseek-ai/dsh` 依赖树（602 个包）**
-  装进你的 profile（实测 1 分 36 秒），而那正是 `autoInstallPeers: false` 要避免的事。
-  四个全标之后实测 **612ms / 只增加 1 个包**。
-
-**门控不受影响**：`@deepseek-ai/**` 全树 0 处读 `peerDependenciesMeta`，
-DSH 的版本门控只读 `peerDependencies`。
+**Compatibility**: `peerDependencies` declares `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0` — DSH
+**gates on version at install time** and refuses clearly, with a reason, rather than
+installing and crashing later.
 
 ---
 
-## 卡片开发
+## Configuration
 
-一张卡片就是一个带 `dshCard` 清单的 npm 包：
+| Setting | Default | What it does |
+|---|---|---|
+| Adapter layer | **off** | Allows ordinary DSH plugins to be mounted as cards. Nothing is touched until you turn it on. |
+| Automatic mirroring | **off** | Auto-forwarding session content to the peer. Kept off on purpose (it mostly sends noise). |
+| View preferences | per connection | Number of lanes shown on the connection track. |
+
+## Uninstalling
+
+- **A card** — the candidate list has an **Uninstall** entry for installed cards (a confirmation
+  states how many connections it is mounted on). Built-in cards do not offer it: they ship with the
+  plugin and come back on upgrade. What could not be removed is reported honestly.
+- **The whole plugin** — remove it from your DSH profile. Cards and connections live under
+  `$DSH_HOME/connection-cards/` and are left untouched.
+
+## FAQ
+
+**Do I need to install anything for cards?**
+No. Cards install into the plugin's own directory; no `pnpm` runs in your profile and your DSH
+profile is not modified.
+
+**A plugin will not mount. Why?**
+The refusal names the class: host capability (the card needs something this plugin does not
+provide) or third-party dependency (the dependency is missing). The first requires a change on the
+card side; the second can be fixed by shipping the dependency with the card.
+
+**A mounted card shows no UI.**
+Its client half needs client services beyond slots/effect. The panel shows the exact reason — it is
+not a blank screen.
+
+**Does mounting a card change my DSH install?**
+No. It does not rewrite DSH, does not touch your profile, and can be undone at any time.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+---
+
+## Writing a card
+
+A card is just an npm package with a `dshCard` manifest:
 
 ```json
 {
   "name": "my-card",
   "version": "1.0.0",
   "main": "index.js",
-  "dshCard": { "id": "my-card", "name": "我的卡片", "entry": "index.js", "api": 1 }
+  "dshCard": { "id": "my-card", "name": "My card", "entry": "index.js", "api": 1 }
 }
 ```
 
 ```js
-// index.js —— ⚠️ 绝不 import 任何 @deepseek-ai/*，所有交互走 api
+// index.js — NEVER import anything from @deepseek-ai/*; go through `api`
 export function apply(api) {
-  api.log(`已装载（scope=${api.scope}）`)
+  api.log(`mounted (scope=${api.scope})`)
 
-  // 给连接上的会话提供工具
+  // provide a tool to sessions on the connection
   api.registerTool('greet', async (args) => {
-    return `你好，${args?.name ?? '世界'}`
+    return `Hello, ${args?.name ?? 'world'}`
   })
 }
 
-// 面板 HTML（可选）
+// panel HTML (optional)
 export function renderPanel(api) {
-  return `<div>可见范围：${api.scope}</div>`
+  return `<div>visible to: ${api.scope}</div>`
 }
 ```
 
-| `api` 成员 | 说明 |
+| `api` member | Meaning |
 |:---|:---|
-| `registerTool(name, fn)` | 注册工具 → 会话经 `connection_card_tool` 调用 |
-| `send(kind, text)` / `read()` | 以某一端身份收发连接消息 |
-| `on(event, handler)` / `emit(event, data)` | 连接级事件 |
-| `scope` | 本实例作用在哪一端（`both` / `a` / `b`） |
-| `log(...)` | 写宿主日志 |
+| `registerTool(name, fn)` | register a tool → sessions call it via `connection_card_tool` |
+| `send(kind, text)` / `read()` | send and receive connection messages as one side |
+| `on(event, handler)` / `emit(event, data)` | connection-scoped events |
+| `scope` | which side this instance serves (`both` / `a` / `b`) |
+| `log(...)` | write to the host log |
 
-**`dshCard.api`** 是卡片声明自己需要的 **CardAPI 版本**（缺省 1）：
+**`dshCard.api`** declares the **CardAPI version** the card needs (defaults to 1):
 
-- **加东西不升版本** —— 老卡片照常跑
-- **删或改语义才升版本** —— 宿主会拒绝装载要更高版本的卡片，并说明原因
+- **Adding things does not bump the version** — older cards keep working
+- **Only removals or semantic changes bump it** — the host refuses to mount a card that
+  requires a newer version, and says why
 
-> 这是**我们自己的兼容性护栏**：卡片不依赖 DSH 内部包，所以 DSH 升级不影响卡片；
-> 但**我们改 `CardAPI` 会影响卡片**，而 DSH 的版本门控管不到这一层。
+> This is **our own compatibility guard**: cards don't depend on DSH internals, so a DSH
+> upgrade doesn't affect them; but **changing our `CardAPI` does** — and DSH's version gate
+> can't see that layer.
 
-细节见 [`docs/card-protocol.md`](docs/card-protocol.md)。
+See [`docs/card-protocol.md`](docs/card-protocol.md) for details.
 
 ---
 
-## 当前状态
+## Status
 
-**已实现并实测**
+**Implemented**
 
-- 连接：拖拽建连（开关语义）、三会话两两相连、持久化 + 重启恢复
-- 权限：分方向三档、不对称、升级需对方确认、拒绝原因自证
-- 感知 A：自动采集工作状态（0 上下文）
-- 共识 B：公约盒（0 上下文）
-- 传话 C：三档紧急度 + 自动降级
-- 卡片：模板发现 / 装载 / 按端可见 / 面板内安装 / **更新** / 崩溃隔离
-- 卡片工具：桥接调用 + 可见范围强制
-- 卡片目录**版本化**（装载中也能更新）
-- **工具按会话 scope**：没参与连接的会话**不背** `connection_*` 的 schema（省 ~1700 tokens），
-  走官方 `system-prompt/assemble` waterfall，整条链 **fail-open**（拿不准就原样下发）
-  —— **`v1.0.1` 起才有此行为**；`v1.0.0` 是全局注册
+- Connections: drag to connect (toggle semantics), three sessions fully interconnected,
+  persistence and restore across restarts
+- Permissions: three levels per direction, asymmetric, upgrades need the other side's
+  confirmation, refusals explain themselves
+- Awareness A: work state collected automatically (0 context)
+- Conventions B: the convention box (0 context)
+- Messaging C: three urgencies, with automatic degradation
+- Cards: template discovery / mounting / per-side visibility / in-panel install /
+  **update** / crash isolation
+- Card tools: bridge invocation with enforced visibility
+- Card directories are **versioned** (so a mounted card can still be updated)
+- **Per-session tool scoping**: sessions with no connections do **not** carry the `connection_*` schemas (~1,700 tokens saved), via the official `system-prompt/assemble` waterfall; the whole chain is **fail-open** — **behaviour introduced in `v1.0.1`** (`v1.0.0` registers them globally)
 
-**已知未做**
+**Known gaps**
 
-| 项 | 说明 |
+| Item | Notes |
 |:---|:---|
-| `mountUI` / `requestRemote` | 接口已就位、实现待补（`mountUI` 目前只设了个 dataset 属性） |
-| 卡片工具的 schema | 不占独立 schema（有意为之）；调用方需先 list 再 call |
-| **连线的层级取舍** | 轨道用 portal 挂在 `document.body` 上 —— **与槽位容器解耦**，这样才不会被别人的皮肤/叠加层按堆叠上下文压住（`z-index` 只在同一堆叠上下文里可比）。代价：它**永远在 body 层级**，将来若有"必须最上层"的全屏模态，轨道会画在模态之上。当前靠 `pointer-events: none` 保证不挡交互，风险低；要收的话建议做**最小判据** —— 检测到 `[role="dialog"][aria-modal="true"]` 时把轨道压到模态之下，模态关闭即恢复（**不是**无条件降级隐藏） |
-
-**已知坑：改完代码后"测试全绿但用户看到旧行为"**
-
-这个坑会**反复**发生，而且现象很像"功能坏了"，所以单独写出来：
-
-| 半边 | 什么时候才装载新代码 |
-|:---|:---|
-| **宿主半边**（`lib/index.js` 等） | 改完 `lib/` 对**已运行的进程无效** —— 必须**重启 DSH 或热重载插件**。否则面板里跑的还是旧代码（真实撞过：用户点安装报的还是最初那版的 `fetch failed`，而代码早就修好了） |
-| **客户端半边**（`lib/client.js`） | 即使宿主重载了，浏览器**还要刷新页面**才装载新包（本实例 `client-hmr` 是 active 的，但用户不刷新就看不到新行为） |
-
-**排查口诀**：先看报错**长什么样**。旧代码的报错往往是**光秃秃一句**（`fetch failed`），
-新代码的报错会**列出通道、字节数、归因**。一眼就能分辨跑的是哪一版。
-
-同类误读还有一个（不是本插件的问题，但对端同结论）：**对端会话离线时**，
-连接消息会走冷唤醒通道落地成普通消息、**没有卡片壳** —— 见下面那条「已知差异」。
-
-**已知差异：连接消息在"对端离线"时没有卡片壳**（不是故障，是投递通道差异）
-同一套机制，两种落点：
-
-| 对端状态 | 投递通道 | 界面表现 |
-|:---|:---|:---|
-| **在线** | `agents.followup` → 代理收件箱 | **折叠卡**（带状态行、可展开） |
-| **不在线** | 冷唤醒兜底 `sessionController.prompt` | **普通消息**（没有卡片壳） |
-
-后者由框架渲染成一条普通用户消息，**投递方控制不了它的外观**。所以我们在**内容开头加了标识**
-（`COLD_DELIVERY_PREFIX`）：
-
-```
-📨 【连接消息】
-> 对方会话当时**不在线**，这条以普通消息送达（连接卡片本身没坏）。
-> 会话在线时，同样的消息会显示为带状态的卡片。
-```
-
-看到这段就说明"卡片没事，只是对端当时不在线"。标识加在 `content` 上（那段是我们自己拼的），
-**不需要发送方配合**改任何字段。
-
+| `mountUI` / `requestRemote` | Interface in place, implementation pending (`mountUI` currently only sets a dataset attribute) |
+| Card tool schemas | Deliberately take no separate schema; callers must list before calling |
+| **Rail layering trade-off** | The rail is portaled onto `document.body` — **decoupled from slot containers**, which is the only way to keep someone else's skin/overlay from beating it via stacking context (`z-index` is only comparable *within* one stacking context). The cost: it always sits at body level, so a future "must be on top" full-screen modal would have the rail drawn over it. `pointer-events: none` keeps interaction unaffected, so the risk is low; if it ever needs tightening, the suggested fix is a **minimal predicate** — while `[role="dialog"][aria-modal="true"]` is present, drop the rail below that modal and restore when it closes (**not** an unconditional hide) |
 
 ---
 
-## 文档
+## Docs
 
-| 文档 | 内容 |
+| Document | Contents |
 |:---|:---|
-| [`docs/capabilities.md`](docs/capabilities.md) | **能力报告**：逐项实测结果、上下文成本总账、已知限制 |
-| [`docs/card-protocol.md`](docs/card-protocol.md) | 卡片协议：清单、CardAPI、安装校验、分发来源 |
-| [`docs/compatibility.md`](docs/compatibility.md) | 兼容性：DSH 版本门控机制、两条防线 |
-| [`docs/adapter-api.md`](docs/adapter-api.md) | DSH 适配层：稳定接口与白名单 |
+| [`docs/capabilities.md`](docs/capabilities.md) | **Capability report**: per-item measurements, total context cost, known limits |
+| [`docs/card-protocol.md`](docs/card-protocol.md) | Card protocol: manifest, CardAPI, install validation, distribution |
+| [`docs/compatibility.md`](docs/compatibility.md) | Compatibility: how DSH's version gate works, the two lines of defence |
+| [`docs/adapter-api.md`](docs/adapter-api.md) | DSH adapter: the stable interface and its allowlist |
 
 ---
 
 <p align="center">
-  <sub>BSD-3-Clause · 与 DSH 官方无隶属关系</sub>
+  <sub>BSD-3-Clause · not affiliated with the DSH project</sub>
 </p>
