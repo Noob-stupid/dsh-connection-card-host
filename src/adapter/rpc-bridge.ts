@@ -166,6 +166,16 @@ function buildEndpoints(
     [RPC_ENDPOINTS.renderCardPanel]: (p) =>
       service.renderCardPanel(str(p, 'instanceId')),
 
+    /**
+     * UI 捕获用：把卡片的**客户端制品源码**送回浏览器。
+     *
+     * 浏览器够不到卡片目录（也不该给它文件系统访问），所以由宿主读文件、送**文本**过去 ——
+     * 最小暴露面。面板拿到源码后临时换掉 `__ModuleLoader__` 捕获 factory，
+     * 再把它的槽位注册渲染进面板（见 ui/capture-client.ts）。
+     */
+    [RPC_ENDPOINTS.readCardClientSource]: (p) =>
+      service.readCardClientSource(str(p, 'instanceId')),
+
     // 调试：向连接发事件，手动触发卡片逻辑
     [RPC_ENDPOINTS.debugEmit]: (p) => {
       const event = str(p, 'event')

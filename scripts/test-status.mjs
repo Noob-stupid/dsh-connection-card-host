@@ -54,12 +54,20 @@ console.log('── 3. 适配卡 + 开关开启')
 console.log('── 4. 申报了尚未实现的能力 ⇒ 即使开着也挂不上')
 {
   setAdapterEnabled(true)
-  const s = adapterStatusOf({ capabilities: ['tools', 'llm'] })
-  eq(s.status, 'unsupported', 'llm 尚未实现 ⇒ unsupported（**不受开关影响**）')
-  ok(/llm/.test(s.reason), '说明里点名 llm')
+  /**
+   * ⚠️ 样本用 `events`（不在路线图上），别再用 `llm` —— 它**已经实现**了。
+   * 这条断言的意义是"申报里含未实现能力时，置灰且不受开关影响"。
+   */
+  const s = adapterStatusOf({ capabilities: ['tools', 'events'] })
+  eq(s.status, 'unsupported', 'events 尚未实现 ⇒ unsupported（**不受开关影响**）')
+  ok(/events/.test(s.reason), '说明里点名 events')
   ok(/尚未实现/.test(s.reason), '说明里写明"尚未实现"')
   ok(/tools/.test(s.reason), '说明里点出已实现的是哪些')
   ok(!canMountByStatus(s.status), 'unsupported ⇒ 不可点')
+
+  // llm/prompt 现在已实现 ⇒ 只申报它们应当 ready
+  const ready = adapterStatusOf({ capabilities: ['tools', 'llm', 'prompt'] }, true)
+  eq(ready.status, 'ready', 'llm 与 prompt 已实现 ⇒ ready')
 }
 
 console.log('── 5. 边界')

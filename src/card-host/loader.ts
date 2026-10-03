@@ -28,6 +28,7 @@ import { importCardModule, resolveCardEntry } from './sandbox.js'
 import { createCardApi } from './card-api.js'
 import { createShimElement } from './dom-shim.js'
 import { adapterStatusOf } from '../adapter/status.js'
+import { readClientArtifact } from './client-artifact.js'
 
 /**
  * 适配宿主的**最小接口**（避免卡片宿主反向依赖适配层内部）。
@@ -458,6 +459,23 @@ export class CardHost {
 
     this.manager.persistConnection(connectionId)
     return instance
+  }
+
+  /**
+   * 读某张**已装载卡片**的客户端制品（UI 捕获用）。
+   *
+   * 由面板经 RPC 调用：宿主读文件、把**源码文本**送回浏览器。
+   * 卡片目录不给浏览器 —— 它只需要一段源码，不需要目录访问权。
+   */
+  async readClientSource(
+    instanceId: string,
+  ): Promise<{ ok: boolean; entry?: string; source?: string; reason?: string }> {
+    const instance = this.registry.getInstance(instanceId)
+    if (!instance) return { ok: false, reason: `卡片实例不存在：${instanceId}` }
+    this.scanTemplates()
+    const template = this.registry.getTemplate(instance.templateId)
+    if (!template) return { ok: false, reason: `卡片模板不存在：${instance.templateId}` }
+    return readClientArtifact(template.dir)
   }
 
   async unloadCard(instanceId: string): Promise<void> {

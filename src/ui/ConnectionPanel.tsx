@@ -18,6 +18,7 @@ import type { SessionsBridge } from '../client/sessions-bridge.js'
 import type { ViewPrefsStore } from '../client/view-prefs.js'
 import { useConnections } from './hooks/useConnections.js'
 import { useSessionList } from './hooks/useSessionList.js'
+import { CapturedCardUi } from './CapturedCardUi.js'
 import { CardStack } from './CardStack.js'
 import { AwarenessPanel } from './AwarenessPanel.js'
 
@@ -49,6 +50,45 @@ const HEALTH_TEXT: Record<string, string> = {
 
 export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProps) {
   const { connections, error, loaded, refresh } = useConnections(client)
+
+  /**
+   * **适配卡**的模板 id 集合 —— 只有这些卡片才有"插件自带 UI"可捕获。
+   *
+   * 取不到就当作空集：侧栏不显示，面板其余部分照常（UI 捕获是附加能力，
+   * 不该因为一次列表请求失败而影响主流程）。
+   */
+  const [adapterTemplates, setAdapterTemplates] = useState<Set<string>>(() => new Set())
+  useEffect(() => {
+    if (!client) return
+    let alive = true
+    void (async () => {
+      try {
+        const list = await client.listCardTemplates()
+        if (!alive) return
+        setAdapterTemplates(new Set(list.filter((t) => t.adapter).map((t) => t.templateId)))
+      } catch {
+        /* 忽略：没有侧栏也能用 */
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [client])
+
+  /** 侧栏要渲染的卡片：已挂载 + 是适配卡。 */
+  const capturedCards = useMemo(() => {
+    const out: { instanceId: string; label: string }[] = []
+    for (const conn of connections) {
+      for (const card of conn.cards ?? []) {
+        if (!adapterTemplates.has(card.templateId)) continue
+        out.push({
+          instanceId: card.instanceId,
+          label: `${card.templateId} · ${conn.id.slice(0, 8)}`,
+        })
+      }
+    }
+    return out
+  }, [connections, adapterTemplates])
 
   const { options: sessionOptions, labelOf, ready: sessionsReady } = useSessionList(sessions)
   /**
@@ -301,7 +341,13 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
   )
 
   return (
-    <div className="ccr-page">
+    /*
+     * 外层是**横向排布**：主内容（原来那一列）+ 右侧的插件 UI 侧栏。
+     * 面板主体仍是 `ccr-page`（max-width 720 居中），侧栏占用右边那片留白 ——
+     * 用户要的正是"左右两侧那么多空地"当插件的落点。
+     */
+    <div className="ccr-page-wrap">
+      <div className="ccr-page">
       <header className="ccr-page__head">
         <h2 className="ccr-page__title">会话连接</h2>
         <p className="ccr-page__sub">
@@ -609,6 +655,34 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
           })}
         </div>
       </section>
+      </div>
+
+      {/*
+       * 适配卡插件的 UI —— 用户要的位置：**面板左右两侧的留白处**。
+       *
+       * 这些组件来自第三方插件，本来是往 DSH 全局槽位注册的；适配层把它们**捕获**下来，
+       * 只渲染在这里（见 ui/CapturedCardUi.tsx）。捕获不到就什么都不显示 ——
+       * 纯能力型插件本来就没有 UI。
+       */}
+      {client && capturedCards.length > 0 && (
+        <aside className="ccr-page__side" aria-label="卡片界面">
+          {capturedCards.map((c) => (
+            <CapturedCardUi
+              key={c.instanceId}
+              client={client}
+              instanceId={c.instanceId}
+              label={c.label}
+              onDiagnostic={(m: string) => {
+                try {
+                  client.report(m)
+                } catch {
+                  /* 诊断失败不影响界面 */
+                }
+              }}
+            />
+          ))}
+        </aside>
+      )}
     </div>
   )
 }

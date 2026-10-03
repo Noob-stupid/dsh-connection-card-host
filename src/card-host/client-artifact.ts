@@ -1,0 +1,103 @@
+/**
+ * 读插件的**客户端制品**（宿主侧）—— 把源码文本交给浏览器去捕获。
+ *
+ * ## 为什么由宿主读，而不是浏览器去 fetch
+ *
+ * 卡片装在 `$DSH_HOME/connection-cards/cards/…`，浏览器够不到那个路径
+ * （也不该给它文件系统访问）。面板已经有 RPC 通道，宿主读文件、把**文本**送过去
+ * 是最小暴露面：浏览器拿到的是一段源码，不是一个目录句柄。
+ *
+ * ## 入口怎么定（按官方约定）
+ *
+ * 官方 UI 插件指引说：`package.json` 加 `dsh.client` 段，
+ * **并提供一个 `./client` 导出**。所以：
+ *
+ *   1. `exports['./client']` 指向的文件（最准）
+ *   2. 退而求其次：`lib/client.js` / `client.js`（常见布局）
+ *
+ * 两者都没有 ⇒ 这张卡片**没有 UI** ⇒ 返回 `no-client`（不是错误：能力型插件本来就可能没 UI）。
+ */
+
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+
+/** 客户端制品的读取结果。 */
+export interface ClientArtifact {
+  ok: boolean
+  /** 相对卡片目录的入口路径（ok 时给出）。 */
+  entry?: string
+  /** 源码文本（ok 时给出）。 */
+  source?: string
+  /** 失败/不存在的原因（可直接显示给人看）。 */
+  reason?: string
+}
+
+/** 单文件大小上限：客户端制品通常几十到几百 KB，超过这个量级多半不对。 */
+const MAX_BYTES = 4 * 1024 * 1024
+
+/** 从 package.json 的 exports 里取 `./client`。 */
+function clientExportOf(pkg: { exports?: unknown }): string | undefined {
+  const ex = pkg.exports
+  if (!ex || typeof ex !== 'object') return undefined
+  const entry = (ex as Record<string, unknown>)['./client']
+  if (typeof entry === 'string') return entry
+  if (entry && typeof entry === 'object') {
+    const o = entry as Record<string, unknown>
+    for (const key of ['import', 'default', 'require']) {
+      if (typeof o[key] === 'string') return o[key] as string
+    }
+  }
+  return undefined
+}
+
+/**
+ * 读一个卡片目录的客户端制品。
+ *
+ * @param cardDir 卡片目录（我们自己的那一份副本）
+ */
+export function readClientArtifact(cardDir: string): ClientArtifact {
+  const pkgPath = join(cardDir, 'package.json')
+  if (!existsSync(pkgPath)) return { ok: false, reason: '卡片目录里没有 package.json' }
+
+  let pkg: { exports?: unknown; dsh?: { client?: unknown }; main?: string }
+  try {
+    pkg = JSON.parse(readFileSync(pkgPath, 'utf8'))
+  } catch (e) {
+    return { ok: false, reason: `卡片 package.json 读不了：${String(e)}` }
+  }
+
+  /**
+   * 有 `dsh.client` 段才认为"这张卡片声称有 UI"。
+   * 没有该段却存在 lib/client.js 的情况也接住（老包/手写包常见），
+   * 但**优先相信声明** —— 声明与文件不一致时以声明为准。
+   */
+  const declared = Boolean(pkg.dsh && typeof pkg.dsh === 'object' && pkg.dsh.client)
+
+  const candidates: string[] = []
+  const fromExports = clientExportOf(pkg)
+  if (fromExports) candidates.push(fromExports.replace(/^\.\//, ''))
+  candidates.push('lib/client.js', 'lib/client.mjs', 'client.js', 'client.mjs')
+
+  for (const rel of candidates) {
+    const abs = join(cardDir, rel)
+    if (!existsSync(abs)) continue
+    try {
+      const st = statSync(abs)
+      if (!st.isFile()) continue
+      if (st.size > MAX_BYTES) {
+        return { ok: false, reason: `客户端制品过大（${Math.round(st.size / 1024)} KB > 上限 4 MB）` }
+      }
+      const source = readFileSync(abs, 'utf8')
+      return { ok: true, entry: rel, source }
+    } catch (e) {
+      return { ok: false, reason: `读客户端制品失败（${rel}）：${String(e)}` }
+    }
+  }
+
+  return {
+    ok: false,
+    reason: declared
+      ? '卡片声明了 dsh.client，但找不到制品文件（试过 exports["./client"] 与 lib/client.js）'
+      : '这张卡片没有客户端 UI（没有 dsh.client 段，也没有 lib/client.js）—— 纯能力型插件正常如此',
+  }
+}

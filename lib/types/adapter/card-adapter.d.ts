@@ -30,6 +30,27 @@ export interface CardAdapterHostOptions extends BridgeDeps {
     shimRoot: string;
     /** 门面模块所在目录（`lib/adapter`）。 */
     facadeBaseDir: string;
+    /**
+     * 注册一段系统提示词（`ctx.systemPrompt.section` 的绑定版）。
+     *
+     * 没提供时 `prompt` 能力**不可用**：插件声明了它会在装载阶段被拒绝 ——
+     * 这比"装上了但不生效"诚实。
+     */
+    registerPromptSection?: (section: {
+        name: string;
+        order: number;
+        text: (context: unknown) => string;
+        interpolate: boolean;
+    }) => () => void;
+    /**
+     * 模型调用（`ctx.llm` 的绑定版）。没提供时 `llm` 能力不可用。
+     */
+    llm?: {
+        stream: (options: Record<string, unknown>) => AsyncIterable<never>;
+        listProviders: () => string[];
+    };
+    /** 每张卡片实例的模型调用预算（默认见 llm-facade）。 */
+    llmBudget?: number;
     /** 调试日志（默认静默）。 */
     debug?: (message: string) => void;
 }
@@ -51,6 +72,8 @@ export declare class CardAdapterHost {
     readonly bridge: ToolBridge;
     /** instanceId → 已挂载的插件（卸载时要 dispose）。 */
     private mounted;
+    /** 提示词段注入器 —— 只在宿主接上了 `ctx.systemPrompt` 时存在。 */
+    private promptInjector?;
     constructor(options: CardAdapterHostOptions);
     /** 总开关状态（宿主侧判定用；UI 的标注走 `adapter/status.ts`）。 */
     enabled(): boolean;
@@ -63,7 +86,7 @@ export declare class CardAdapterHost {
         tools: number;
         pluginId: string;
     }>;
-    /** 卸载一张适配卡：先摘工具（无幽灵），再释放插件资源。 */
+    /** 卸载一张适配卡：先摘提示词与工具（无幽灵），再释放插件资源。 */
     unmount(instanceId: string): void;
     /** 某个会话看得见的桥接工具名（供下发过滤）。 */
     visibleToolNamesForSession(sessionId: string | null): Set<string>;

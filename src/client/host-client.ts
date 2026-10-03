@@ -159,6 +159,8 @@ export interface ConnectionCardHostClient {
   }>
   listCardTemplates(connectionId?: string): Promise<CardTemplateView[]>
   renderCardPanel(instanceId: string): Promise<string | null>
+  /** 读卡片的客户端制品（UI 捕获用）。 */
+  readCardClientSource(instanceId: string): Promise<{ ok: boolean; entry?: string; source?: string; reason?: string }>
   /** 待确认的权限升级请求。 */
   listPendingUpgrades(connectionId?: string): Promise<PendingUpgradeView[]>
   /** 协商可远程调用的方法白名单。 */
@@ -252,6 +254,7 @@ export function createHostClient(rpc: RpcCaller): ConnectionCardHostClient {
     listCardTemplates: (connectionId) =>
       invoke(RPC_ENDPOINTS.listCardTemplates, connectionId ? { connectionId } : {}),
     renderCardPanel: (instanceId) => invoke(RPC_ENDPOINTS.renderCardPanel, { instanceId }),
+    readCardClientSource: (instanceId) => invoke(RPC_ENDPOINTS.readCardClientSource, { instanceId }),
     listPendingUpgrades: (connectionId) =>
       invoke(RPC_ENDPOINTS.listUpgradeRequests, connectionId ? { connectionId } : {}),
     negotiateWhitelist: (connectionId, methods) =>

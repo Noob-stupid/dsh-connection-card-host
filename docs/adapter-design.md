@@ -140,6 +140,34 @@ window.__ModuleLoader__.load({
 | **D4** | 挂载方式 | **C 混合**：垫片层（B）覆盖"能不能加载"，适配器（A）兜底"要什么运行环境" |
 | **D5** | 功能范围 | **插件原有功能全部保留，不减功能** —— 它对会话有什么功能，适配后就还有什么；卡片代码同样能调用 |
 | **D6** | 候选列表里怎么表现适配卡 | **照常显示 + 「适配」标注**；未就绪时**置灰 + 悬停说明原因**（用户选 2） |
+| **D7** | `llm` 能力的范围 | **只做 A：卡片自己调模型**（自己挑 provider/model）。**B（改会话模型 / 路由）不做** —— 用户明确考虑过并否决 |
+| **D8** | 插件自带的 UI | **捕获后渲染进面板右侧留白**（不加载到 DSH 全局槽位） |
+
+### 2.3 D7 的边界（写清楚，免得以后重新推导）
+
+**做**：卡片通过 `ctx.llm.chat({ provider, model, prompt })` 自己发模型调用。
+provider/model **必须显式给**（让"用哪个模型"在代码里看得见 —— 费用与能力都取决于它）。
+**费用护栏**：每实例 100 次/挂载，超出明确拒绝并说明。
+
+**不做**：改某个会话正在用的模型 / 模型路由。
+DSH 里那类插件（如 `dsh-router-standard` 的 preset）声明
+`inject = ['systemPrompt','tools','llm']` 并订阅 `agent/pre-step`、`session/event`，
+还要 `ctx.get('agent')` —— 它需要 **`events` + `agent`** 这两个我们**不提供**的能力。
+词汇表里保留这两个名字，是为了让声明它们的插件得到**明确拒绝**（"本版本尚未实现"），
+而不是 `Cannot read properties of undefined`。
+
+### 2.4 D8 的落地（UI 捕获，已实现）
+
+四步（`src/ui/capture-client.ts` + `src/ui/CapturedCardUi.tsx`）：
+
+1. 宿主读客户端制品**源码**（`card-host/client-artifact.ts`），经 RPC 送浏览器
+2. 临时换掉 `__ModuleLoader__` 执行源码 → 拿 `{ id, factory }` → **立刻还原**（那是 DSH 加载器的命脉）
+3. 用**我们自己的 React** 调 factory（同一实例），给影子 client ctx 捕获槽位注册
+4. 渲染在面板**右侧留白**；错误边界兜住第三方组件崩溃；卸载即清理
+
+**已知限制（如实写）**：不给槽位 props（DSH 的 ownerProps 我们没有）—— 需要 props 的组件
+会被错误边界接住并显示原因，而不是白屏。客户端服务只提供 `slots` / `effect`；
+`require` 只转交 `react` / `react/jsx-runtime` / `react-dom`，其余**明确拒绝**。
 
 ### 2.2 D6 的落地（已实现）
 

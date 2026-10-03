@@ -1,0 +1,237 @@
+/**
+ * 客户端 UI 捕获 —— 把**普通 DSH 插件**的 UI 拿到我们的面板里渲染。
+ *
+ * ## 依据：客户端制品的真实形态（已核实）
+ *
+ * 官方模板与**我们自己的** `lib/client.js` 是同一形状：
+ *
+ * ```js
+ * window.__ModuleLoader__.load({
+ *   id: '@local/my-decoration',
+ *   factory(require) {           // ← 普通函数，返回 { inject, apply(ctx) }
+ *     const React = require('react')
+ *     return { inject: ['slots'], apply(ctx) { ctx.slots.register({…}, Component) } }
+ *   },
+ * })
+ * ```
+ *
+ * 关键点：**factory 是普通函数**，不是必须由 DSH 加载器实例化的黑盒。
+ * 所以我们可以自己调它、自己给影子 ctx，把它的槽位注册**捕获**下来。
+ *
+ * ## 四步（与 adapter-design.md §4 对应）
+ *
+ * 1. 宿主把客户端制品源码送到浏览器（RPC，见 card-host/client-artifact.ts）
+ * 2. **临时替换** `__ModuleLoader__` 为捕获桩，执行源码 → 拿到 `{ id, factory }` → **立刻还原**
+ * 3. 用**我们自己的 `require`** 调 factory（同一份 React 实例），
+ *    再给它一个**影子 client ctx**（只有 `slots`/`effect`，其余访问当场抛错）
+ * 4. 把捕获到的组件交给面板渲染；卸载时执行登记的清理
+ *
+ * ## 不做的事（划清边界）
+ *
+ * · **不加载它的 client 入口到 DSH 的全局槽位** —— 那样 UI 就会出现在全局界面，
+ *   而用户要的正是"只在连接面板里"
+ * · 不碰 app root（官方 UI 指引明确禁止）
+ * · 服务依赖拿不到就**明确失败**，不"忽略后祈祷不崩"
+ */
+
+/** 客户端制品里的一个槽位注册。 */
+export interface CapturedRegistration {
+  /** 槽位名（插件写死的那个，例如 `sidebar.panellist`）。 */
+  slot: string
+  /** 注册 id（插件给的）。 */
+  id?: string
+  /** 组件（React 组件或渲染函数，原样交给面板）。 */
+  component: unknown
+  /** 该次注册返回的清理函数（如果有）。 */
+  dispose?: () => void
+}
+
+/** factory 的形态。 */
+export interface CapturedFactory {
+  id: string
+  factory: (require: (spec: string) => unknown) => unknown
+}
+
+/** 捕获 factory：临时换掉 __ModuleLoader__，执行源码，然后还原。 */
+export function captureFactory(
+  source: string,
+  target: Record<string, unknown> = globalThis as unknown as Record<string, unknown>,
+): CapturedFactory {
+  const previous = target.__ModuleLoader__
+  let captured: CapturedFactory | undefined
+
+  const stub = {
+    load(entry: unknown): void {
+      const e = entry as { id?: unknown; factory?: unknown } | undefined
+      if (!e || typeof e.factory !== 'function') {
+        throw new Error('客户端制品调用了 __ModuleLoader__.load，但没给出 factory 函数')
+      }
+      captured = { id: String(e.id ?? '(未命名)'), factory: e.factory as CapturedFactory['factory'] }
+    },
+  }
+
+  target.__ModuleLoader__ = stub
+  try {
+    // 用 Function 而不是 <script>：不污染文档、不受 CSP inline 脚本策略影响
+    // eslint-disable-next-line no-new-func
+    const run = new Function('window', 'globalThis', source)
+    run(target, target)
+  } finally {
+    // ⚠️ 无论成败都要还原：这个全局是 DSH 加载器的命脉
+    if (previous === undefined) delete target.__ModuleLoader__
+    else target.__ModuleLoader__ = previous
+  }
+
+  if (!captured) {
+    throw new Error(
+      '这段源码没有调用 __ModuleLoader__.load —— 它可能不是 DSH 的客户端制品' +
+        '（官方约定：浏览器制品必须注册一个 id 等于包名的懒工厂）。',
+    )
+  }
+  return captured
+}
+
+/** 影子 client ctx 的界面。 */
+export interface ShadowClientCtx {
+  registrations: CapturedRegistration[]
+  disposers: { label: string; fn: () => void }[]
+  warnings: string[]
+}
+
+/**
+ * 用影子 client ctx 实例化捕获到的 factory。
+ *
+ * @param require 浏览器模块表（**用我们自己的** —— 保证 React 等是同一个实例）
+ * @param onWarn 拿不到的服务等情况的说明（走审计/诊断，不静默）
+ */
+export function instantiateCaptured(
+  captured: CapturedFactory,
+  require: (spec: string) => unknown,
+  onWarn: (message: string) => void = () => {},
+): ShadowClientCtx {
+  const registrations: CapturedRegistration[] = []
+  const disposers: { label: string; fn: () => void }[] = []
+  const warnings: string[] = []
+
+  const warn = (m: string): void => {
+    warnings.push(m)
+    onWarn(m)
+  }
+
+  const slots = {
+    /** 官方语义：`inject(name, cb)` 在服务可用时立刻执行 cb，并采用其返回值作为清理。 */
+    inject(name: string, cb: () => unknown): void {
+      void name
+      const result = cb()
+      /**
+       * ⚠️ 去重：`register()` 自己也返回 disposer，而官方写法里
+       * `inject(name, () => register(...))` 会把这个返回值当清理 ——
+       * 于是同一个函数被记两次，清理时执行两遍（`disposeCaptured` 逆序跑）。
+       * 记一次就够。
+       */
+      if (typeof result === 'function' && !disposers.some((d) => d.fn === result)) {
+        disposers.push({ label: `slots.inject(${name})`, fn: result as () => void })
+      }
+    },
+    /** `register({ name, id, … }, Component)` —— 捕获，不真的注册到 DSH 槽位。 */
+    register(spec: unknown, component: unknown): () => void {
+      const s = (spec ?? {}) as { name?: unknown; id?: unknown }
+      const slot = typeof s.name === 'string' ? s.name : ''
+      if (!slot) throw new Error('ctx.slots.register 缺少 name')
+      if (typeof component !== 'function' && typeof component !== 'object') {
+        throw new Error(`ctx.slots.register(${slot}) 的组件不是函数/对象`)
+      }
+      const reg: CapturedRegistration = {
+        slot,
+        ...(typeof s.id === 'string' ? { id: s.id } : {}),
+        component,
+      }
+      registrations.push(reg)
+      return () => {
+        const i = registrations.indexOf(reg)
+        if (i >= 0) registrations.splice(i, 1)
+      }
+    },
+  }
+
+  const effect = (cb: () => unknown, label?: string): void => {
+    const result = cb()
+    if (typeof result === 'function') {
+      disposers.push({ label: label ?? '(未命名 effect)', fn: result as () => void })
+    }
+  }
+
+  const services: Record<string, unknown> = { slots, effect }
+  const seenMisses = new Set<string>()
+
+  const ctx = new Proxy(
+    {},
+    {
+      get(_t, prop) {
+        if (typeof prop === 'symbol') return undefined
+        if (prop === 'then' || prop === 'toJSON' || prop === 'constructor') return undefined
+        if (prop === 'toString' || prop === 'valueOf') return () => '[shadow-client-ctx]'
+        if (prop in services) return services[prop]
+        /**
+         * ⚠️ 明确失败，但**记一次警告**：客户端插件的依赖面比宿主侧杂
+         * （locale / store / theme…），我们要能在日志里看清"它想要什么"，
+         * 而不是只看到一句异常。
+         */
+        const m = `客户端插件访问了未提供的能力「${String(prop)}」`
+        if (!seenMisses.has(m)) {
+          seenMisses.add(m)
+          warn(m)
+        }
+        throw new Error(
+          `${m} —— 适配层目前只提供 slots 与 effect。` +
+            `若该插件的 UI 依赖它，请在卡片清单里说明，或让它的 UI 保持纯渲染。`,
+        )
+      },
+      set() {
+        throw new Error('影子 client ctx 是只读的')
+      },
+    },
+  )
+
+  let plugin: { apply?: (ctx: unknown) => unknown; inject?: unknown } | undefined
+  try {
+    plugin = captured.factory(require) as typeof plugin
+  } catch (e) {
+    throw new Error(`调用客户端 factory 失败：${e instanceof Error ? e.message : String(e)}`)
+  }
+  if (!plugin || typeof plugin.apply !== 'function') {
+    throw new Error(`客户端 factory 没有返回 { apply } —— 它的 id 是「${captured.id}」`)
+  }
+
+  // 插件声明的 inject 与实际提供的能力对账（与宿主侧同一纪律）
+  const injects = Array.isArray(plugin.inject) ? plugin.inject.map(String) : []
+  const unsupported = injects.filter((i) => i !== 'slots' && i !== 'effect')
+  if (unsupported.length > 0) {
+    throw new Error(
+      `客户端插件声明需要 [${unsupported.join(', ')}]，而适配层只提供 slots / effect —— ` +
+        `拒绝捕获（不静默降级：缺服务的 UI 迟早崩，那时更难查）。`,
+    )
+  }
+
+  plugin.apply(ctx)
+
+  return {
+    registrations,
+    disposers,
+    warnings,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  } as ShadowClientCtx
+}
+
+/** 执行全部清理（逆序）。 */
+export function disposeCaptured(shadow: ShadowClientCtx): void {
+  for (const d of [...shadow.disposers].reverse()) {
+    try {
+      d.fn()
+    } catch {
+      /* 清理途中的错误不该阻断其余清理 */
+    }
+  }
+  shadow.disposers = []
+  shadow.registrations = []
+}

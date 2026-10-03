@@ -159,6 +159,44 @@ export function apply(ctx: HostContext, _config?: Record<string, unknown>): void
       facadeBaseDir: join(dirname(fileURLToPath(import.meta.url)), 'adapter'),
       audit: auditLog,
       debug,
+      /**
+       * `prompt` 能力：卡片贡献的提示词段走官方 `ctx.systemPrompt.section`。
+       *
+       * 注册是**全局的**，但段文本是**函数**：装配时按"这个会话在不在该卡片的
+       * 可见范围内"决定返回文字还是空串（空段会被丢掉）—— 见 prompt-inject.ts。
+       * 拿不到该服务时不提供此能力：声明了 `prompt` 的插件会在装载阶段被明确拒绝，
+       * 而不是"装上了却不生效"。
+       */
+      ...(() => {
+        const sp = safeCtxGet<{
+          section(section: {
+            name: string
+            order: number
+            text: (context: unknown) => string
+            interpolate: boolean
+          }): () => void
+        }>(ctx, 'systemPrompt')
+        if (!sp?.section) {
+          debug('apply: 没有 ctx.systemPrompt —— prompt 能力不可用（声明它的插件会被拒）')
+          return {}
+        }
+        return { registerPromptSection: (section: Parameters<typeof sp.section>[0]) => sp.section(section) }
+      })(),
+      /**
+       * `llm` 能力：卡片**自己**调模型（用户裁决只做这个含义；
+       * 改会话模型/路由那类**不做**）。门面与预算见 llm-facade.ts。
+       */
+      ...(() => {
+        const llm = safeCtxGet<{
+          stream(options: Record<string, unknown>): AsyncIterable<never>
+          listProviders(): string[]
+        }>(ctx, 'llm')
+        if (!llm?.stream) {
+          debug('apply: 没有 ctx.llm —— llm 能力不可用（声明它的插件会被拒）')
+          return {}
+        }
+        return { llm: { stream: llm.stream.bind(llm), listProviders: llm.listProviders.bind(llm) } }
+      })(),
     })
 
     const cardHost = new CardHost(manager, eventBus, adapter, {

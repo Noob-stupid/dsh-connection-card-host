@@ -37,6 +37,13 @@ export interface MountRequest {
     facadeBaseDir: string;
     /** 第三方依赖从哪里解析；默认同 pluginDir。 */
     depSourceDir?: string;
+    /**
+     * 由适配宿主提供的服务实例（例如按卡片实例建的 `llm` 门面）。
+     *
+     * ⚠️ 影子 ctx 只会把**申报过**的名字交出去（见 shadow-ctx.ts）——
+     * 这里塞进来不等于插件能用。
+     */
+    services?: Record<string, unknown>;
 }
 /** 挂载结果。 */
 export interface MountedPlugin {

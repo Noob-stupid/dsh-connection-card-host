@@ -158,6 +158,13 @@ export interface ConnectionCardHostClient {
     }>;
     listCardTemplates(connectionId?: string): Promise<CardTemplateView[]>;
     renderCardPanel(instanceId: string): Promise<string | null>;
+    /** 读卡片的客户端制品（UI 捕获用）。 */
+    readCardClientSource(instanceId: string): Promise<{
+        ok: boolean;
+        entry?: string;
+        source?: string;
+        reason?: string;
+    }>;
     /** 待确认的权限升级请求。 */
     listPendingUpgrades(connectionId?: string): Promise<PendingUpgradeView[]>;
     /** 协商可远程调用的方法白名单。 */

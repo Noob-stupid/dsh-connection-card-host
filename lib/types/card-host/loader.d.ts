@@ -127,6 +127,18 @@ export declare class CardHost {
      * 读代码的人能直接看到适配卡**不走** CardAPI、**不走** importCardModule。
      */
     private loadAdapterCard;
+    /**
+     * 读某张**已装载卡片**的客户端制品（UI 捕获用）。
+     *
+     * 由面板经 RPC 调用：宿主读文件、把**源码文本**送回浏览器。
+     * 卡片目录不给浏览器 —— 它只需要一段源码，不需要目录访问权。
+     */
+    readClientSource(instanceId: string): Promise<{
+        ok: boolean;
+        entry?: string;
+        source?: string;
+        reason?: string;
+    }>;
     unloadCard(instanceId: string): Promise<void>;
     reloadCard(instanceId: string): Promise<void>;
     /**

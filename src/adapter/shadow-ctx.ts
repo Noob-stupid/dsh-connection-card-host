@@ -29,11 +29,14 @@ import {
   type CapabilityDeclaration,
 } from './capabilities.js'
 import type { ToolDefinition } from './facade.js'
+import type { PromptSection } from './prompt-inject.js'
 
 /** 一次挂载中被捕获的东西。 */
 export interface ShadowCapture {
   /** 插件注册的工具：名字 → 定义（注册顺序保留）。 */
   tools: Map<string, ToolDefinition>
+  /** 插件贡献的提示词段（`prompt` 能力）。 */
+  prompts: PromptSection[]
   /** 插件登记的所有清理函数（逆序执行）。 */
   disposers: { label: string; fn: () => void }[]
   /** 插件试图向全局提供服务的记录（不执行，只记账 + 抛错）。 */
@@ -47,6 +50,13 @@ export interface ShadowCtxOptions {
   declaration: CapabilityDeclaration
   /** 审计日志。 */
   audit: (message: string) => void
+  /**
+   * 由适配宿主提供的服务实例（例如按卡片实例建的 `llm` 门面）。
+   *
+   * 为什么从这里注入、而不是在影子 ctx 内部造：这些服务要绑定**具体卡片实例**
+   * （调用预算、审计前缀、可见范围），而影子 ctx 只负责回答"能不能访问"。
+   */
+  services?: Record<string, unknown>
 }
 
 export interface ShadowCtx {
@@ -84,6 +94,7 @@ export function createShadowCtx(options: ShadowCtxOptions): ShadowCtx {
 
   const capture: ShadowCapture = {
     tools: new Map(),
+    prompts: [],
     disposers: [],
     providedAttempts: [],
   }
@@ -126,6 +137,37 @@ export function createShadowCtx(options: ShadowCtxOptions): ShadowCtx {
   }
   if (declared.includes('effect')) {
     services.effect = effect
+  }
+  /**
+   * `ctx.prompt.section({ name?, text, order? })` —— 卡片贡献一段提示词。
+   *
+   * 这里**只捕获、不注册**：注册要绑定连接与可见范围（由适配宿主在装载后做，
+   * 见 prompt-inject.ts）。影子 ctx 不掌握那些信息，硬做只会做错。
+   */
+  if (declared.includes('prompt')) {
+    services.prompt = {
+      section: (input: unknown): void => {
+        const s = input as { name?: unknown; text?: unknown; order?: unknown } | undefined
+        if (!s || typeof s.text !== 'string' || s.text.length === 0) {
+          throw new Error('ctx.prompt.section 需要 { text: string }，且 text 不能为空')
+        }
+        capture.prompts.push({
+          ...(typeof s.name === 'string' && s.name.length > 0 ? { name: s.name } : {}),
+          text: s.text,
+          ...(typeof s.order === 'number' && Number.isFinite(s.order) ? { order: s.order } : {}),
+        })
+        audit(`[adapter] ${pluginId} 贡献提示词段（${s.text.length} 字符，装配时按会话判定给不给）`)
+      },
+    }
+  }
+  /**
+   * 宿主注入的服务（例如按卡片实例建的 `llm` 门面）。
+   *
+   * ⚠️ **只在申报过的能力名下可用** —— 否则等于绕过申报制：
+   * 宿主塞进来什么，插件就能用什么。
+   */
+  for (const [name, value] of Object.entries(options.services ?? {})) {
+    if (declared.includes(name)) services[name] = value
   }
 
   const target: Record<string | symbol, unknown> = {

@@ -135,6 +135,60 @@ export const CONNECTION_CARD_CSS = `
 }
 
 /* ═══ 面板（main 槽位，整页宽度） ═══ */
+/*
+ * 外层：主内容 + 右侧插件 UI 侧栏。
+ *
+ * 面板主体仍是 ccr-page（720 居中），侧栏占用右边的留白 ——
+ * 适配卡插件的 UI 就渲染在那儿（而不是 DSH 全局界面）。
+ * 没有适配卡时侧栏不渲染，布局与以前**完全一致**（justify-content: center 让主体居中）。
+ */
+.ccr-page-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
+}
+/* 窄屏时侧栏换行到下方，避免把主内容挤窄 */
+@media (max-width: 1100px) {
+  .ccr-page-wrap { flex-wrap: wrap; }
+  .ccr-page__side { width: 100%; max-width: 720px; margin: 0 auto 24px; }
+}
+.ccr-page__side {
+  box-sizing: border-box;
+  width: 300px;
+  padding: 24px 12px 40px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* 捕获到的插件 UI：与面板同用主题令牌，不写死颜色 */
+.ccr-captured {
+  border: 1px solid var(--dsw-alias-border-l1, rgba(128, 128, 128, 0.25));
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--dsw-alias-bg-l1, transparent);
+}
+.ccr-captured__head {
+  font-size: 11px;
+  opacity: 0.65;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+.ccr-captured__slot {
+  font-size: 10px;
+  opacity: 0.45;
+  margin: 8px 0 4px;
+}
+.ccr-captured__note,
+.ccr-captured__error {
+  font-size: 11px;
+  opacity: 0.7;
+  padding: 8px 10px;
+  border: 1px dashed var(--dsw-alias-border-l1, rgba(128, 128, 128, 0.35));
+  border-radius: 8px;
+  word-break: break-word;
+}
 .ccr-page {
   box-sizing: border-box;
   width: 100%;

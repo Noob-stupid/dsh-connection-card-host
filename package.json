@@ -1,6 +1,6 @@
 {
   "name": "@noob-stupid/dsh-connection-card-host",
-  "version": "1.0.21",
+  "version": "1.0.22",
   "description": "会话连接卡片宿主：在DSH会话间建立有状态连接，挂载连接级卡片插件",
   "type": "module",
   "repository": {
@@ -49,7 +49,7 @@
     "build": "bash scripts/build.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build:client": "tsdown",
-    "test": "node scripts/test-tool-scoping.mjs && node scripts/test-preempt.mjs && node scripts/test-adapter.mjs && node scripts/test-shim.mjs && node scripts/test-bridge.mjs && node scripts/test-status.mjs && node scripts/test-host-wiring.mjs && node scripts/experiment-real-plugin.mjs"
+    "test": "node scripts/test-tool-scoping.mjs && node scripts/test-preempt.mjs && node scripts/test-install.mjs && node scripts/test-adapter.mjs && node scripts/test-shim.mjs && node scripts/test-bridge.mjs && node scripts/test-status.mjs && node scripts/test-host-wiring.mjs && node scripts/test-capabilities.mjs && node scripts/test-ui-capture.mjs && node scripts/experiment-real-plugin.mjs"
   },
   "exports": {
     ".": {

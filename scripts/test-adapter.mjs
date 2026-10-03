@@ -179,24 +179,35 @@ eq(validateDeclaration([]), { ok: true, declared: [] }, '空数组 ⇒ 合法')
 }
 
 {
-  const r = validateDeclaration(['llm'])
-  ok(r.ok, '已列入清单但未实现的能力（llm）⇒ 申报仍然合法')
-  eq(r.declared, ['llm'], '如实保留在申报集合里')
+  const r = validateDeclaration(['events'])
+  ok(r.ok, '已列入词汇表但未实现的能力（events）⇒ 申报仍然合法')
+  eq(r.declared, ['events'], '如实保留在申报集合里')
 }
 
-ok(isImplemented('tools') && !isImplemented('llm'), 'isImplemented 区分已实现/未实现')
-ok(ALL_CAPABILITIES.includes('llm') && ALL_CAPABILITIES.includes('prompt'), '清单含 llm 与 prompt')
+/**
+ * ⚠️ 别再用 llm/prompt 当"未实现"样本 —— 它们**已经实现**了。
+ * 未实现的样本改用 events/agent（用户明确不要模型路由，这两个不在路线图上）。
+ */
+ok(isImplemented('tools') && !isImplemented('events'), 'isImplemented 区分已实现/未实现')
+ok(isImplemented('llm') && isImplemented('prompt'), 'llm 与 prompt 现在**已实现**')
+ok(
+  ALL_CAPABILITIES.includes('llm') &&
+    ALL_CAPABILITIES.includes('prompt') &&
+    ALL_CAPABILITIES.includes('events') &&
+    ALL_CAPABILITIES.includes('agent'),
+  '词汇表含 llm / prompt / events / agent',
+)
 
 /* ═══════════════ 5. 拒绝文案要能区分两种情形 ═══════════════ */
 
 console.log('── 5. 拒绝文案：未申报 vs 已申报但未实现')
 
 {
-  const m1 = describeCapabilityFailure('llm', ['tools'], 'p1')
+  const m1 = describeCapabilityFailure('events', ['tools'], 'p1')
   ok(/未申报/.test(m1), '未申报 ⇒ 文案说"未申报"')
   ok(/tools/.test(m1), '未申报 ⇒ 列出它申报了什么')
 
-  const m2 = describeCapabilityFailure('llm', ['tools', 'llm'], 'p1')
+  const m2 = describeCapabilityFailure('events', ['tools', 'events'], 'p1')
   ok(/尚未实现/.test(m2), '已申报但未实现 ⇒ 文案说"尚未实现"')
   ok(!/未申报/.test(m2), '两种情形文案不混用')
 }
@@ -270,13 +281,13 @@ console.log('── 6. 影子 ctx')
 }
 
 {
-  // 申报了 llm（未实现）后被访问 ⇒ 文案必须说"尚未实现"，与"未申报"区分
+  // 申报了 events（未实现）后被访问 ⇒ 文案必须说"尚未实现"，与"未申报"区分
   const shadow = createShadowCtx({
-    pluginId: 'p-llm',
-    declaration: validateDeclaration(['tools', 'llm']),
+    pluginId: 'p-events',
+    declaration: validateDeclaration(['tools', 'events']),
     audit: () => {},
   })
-  throws(() => shadow.ctx.llm, /尚未实现/, '已申报但未实现 ⇒ 抛错且说"尚未实现"')
+  throws(() => shadow.ctx.events, /尚未实现/, '已申报但未实现 ⇒ 抛错且说"尚未实现"')
 }
 
 /* ═══════════════ 7. 命名 ═══════════════ */
