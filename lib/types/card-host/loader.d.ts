@@ -2,11 +2,52 @@ import type { CardInstance, CardAPI, CardScope } from '../types/index.js';
 import type { ConnectionManager } from '../core/connection-manager.js';
 import type { ConnectionEventBus } from '../core/event-bus.js';
 import type { DSHAdapter } from '../adapter/dsh-adapter.js';
+import { type CardSuitability } from './suitability.js';
+/**
+ * 适配宿主的**最小接口**（避免卡片宿主反向依赖适配层内部）。
+ *
+ * 适配层实现它；卡片宿主只调这三个方法。这样：
+ *   · 依赖是单向的（卡片宿主 → 接口，而不是 → 垫片/影子 ctx/桥接）
+ *   · 回退时只摘这一个注入点
+ */
+export interface CardAdapterHostLike {
+    /** 总开关是否开启（关着时适配卡的装载会明确报错，而不是按普通卡片跑）。 */
+    enabled(): boolean;
+    /** 挂载一张适配卡（内部完成：垫片 → 申报对账 → apply → 工具桥接）。 */
+    mount(request: {
+        instanceId: string;
+        cardId: string;
+        pluginDir: string;
+        capabilities: unknown;
+        connectionId: string;
+        scope?: CardScope;
+        depSourceDir?: string;
+    }): Promise<{
+        tools: number;
+        pluginId: string;
+    }>;
+    /** 卸载一张适配卡（先摘工具再释放资源）。 */
+    unmount(instanceId: string): void;
+}
 export interface CardHostOptions {
     /** 内置卡片根目录（随插件包发布的 cards/）。 */
     builtinRoot?: string;
     /** 已安装卡片的根目录（$DSH_HOME/connection-cards/cards/）。 */
     installedRoot?: string;
+    /** 适配宿主（可选注入；不注入则适配卡不可用）。 */
+    adapterHost?: CardAdapterHostLike;
+    /**
+     * **卡片投递通道**（晚绑定：会话桥在 CardHost 之后才创建）。
+     *
+     * 取值函数而不是实例 —— 建 CardHost 时桥还不存在；拿不到就返回 undefined，
+     * 于是 `api.sendMessage` 会**明确拒绝**而不是悄悄不发 ✓（fail-closed）。
+     */
+    deliverVia?: () => ((sessionId: string, text: string, urgency: 'quiet' | 'normal' | 'urgent' | 'preempt') => Promise<{
+        ok: boolean;
+        via?: string;
+        live?: boolean;
+        reason?: string;
+    }>) | undefined;
 }
 /** 面板里展示的模板摘要。 */
 export interface CardTemplateInfo {
@@ -21,8 +62,26 @@ export interface CardTemplateInfo {
     events: string[];
     /** 是否提供面板 UI。 */
     hasPanel: boolean;
+    /**
+     * **适格性**：这张卡是不是"当卡片的材料"（用户点出的第三条判据轴）。
+     *
+     * ⚠️ **启发式，只用来标注**（"不建议"），**不阻断** —— 用户仍可以挂 ✓。
+     */
+    suitability?: CardSuitability;
     /** 模板自己钉死的可见范围（有则用户不可改）。 */
     scope?: CardScope;
+    /**
+     * 适配卡状态（**只在是适配卡时出现**）。
+     *
+     * 候选列表据此在名字旁加「适配」标注、并在未就绪时置灰 + 说明原因
+     * （用户裁决 D6）。判定逻辑在 `src/adapter/status.ts`，是纯函数 ——
+     * 这里只是把结果随模板信息一起下发，**不在这里做判断**。
+     */
+    adapter?: {
+        status: 'ready' | 'off' | 'unsupported';
+        capabilities: string[];
+        reason: string;
+    };
     /** 已加到当前连接的实例数（由调用方填充）。 */
     loadedCount: number;
 }
@@ -34,6 +93,24 @@ export declare class CardHost {
     /** 连接两端的规范交流记录（CardAPI.send/read 走它）。 */
     private messageLog;
     private options;
+    /**
+     * 造一张卡片的 API —— **三处调用点共用这一个**（装载 / 重挂 / 启动重放）。
+     *
+     * 放在一个地方是为了让**授权与目标端判定只有一份实现**：
+     * 三处各写一遍，迟早有一处忘了带 `send_message` 授权检查 ✗。
+     */
+    private makeApi;
+    /**
+     * 卡片适配宿主（**可选**）：清单里带 `dshCard.adapter` 的卡片交给它挂载。
+     *
+     * 用**接口**而不是直接 import 适配模块，是为了让这一层保持单向依赖：
+     * 卡片宿主不必知道适配层内部（垫片、影子 ctx、桥接），
+     * 回退时也只把这一个注入点摘掉。
+     *
+     * 未注入时（或适配层总开关关闭时），适配卡的装载会**明确报错**，
+     * 而不是悄悄按普通卡片处理 —— 后者会让一个 DSH 插件拿到 CardAPI 并跑出莫名其妙的行为。
+     */
+    private adapterHost;
     /** instanceId → CardAPI。 */
     private apiByInstance;
     private scanned;
@@ -56,6 +133,19 @@ export declare class CardHost {
     private installedRoot;
     /** 已安装卡片的根目录（安装器要往这里落盘）。 */
     installedCardsRoot(): string;
+    /**
+     * **启动时的旧版本清理**（幂等、尽力而为、绝不抛）。
+     *
+     * 补的是一张**空头支票**：注释与用户文案一直写着"旧目录留给'清理旧版本'在宿主重启后删"，
+     * 但那个清理从来没被实现 —— 于是删不掉的目录会永久堆积，而我们对用户说"重启后会清"。
+     *
+     * 现在由宿主在加载时调一次；删不掉的留到下次（锁在重启后自然释放）。
+     */
+    pruneStaleVersions(): {
+        removed: number;
+        scanned: number;
+        ok: boolean;
+    };
     /** 扫描两个根目录下的卡片包（幂等）。 */
     scanTemplates(force?: boolean): void;
     private scanRoot;
@@ -69,6 +159,32 @@ export declare class CardHost {
      * @param connectionId 目标连接 id
      */
     loadCard(templateId: string, connectionId: string, requestedScope?: CardScope): Promise<CardInstance>;
+    /**
+     * 装载一张**适配卡**：交给适配宿主，失败时把已登记的实例回滚掉。
+     *
+     * 单独成方法（而不是塞进 loadCard 的分支里）是为了让"两条路"在代码结构上就分开：
+     * 读代码的人能直接看到适配卡**不走** CardAPI、**不走** importCardModule。
+     */
+    private loadAdapterCard;
+    /**
+     * 某张已安装卡片的**来源目录**（第三方依赖从那儿解析）。
+     *
+     * 只对 `kind === 'dir'` 且目录仍存在时返回 —— npm/tgz 来源没有可解析的目录，
+     * 那时依赖只能靠卡片自带（或接受"依赖未解析"的拒绝，那是有话直说）。
+     */
+    private sourceDirFor;
+    /**
+     * 读某张**已装载卡片**的客户端制品（UI 捕获用）。
+     *
+     * 由面板经 RPC 调用：宿主读文件、把**源码文本**送回浏览器。
+     * 卡片目录不给浏览器 —— 它只需要一段源码，不需要目录访问权。
+     */
+    readClientSource(instanceId: string): Promise<{
+        ok: boolean;
+        entry?: string;
+        source?: string;
+        reason?: string;
+    }>;
     unloadCard(instanceId: string): Promise<void>;
     reloadCard(instanceId: string): Promise<void>;
     /**

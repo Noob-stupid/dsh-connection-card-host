@@ -65,8 +65,62 @@ export function getOverlayHost(): HTMLDivElement | null {
   return host
 }
 
-/** 供诊断用：宿主当前的层级信息（z-index / 是否在 DOM / 在 body 子节点里的索引）。 */
-export function describeOverlayHost(): string {
+/**
+ * 显示一条**短暂的操作提示**（2.6 秒后自动消失）。
+ *
+ * ## 为什么需要它（现场诊断逼出来的）
+ *
+ * 用户从锚点拖出一条线、松手时**没命中任何会话行**（例如松在连接面板上）——
+ * 旧的实现只是 `clearHighlight()`，**屏幕上什么都不发生** ✗。
+ * 用户于是问"那个新插件还没搞好吗" ✗ —— 他把"**没有反馈**"读成了"**功能坏了**"。
+ *
+ * 这就是"沉默的失败"最典型的代价：**功能是对的，但用户不知道它是对的**。
+ *
+ * ## 文案规范（与对端对齐的同一套）
+ *
+ * **第一句先答"我该做什么"**，并且要让用户**一眼看出"这不是坏了"** ——
+ * 所以统一用「**操作没生效**」开头 + 随后的指令，而不是先解释机制。
+ *
+ * ## 合并连续相同提示
+ *
+ * 同一句话在短时间内反复触发（用户连拖几次）⇒ **复用同一条**，不叠加、不闪弹幕。
+ * 成本极低，但不做的话连拖三次就能把屏幕刷满。
+ */
+let lastHint: { el: HTMLDivElement; text: string; at: number } | null = null
+
+export function flashHint(text: string, ms = 2600): void {
+  const host = getOverlayHost()
+  if (!host) return
+
+  const now = Date.now()
+  /** 2.5 秒内的**同一句**提示：复用现有那条（刷新计时），不再新建。 */
+  if (lastHint && lastHint.text === text && now - lastHint.at < ms) {
+    lastHint.at = now
+    return
+  }
+
+  const tip = document.createElement('div')
+  tip.className = 'ccr-hint'
+  tip.textContent = text
+  tip.style.cssText =
+    'position:fixed;left:50%;bottom:72px;transform:translateX(-50%);' +
+    'pointer-events:none;padding:8px 14px;border-radius:8px;font-size:12px;' +
+    'background:rgba(20,20,20,.86);color:#fff;z-index:2147483647;' +
+    'box-shadow:0 4px 16px rgba(0,0,0,.28);white-space:nowrap;'
+  host.appendChild(tip)
+  lastHint = { el: tip, text, at: now }
+
+  window.setTimeout(() => {
+    try {
+      tip.remove()
+    } catch {
+      /* 已经被移除：正常 */
+    }
+    if (lastHint?.el === tip) lastHint = null
+  }, ms)
+}
+
+/** 供诊断用：宿主当前的层级信息（z-index / 是否在 DOM / 在 body 子节点里的索引）。 */export function describeOverlayHost(): string {
   if (typeof document === 'undefined') return 'host[n/a]'
   const el = getOverlayHost()
   if (!el) return 'host[n/a]'

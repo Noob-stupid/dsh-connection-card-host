@@ -17,6 +17,7 @@ import { ConnectionPanel } from '../ui/ConnectionPanel.js'
 import { ConnectionPanelIcon } from '../ui/ConnectionPanelIcon.js'
 import { SessionRailOverlay } from '../ui/SessionRailOverlay.js'
 import { SessionRowMarker } from '../ui/SessionRowMarker.js'
+import { flashHint } from '../ui/overlay-host.js'
 import { useDragLine } from '../ui/hooks/useDragLine.js'
 import { createHostClient, resolveRpcCaller } from './host-client.js'
 import { resolveSessions } from './sessions-bridge.js'
@@ -140,6 +141,14 @@ export function apply(ctx: ClientContext): void {
     /** 拖拽开始时缓存的连接表，用于落点提示与「连上则断」判定。 */
     const connsRef = useRef<{ sessionA: string; sessionB: string; id: string }[]>([])
 
+    /**
+     * **落空计数**（reason → 窗口内次数 / 最近一次时间）。
+     *
+     * 用途：把"拖着玩"与"真想连"分开 —— 单次落空只记日志，同一原因 30 秒内 ≥3 次才提示一次。
+     * 见 `finishAt` 里那段说明（提示的成本 = 误报概率 × 打扰强度）。
+     */
+    const missRef = useRef<Map<string, { n: number; at: number }>>(new Map())
+
     /** 两个会话之间是否已有连接。 */
     const findExisting = useCallback(
       (list: { sessionA: string; sessionB: string; id: string }[], a: string, b: string) =>
@@ -228,6 +237,43 @@ export function apply(ctx: ClientContext): void {
                 `rows=${document.querySelectorAll('[role="treeitem"]').length} ` +
                 `marked=${document.querySelectorAll('[data-ccr-session]').length}`,
             )
+          }
+          /**
+           * ⚠️ **不是每次落空都该上屏**（用户更正，我先前只算了"静默的成本"，漏了"误报的成本"）。
+           *
+           * 用户原话：**"用户也有可能是拖着玩"** —— 单次落空是**常态**，
+           * 每次都弹提示 = 更像坏了、更烦 ✗。
+           *
+           * ⇒ 门控（对端给的形状）：
+           *   · **单次落空 ⇒ 只写日志**（上面那条 `client.report` 已经记了）不上屏
+           *   · **同一原因 30 秒内 ≥3 次** ⇒ 提示**一次**（然后重新计数）
+           *     —— 这正好把"玩"和"真想连"分开：玩的人不会连试三次同一位置
+           *   · **未知原因 ⇒ 只进日志/审计**，不上屏 ——
+           *     "新原因不许静默"是**对着开发者**说的（先让我看到），
+           *     而不是对着屏幕说的（用户看到"未知原因"没有可行动作，只会困惑）
+           *
+           * 判据：**提示的成本 = 误报概率 × 打扰强度；只在"意图明确"时才付这个成本。**
+           */
+          const hintByReason: Record<string, string> = {
+            'no-row-under-cursor': '操作没生效 —— 请拖到左侧会话列表的某一行上',
+            'row-unresolved': '操作没生效 —— 这一行认不出是哪个会话，换一行或等它空闲后再试',
+            'no-current-session': '操作没生效 —— 请从输入框左侧的圆点开始拖',
+            'same-session': '操作没生效 —— 不能连到自己，拖到另一行上',
+            'no-sessions-bridge': '操作没生效 —— 会话列表还没就绪，稍后再试',
+          }
+          const hint = hintByReason[reason]
+          if (hint) {
+            const now = Date.now()
+            const rec = missRef.current.get(reason)
+            const n = rec && now - rec.at < 30_000 ? rec.n + 1 : 1
+            missRef.current.set(reason, { n, at: now })
+            if (n >= 3) {
+              flashHint(hint)
+              missRef.current.set(reason, { n: 0, at: now })
+            }
+          } else {
+            /** 未知原因：**只进日志**（这一条是给开发者的，不是给屏幕的）。 */
+            client?.report(`dragEnd 未知 reason=${reason}（未上屏，见设计注释）`)
           }
           clearHighlight()
           return

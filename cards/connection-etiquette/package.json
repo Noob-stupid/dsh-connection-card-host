@@ -1,0 +1,11 @@
+{
+  "name": "connection-etiquette",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dshCard": {
+    "id": "connection-etiquette",
+    "name": "连接礼仪（紧急度）",
+    "requires": { "read": [], "write": ["send_message"] },
+    "events": []
+  }
+}

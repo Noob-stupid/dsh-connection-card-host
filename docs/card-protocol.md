@@ -39,6 +39,7 @@
 | `requires.read` | string[] | 读权限所需的 DSH 资源（如 `preset_status`） |
 | `requires.write` | string[] | 写权限所需的 DSH 操作（如 `repair_preset`） |
 | `events` | string[] | 卡片可订阅/发布的事件名列表 |
+| `api` | number | **卡片所需的 CardAPI 版本**（缺省 `1`）。⚠️ 字段名是 **`api`**，不是 `apiVersion` —— 写错会**静默按 1 处理**（见 `src/card-host/card-api-version.ts`） |
 | `ui.icon` | string | 图标资源相对路径（SVG） |
 | `ui.panel` | string | 面板入口文件相对路径（默认 `dist/index.js`） |
 
@@ -91,6 +92,30 @@ export function mountPanel(element, api) {
 | `mountUI` | `(element: HTMLElement) => void` | 渲染卡片 UI 到面板容器 |
 | `requestRemote` | `(method: string, params: unknown) => Promise<unknown>` | 请求对端执行操作（30s 超时，不自动重试，白名单校验） |
 | `log` | `(...args: unknown[]) => void` | 写日志（控制台 + 审计日志） |
+| `send` | `(kind, text, options?) => SendGate` | 以某一端的身份**写一条连接消息记录**（≠ 投递，走 `messageLog`） |
+| `read` | `(options?) => ConnectionMessage[]` | 读取本连接的消息记录 |
+| `sendMessage` | `(text: string, options?: { urgency?: 'quiet'\|'normal'\|'urgent'\|'preempt'; kind?: 'say'\|'ask'\|'reply' }) => Promise<{ ok: boolean; via?: string; live?: boolean; code?: string; permanent?: boolean; reason?: string }>` | **卡片代用户向对端投递一条消息**（走宿主既有的会话投递路径；见下） |
+
+### `sendMessage` 的语义与两个 fail-closed 前提
+
+`urgency` 四档与**宿主侧连接消息同一套语义**：
+`quiet` 只告知不唤醒 / `normal` 排队 / `urgent` 插话 / `preempt` 抢占插话。
+
+⚠️ **未满足以下任一条即拒绝**（不静默、不降级）：
+
+1. 卡片 manifest 的 `requires.write` 必须声明 **`"send_message"`** ——
+   "卡片代用户对外说话"是**用户授权的能力**，不是默认权利；
+2. `scope === 'both'` ⇒ **无法判定该对哪一端说话** ⇒ 拒绝（宁可不说，也不要对错的一端说）。
+
+其余性质：
+
+* **复用宿主既有投递路径** ⇒ preempt 的既有约束（默认关闭 / 需写权限 / 每连接 5 分钟 1 次 /
+  不满足自动退化为 urgent）**自动生效** —— 卡片不必也不应自己实现一套限流；
+* **不重试**；失败以**结构化结果**返回，不抛异常；
+* 失败结果带 **`code`**（`not-authorized` / `scope-ambiguous` / `no-peer-session` / `no-channel` / `threw`）
+  与 **`permanent`** —— 卡片据此判断"**该不该再试**"，**不要去解析 `reason` 文本**；
+* 收端会看到来源前缀 **`【卡片 · <cardId>】`** —— 别让接收方误判说话的人是谁；
+* 每次尝试**写审计**（哪一档、实际 `via`、是否降级）。
 
 ### requestRemote 返回值
 

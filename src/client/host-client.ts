@@ -81,6 +81,30 @@ export interface CardTemplateView {
   hasPanel: boolean
   /** 模板自己钉死的可见范围（有则用户不可改）。 */
   scope?: CardScope
+  /**
+   * 适配卡状态（**只在是适配卡时出现**）—— 候选列表据此加「适配」标注、
+   * 未就绪时置灰并说明原因（用户裁决 D6）。
+   */
+  adapter?: {
+    status: 'ready' | 'off' | 'unsupported'
+    capabilities: string[]
+    reason: string
+  }
+  /**
+   * **适格性**（用户点出的第三条判据轴：**星多 ≠ 适合当卡片**）。
+   *
+   * `global` 型（替换/接管整个侧栏那种）是为"**装到 App 上**"生的 ✗ ——
+   * 挂到某条连接上既装不下、也会和 App 布局打架 ⇒ 候选列表**提前**标出来 ✓。
+   *
+   * ⚠️ 这里是**结构化字段的原样转述**（不在 UI 侧做判断）——
+   * 判定只有一处（宿主 `suitability.ts`），避免"标注与实际行为脱节" ✓。
+   * ⚠️ 也**不要**在 UI 里 import 宿主那个模块：它依赖 `node:fs` ✗（会污染浏览器包 ✓）。
+   */
+  suitability?: {
+    scope: 'capability' | 'local' | 'global' | 'unclear'
+    why: string
+    globalHits: string[]
+  }
   loadedCount: number
 }
 
@@ -150,6 +174,8 @@ export interface ConnectionCardHostClient {
   }>
   listCardTemplates(connectionId?: string): Promise<CardTemplateView[]>
   renderCardPanel(instanceId: string): Promise<string | null>
+  /** 读卡片的客户端制品（UI 捕获用）。 */
+  readCardClientSource(instanceId: string): Promise<{ ok: boolean; entry?: string; source?: string; reason?: string }>
   /** 待确认的权限升级请求。 */
   listPendingUpgrades(connectionId?: string): Promise<PendingUpgradeView[]>
   /** 协商可远程调用的方法白名单。 */
@@ -243,6 +269,7 @@ export function createHostClient(rpc: RpcCaller): ConnectionCardHostClient {
     listCardTemplates: (connectionId) =>
       invoke(RPC_ENDPOINTS.listCardTemplates, connectionId ? { connectionId } : {}),
     renderCardPanel: (instanceId) => invoke(RPC_ENDPOINTS.renderCardPanel, { instanceId }),
+    readCardClientSource: (instanceId) => invoke(RPC_ENDPOINTS.readCardClientSource, { instanceId }),
     listPendingUpgrades: (connectionId) =>
       invoke(RPC_ENDPOINTS.listUpgradeRequests, connectionId ? { connectionId } : {}),
     negotiateWhitelist: (connectionId, methods) =>

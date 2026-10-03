@@ -51,6 +51,8 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
     Record<string, { hasUpdate?: boolean; latestVersion?: string; reason?: string }>
   >({})
   const [updBusy, setUpdBusy] = useState<string | null>(null)
+  /** 卸载进行中的模板 id（与 updBusy 分开：两个入口可以同时在跑，不要互相盖掉）。 */
+  const [unBusy, setUnBusy] = useState<string | null>(null)
   /**
    * 哪些卡片实例的面板是展开的。
    *
@@ -134,6 +136,34 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
    *
    * 结论**原样保留 `reason`** —— 面板会区分"有更新 / 已是最新 / 无法检查"三态。
    */
+  /**
+   * **卸载一张已安装的卡片**（用户报的缺口：能力一直在，入口没给 ✗）。
+   *
+   * 三条都要做到（缺一条就是"半吊子入口" ✗）：
+   *   ① 调既有 RPC ✓（不新增通道）
+   *   ② 结果**如实回报** —— 宿主侧文案会说清"清了什么 / 什么被占用没清掉" ✓
+   *   ③ **卸载后立刻刷新列表** ✓ —— 否则用户会对着已经删掉的项再点一次 ✗
+   *      （这一步容易被漏：RPC 成功 ≠ 界面更新 ✓）
+   */
+  const doUninstall = useCallback(
+    async (templateId: string) => {
+      if (!client) return
+      setUnBusy(templateId)
+      setInstallMsg(null)
+      try {
+        const r = await client.uninstallCard(templateId)
+        setInstallMsg(r.ok ? (r.reason ?? `已卸载「${templateId}」✓`) : `卸载失败：${r.reason ?? '未说明'}`)
+        /** ③ 无论成败都刷新：成功的要消失 ✓；失败的也可能已经部分清掉 ✓。 */
+        await load()
+      } catch (e) {
+        setInstallMsg(`卸载出错：${e instanceof Error ? e.message : String(e)}`)
+      } finally {
+        setUnBusy(null)
+      }
+    },
+    [client, load],
+  )
+
   const doCheckUpdate = useCallback(
     async (templateId: string) => {
       if (!client) return
@@ -329,21 +359,76 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
             <div className="ccr-panel__empty">
               {templates.length === 0 ? '没有发现任何卡片模板' : '所有卡片都已添加'}
             </div>
-          )}          {available.map((t) => (
-            <button
-              key={t.templateId}
-              type="button"
-              className="ccr-card-option"
-              disabled={busy === t.templateId}
-              onClick={() => void add(t.templateId)}
-            >
-              <span className="ccr-card-option__name">{t.name}</span>
-              <span className="ccr-card-option__meta">
-                {t.source === 'builtin' ? '内置' : '已安装'} · v{t.version}
-                {t.events.length > 0 && ` · ${t.events.length} 事件`}
-                {/* 模板自己钉死了范围的话，用户选什么都会被覆盖 —— 提前说清 */}
-                {t.scope && ` · 固定仅${t.scope === 'a' ? 'A' : 'B'}端`}
-              </span>
+          )}          {available.map((t) => {
+            /*
+             * 适配卡（把一个普通 DSH 插件挂成连接上的能力）：照常列出，但带「适配」标注；
+             * 未就绪时**置灰并说明原因**（用户裁决 D6）。
+             *
+             * 三条理由：让用户知道"这东西在这儿"（不是没装上）、知道"要开一下"
+             * （而不是点了撞墙）、也不会以为"下载失败"。状态由宿主侧判定后下发
+             * （`src/adapter/status.ts`），这里**不做二次判断** ——
+             * 判定分散是"标注与实际行为脱节"的根源。
+             */
+            const ad = t.adapter
+            const blocked = Boolean(ad && ad.status !== 'ready')
+            return (
+              <button
+                key={t.templateId}
+                type="button"
+                className={`ccr-card-option${blocked ? ' ccr-card-option--blocked' : ''}`}
+                disabled={busy === t.templateId || blocked}
+                title={ad ? ad.reason : undefined}
+                onClick={() => {
+                  if (blocked) return
+                  void add(t.templateId)
+                }}
+              >
+                <span className="ccr-card-option__name">
+                  {t.name}
+                  {ad && <span className="ccr-badge ccr-badge--adapter">适配</span>}
+                  {/*
+                    适格性标注（用户点出的第三条判据轴）：**星多 ≠ 适合当卡片**。
+                    `全局` 型（替换/接管整个侧栏那种）是为"装到 App 上"生的 ✗ ——
+                    挂到某条连接上没意义，所以**提前**标出来，别让用户逐个试。
+                    ⚠️ 只标注、不阻断：用户仍可以挂（它是启发式）。
+                  */}
+                  {t.suitability && (
+                    <span
+                      className={`ccr-badge ccr-badge--scope${
+                        t.suitability.scope === 'global' ? ' ccr-badge--warn' : ''
+                      }`}
+                      title={t.suitability.why}
+                    >
+                      {/*
+                        ⚠️ 徽标文案**写在这里**，不 import 宿主那个模块 ——
+                        判定与文案若分散会"标注与实际行为脱节" ✗，
+                        但宿主的 `suitability.ts` 依赖 `node:fs` ✗，
+                        UI import 它会把 Node 内置模块带进浏览器包 ✗。
+                        ⇒ 折中：**判定**只有一处（宿主 ✓），**文案**是纯展示、就地映射 ✓。
+                      */}
+                      {t.suitability.scope === 'capability'
+                        ? '能力'
+                        : t.suitability.scope === 'local'
+                          ? '局部'
+                          : t.suitability.scope === 'global'
+                            ? '全局'
+                            : '未判定'}
+                    </span>
+                  )}
+                </span>
+                <span className="ccr-card-option__meta">
+                  {t.source === 'builtin' ? '内置' : '已安装'} · v{t.version}
+                  {t.events.length > 0 && ` · ${t.events.length} 事件`}
+                  {/* 适格性的一句话理由（与徽标同源，避免"标注与判定脱节"） */}
+                  {t.suitability?.scope === 'global' && ' · 全局 UI，不建议当卡片'}
+                  {t.suitability?.scope === 'unclear' && ' · 作用域未判定'}
+                  {/* 模板自己钉死了范围的话，用户选什么都会被覆盖 —— 提前说清 */}
+                  {t.scope && ` · 固定仅${t.scope === 'a' ? 'A' : 'B'}端`}
+                  {/* 适配卡的能力清单：让"它能给这条连接带来什么"在选择前就可见 */}
+                  {ad && ad.capabilities.length > 0 && ` · 能力 ${ad.capabilities.join('/')}`}
+                  {ad?.status === 'off' && ' · 需开启适配层'}
+                  {ad?.status === 'unsupported' && ' · 本版本不支持'}
+                </span>
 
               {/*
                 已安装的卡片给一个「检查更新 / 更新」入口。
@@ -371,8 +456,42 @@ export function CardStack({ connection, client, onChanged }: CardStackProps) {
                           : '检查更新'}
                 </span>
               )}
-            </button>
-          ))}
+              {/*
+                「卸载」入口（用户报的缺口）。
+
+                ## 缺口的形状：**能力在、入口没给** ✗
+
+                `cards/uninstall` 这个 RPC **一直是有的** ✓（复验轮就是靠它卸干净的 ✓），
+                但候选列表里**只有「检查更新」** ✗ ⇒ 用户看到的是"**装上了就删不掉**" ✗。
+
+                ⇒ 与"沉默的失败"**同族**：**能力面没被真实使用路径校准过** ✓
+                （真实路径就是：装错了想删 / 装重了想清 ✓）。
+
+                · **只对 `installed` 显示** ✓ —— 内置卡随插件分发，删了下次升级又回来，
+                  给按钮只会让用户白点 ✗
+                · **点击前确认一次** ✓，并在确认文案里写清"**会连同它的挂载实例一起移除**" ✓
+                  （卸载是有后果的动作，用户有权在点之前知道后果 ✓）
+                · 卸载结果**如实回报**（清了什么 / 什么没清掉 ✓）—— 文案由宿主侧承担 ✓
+              */}
+              {t.source === 'installed' && (
+                <span
+                  className="ccr-card-option__upd ccr-card-option__del"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const mounted = t.loadedCount > 0 ? `\n它当前挂在 ${t.loadedCount} 条连接上，` : '\n'
+                    const yes = window.confirm(
+                      `卸载「${t.name}」？${mounted}卸载会连同它的卡片实例一起移除。\n` +
+                        `（模板目录与来源记录会一并清掉；清不掉的会如实告诉你。）`,
+                    )
+                    if (yes) void doUninstall(t.templateId)
+                  }}
+                >
+                  {unBusy === t.templateId ? '…' : '卸载'}
+                </span>
+              )}
+              </button>
+            )
+          })}
         </div>
       )}
 

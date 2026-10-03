@@ -18,6 +18,7 @@ import type { SessionsBridge } from '../client/sessions-bridge.js'
 import type { ViewPrefsStore } from '../client/view-prefs.js'
 import { useConnections } from './hooks/useConnections.js'
 import { useSessionList } from './hooks/useSessionList.js'
+import { CapturedCardUi } from './CapturedCardUi.js'
 import { CardStack } from './CardStack.js'
 import { AwarenessPanel } from './AwarenessPanel.js'
 
@@ -50,7 +51,32 @@ const HEALTH_TEXT: Record<string, string> = {
 export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProps) {
   const { connections, error, loaded, refresh } = useConnections(client)
 
+  /**
+   * **适配卡**的模板 id 集合 —— 只有这些卡片才有"插件自带 UI"可捕获。
+   *
+   * 取不到就当作空集：侧栏不显示，面板其余部分照常（UI 捕获是附加能力，
+   * 不该因为一次列表请求失败而影响主流程）。
+   */
+  const [adapterTemplates, setAdapterTemplates] = useState<Set<string>>(() => new Set())
+  useEffect(() => {
+    if (!client) return
+    let alive = true
+    void (async () => {
+      try {
+        const list = await client.listCardTemplates()
+        if (!alive) return
+        setAdapterTemplates(new Set(list.filter((t) => t.adapter).map((t) => t.templateId)))
+      } catch {
+        /* 忽略：没有侧栏也能用 */
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [client])
+
   const { options: sessionOptions, labelOf, ready: sessionsReady } = useSessionList(sessions)
+
   /**
    * 新建连接用的会话槽位。
    * 默认两个；点中间的箭头可以加第三个 —— 三个会**两两相连**（3 条连接）。
@@ -58,6 +84,44 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
   const [picks, setPicks] = useState<string[]>(['', ''])
   const [manual, setManual] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  /**
+   * 侧栏要渲染的卡片：**只属于"当前展开的那条连接"** 的适配卡。
+   *
+   * ## ⚠️ 这里原先是**遍历所有连接** —— 用户报的行为缺陷（现场："固定位置呆着不动"）
+   *
+   * 用户原话：
+   *
+   * > 「应该展开对应的连接右侧才会展现，**而不是固定位置呆着不动** ——
+   * >   因为如果有多个连接，**展开哪个右侧就显示哪个**。」
+   *
+   * 原来的写法把**所有连接**上挂的适配卡都收进来 ⇒
+   *   ① 右侧**不跟随**展开态（看起来"钉在原地"✗）
+   *   ② 多连接时**重复挂载 + 白渲染** ✗
+   *   ③ 切换连接时旧组件**不卸载** ⇒ **Y 会看到 X 的组件状态** ✗（React 组件带 state）
+   *
+   * 现在：`expandedId` 决定一切 ✓ ——
+   *   · 展开 X ⇒ 只收 X 的卡 ✓
+   *   · 没展开任何连接（`null`）⇒ 列表为空 ⇒ 右侧**整个不渲染**（不残留上一条 ✗）
+   *   · 从 X 切到 Y ⇒ 列表成员整体换掉 ⇒ React **卸载旧的、重挂新的** ✓
+   *     （`key` 里带上连接 id ⇒ 即使两张卡的 `instanceId` 撞了也不会复用 X 的实例 ✓）
+   */
+  const capturedCards = useMemo(() => {
+    const out: { key: string; instanceId: string; label: string }[] = []
+    if (!expandedId) return out
+    const conn = connections.find((c) => c.id === expandedId)
+    if (!conn) return out
+    for (const card of conn.cards ?? []) {
+      if (!adapterTemplates.has(card.templateId)) continue
+      out.push({
+        /** **连接 id + 实例 id** 一起做 key：换连接 ⇒ 必然卸载重挂 ✓。 */
+        key: `${conn.id}:${card.instanceId}`,
+        instanceId: card.instanceId,
+        label: `${card.templateId} · ${conn.id.slice(0, 8)}`,
+      })
+    }
+    return out
+  }, [connections, adapterTemplates, expandedId])
   const [busy, setBusy] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [pending, setPending] = useState<PendingUpgradeView[]>([])
@@ -100,21 +164,29 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
    * 一次性诊断：面板滚不动时，需要知道**到底是谁在裁**。
    *
    * 从面板根节点往上走，把每个祖先的 overflow / height 记下来。
-   * 只有"滚不动"才有价值 —— 所以只在自身 scrollHeight > clientHeight
-   * 却拿不到滚动条时上报。
+   *
+   * ⚠️ **两种坏形态都要报**（第二种是后补的，正是它漏掉过一次真实回归）：
+   *
+   *   ① 内容超出 + 自身不可滚 —— 直观的那种
+   *   ② **自身比视口还高**（说明它"长高了"而不是在滚动）——
+   *      这种 `scrollHeight == clientHeight`，旧诊断直接 return，**一声不吭**。
+   *      实测踩到：给面板加了一层 flex 外层，`.ccr-page` 的 `height:100%` 落空 ⇒
+   *      退化成 auto ⇒ 不再是滚动容器、内容把页面撑高 ⇒ 滚轮没反应且无日志。
    */
   useEffect(() => {
     if (!client) return
     const timer = window.setTimeout(() => {
       const root = document.querySelector('.ccr-page') as HTMLElement | null
       if (!root) return
-      const canScroll = root.scrollHeight > root.clientHeight + 1
-      if (!canScroll) return
-      // ⚠️ 只有"内容超出**且自身滚不动**"才值得报。
-      // 修好之后 `.ccr-page` 是 overflow-y:auto，内容超出属于**正常可滚**状态 ——
-      // 早先漏了这个判断，于是修复生效后诊断反而一直在喊狼来了。
+
       const selfOvf = window.getComputedStyle(root).overflowY
-      if (selfOvf === 'auto' || selfOvf === 'scroll') return
+      const selfScrollable = selfOvf === 'auto' || selfOvf === 'scroll'
+      const overflowing = root.scrollHeight > root.clientHeight + 1
+      const tallerThanViewport = root.getBoundingClientRect().height > window.innerHeight + 8
+
+      const broken = (overflowing && !selfScrollable) || (tallerThanViewport && !overflowing)
+      if (!broken) return
+
       const chain: string[] = []
       let el: HTMLElement | null = root
       for (let i = 0; el && i < 6; i++) {
@@ -126,8 +198,9 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
         el = el.parentElement
       }
       client.report(
-        `panel 滚不动 client=${root.clientHeight} scroll=${root.scrollHeight} ` +
-          `selfOvf=${selfOvf} :: ${chain.join(' <- ')}`,
+        `panel 滚不动（${tallerThanViewport && !overflowing ? '长高了没滚' : '内容超出不可滚'}）` +
+          `client=${root.clientHeight} scroll=${root.scrollHeight} box=${Math.round(root.getBoundingClientRect().height)} ` +
+          `vh=${window.innerHeight} selfOvf=${selfOvf} :: ${chain.join(' <- ')}`,
       )
     }, 1500)
     return () => window.clearTimeout(timer)
@@ -301,7 +374,13 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
   )
 
   return (
-    <div className="ccr-page">
+    /*
+     * 外层是**横向排布**：主内容（原来那一列）+ 右侧的插件 UI 侧栏。
+     * 面板主体仍是 `ccr-page`（max-width 720 居中），侧栏占用右边那片留白 ——
+     * 用户要的正是"左右两侧那么多空地"当插件的落点。
+     */
+    <div className="ccr-page-wrap">
+      <div className="ccr-page">
       <header className="ccr-page__head">
         <h2 className="ccr-page__title">会话连接</h2>
         <p className="ccr-page__sub">
@@ -609,6 +688,40 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
           })}
         </div>
       </section>
+      </div>
+
+      {/*
+       * 适配卡插件的 UI —— 用户要的位置：**面板左右两侧的留白处**。
+       *
+       * 这些组件来自第三方插件，本来是往 DSH 全局槽位注册的；适配层把它们**捕获**下来，
+       * 只渲染在这里（见 ui/CapturedCardUi.tsx）。捕获不到就什么都不显示 ——
+       * 纯能力型插件本来就没有 UI。
+       */}
+      {client && capturedCards.length > 0 && (
+        <aside className="ccr-page__side" aria-label="卡片界面">
+          {capturedCards.map((c) => (
+            <CapturedCardUi
+              /**
+               * ⚠️ key 用 **`连接id:实例id`**（不是单独的 `instanceId`）——
+               * 换一条展开的连接时，key 必然整套换掉 ⇒ React **卸载旧的、重挂新的** ✓。
+               * 若只用 `instanceId`，两张不同连接的卡在极端情况下可能被 React 复用同一实例 ⇒
+               * **Y 会看到 X 的组件状态** ✗（用户点名要确认的就是这条）。
+               */
+              key={c.key}
+              client={client}
+              instanceId={c.instanceId}
+              label={c.label}
+              onDiagnostic={(m: string) => {
+                try {
+                  client.report(m)
+                } catch {
+                  /* 诊断失败不影响界面 */
+                }
+              }}
+            />
+          ))}
+        </aside>
+      )}
     </div>
   )
 }

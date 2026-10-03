@@ -135,6 +135,77 @@ export const CONNECTION_CARD_CSS = `
 }
 
 /* ═══ 面板（main 槽位，整页宽度） ═══ */
+/*
+ * 外层：主内容 + 右侧插件 UI 侧栏。
+ *
+ * 面板主体仍是 ccr-page（720 居中），侧栏占用右边的留白 ——
+ * 适配卡插件的 UI 就渲染在那儿（而不是 DSH 全局界面）。
+ * 没有适配卡时侧栏不渲染，布局与以前**完全一致**（justify-content: center 让主体居中）。
+ *
+ * ⚠️⚠️ height:100% 与 min-height:0 **必须留着**。
+ *
+ * 这层是怎么来的：以前 ccr-page 是宿主 main 区的**直接子项**，靠 height:100%
+ * 拿到定高、成为滚动容器。加了这层之后 ccr-page 变成**它的**子项 ——
+ * 而它默认高度 auto，于是 ccr-page 的 height:100% 退化成 auto、
+ * **不再是滚动容器**，外层也不滚 ⇒ **滚轮完全没反应**（用户实测报上来的回归）。
+ *
+ * 所以这里要把宿主给的高度**接住再往下传**；flex 项还要 min-height:0
+ * 才能收缩（否则内容把它撑高，一样滚不动）。
+ */
+.ccr-page-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+/* 窄屏时侧栏换行到下方，避免把主内容挤窄 */
+@media (max-width: 1100px) {
+  .ccr-page-wrap { flex-wrap: wrap; height: auto; }
+  .ccr-page__side { width: 100%; max-width: 720px; margin: 0 auto 24px; height: auto; }
+}
+.ccr-page__side {
+  box-sizing: border-box;
+  width: 300px;
+  padding: 24px 12px 40px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* 侧栏自己也滚：插件 UI 可能很高，不能把面板撑成不可滚 */
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* 捕获到的插件 UI：与面板同用主题令牌，不写死颜色 */
+.ccr-captured {
+  border: 1px solid var(--dsw-alias-border-l1, rgba(128, 128, 128, 0.25));
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--dsw-alias-bg-l1, transparent);
+}
+.ccr-captured__head {
+  font-size: 11px;
+  opacity: 0.65;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+.ccr-captured__slot {
+  font-size: 10px;
+  opacity: 0.45;
+  margin: 8px 0 4px;
+}
+.ccr-captured__note,
+.ccr-captured__error {
+  font-size: 11px;
+  opacity: 0.7;
+  padding: 8px 10px;
+  border: 1px dashed var(--dsw-alias-border-l1, rgba(128, 128, 128, 0.35));
+  border-radius: 8px;
+  word-break: break-word;
+}
 .ccr-page {
   box-sizing: border-box;
   width: 100%;
@@ -463,6 +534,27 @@ export const CONNECTION_CARD_CSS = `
 
 .ccr-card-option:hover:not(:disabled) { background: var(--ccr-panel-highlight); }
 .ccr-card-option:disabled { opacity: 0.45; cursor: default; }
+
+/*
+ * 适配卡（普通 DSH 插件挂成连接能力）—— 用户裁决 D6：
+ * **照常列出 + 「适配」标注**；未就绪时置灰（沿用上面的 :disabled 样式）并保留悬停说明。
+ * 置灰而不是隐藏：让用户知道"东西在这儿、需要开一下"，而不是以为没装上。
+ */
+.ccr-card-option--blocked { border-style: dashed; }
+.ccr-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 15px;
+  vertical-align: 1px;
+  border-radius: 4px;
+  /* 与主题一致：用边框层级色，不写死具体颜色 */
+  border: 1px solid var(--dsw-alias-border-l1, rgba(128, 128, 128, 0.35));
+  color: var(--dsw-alias-label-secondary, rgba(255, 255, 255, 0.75));
+}
+.ccr-badge--adapter { letter-spacing: 0.5px; }
 .ccr-card-option__name { font-size: 12px; font-weight: 500; }
 /* 卡片更新入口（已安装卡片才有）：点一次检查，有新版再点一次更新 */
 .ccr-card-option__upd {

@@ -1,0 +1,1 @@
+{"version":3,"file":"flags.js","sourceRoot":"","sources":["../../src/adapter/flags.ts"],"names":[],"mappings":"AAAA;;;;;;;;;;;;;;;GAeG;AAEH,IAAI,cAAc,GAAG,KAAK,CAAA;AAE1B,eAAe;AACf,MAAM,UAAU,gBAAgB;IAC9B,OAAO,cAAc,CAAA;AACvB,CAAC;AAED;;;;;;;;;GASG;AACH,MAAM,UAAU,iBAAiB,CAAC,KAAc;IAC9C,cAAc,GAAG,KAAK,KAAK,IAAI,CAAA;AACjC,CAAC"}

@@ -27,6 +27,33 @@ export interface CardApiDeps {
   adapter: DSHAdapter
   messageLog: ConnectionMessageLog
   manager: ConnectionManager
+  /**
+   * **这张卡片是否被用户授权"代我对外说话"**。
+   *
+   * ⚠️ **fail-closed**：`undefined` 或返回 false ⇒ `sendMessage` **直接拒绝**。
+   * "卡片代用户对外说话"是**能力**，不是默认权利 —— 授权来自
+   * manifest 的 `requires.write` 里声明 `send_message`（由装载器判定后注入）。
+   */
+  canSendMessage?: () => boolean
+  /**
+   * 解析"这条连接上、这张卡片该说话的那一端"的 sessionId。
+   *
+   * `scope` 为 `'a'`/`'b'` 时是**对端**；`'both'` 时**无法判定** ⇒ 返回 undefined ⇒ 拒绝
+   * （fail-closed：宁可不说，也不要对着错的一端说话）。
+   */
+  resolvePeerSession?: () => string | undefined
+  /**
+   * **宿主既有的投递路径**（`session-bridge.deliver`）。
+   *
+   * ⚠️ 刻意**复用**它而不是另写一套 —— 于是 preempt 的那套约束
+   * （默认关闭、需写权限、每连接 5 分钟 1 次、不满足自动退化为 urgent）**全部自动生效** ✓。
+   * 晚绑定（桥接在 CardHost 之后创建）⇒ 用取值函数而不是直接传实例。
+   */
+  deliver?: (
+    sessionId: string,
+    text: string,
+    urgency: 'quiet' | 'normal' | 'urgent' | 'preempt',
+  ) => Promise<{ ok: boolean; via?: string; live?: boolean; reason?: string }>
 }
 
 /** 判断一条事件是否应该送达某个作用域的卡片。 */
@@ -90,9 +117,98 @@ export function createCardApi(deps: CardApiDeps): CardAPI {
       return result.ok ? { ok: true } : { ok: false, reason: result.reason }
     },
 
-    read(options = {}): ConnectionMessage[] {
-      return messageLog.list(connectionId, options)
+    /**
+     * **卡片代用户向对端投递一条消息**（对端请求的唯一新增能力）。
+     *
+     * ## 四条实现约束（对端提的，逐条落实）
+     *
+     * 1. **复用宿主既有投递路径**（`session-bridge.deliver`）—— 不另写一套。
+     *    于是 preempt 的那套约束（默认关闭、需写权限、每连接 5 分钟 1 次、
+     *    不满足自动退化为 urgent）**全部自动生效** ✓
+     * 2. **fail-closed 授权**：没拿到"发消息"这个 `requires.write` 资源 ⇒ **直接拒绝**。
+     *    "卡片代我对外说话"是**能力**，不是默认权利 ✓
+     * 3. **不重试**（与 `requestRemote` 的 30s/不重试一致）；**返回结构，不抛字符串** ✓
+     * 4. **每次尝试都审计**（哪一档、实际 via、是否降级）✓
+     */
+    async sendMessage(text: string, options: { urgency?: 'quiet' | 'normal' | 'urgent' | 'preempt'; kind?: 'say' | 'ask' | 'reply' } = {}) {
+      const body = typeof text === 'string' ? text.trim() : ''
+      if (!body) {
+        return { ok: false, code: 'threw' as const, permanent: true, reason: '文本为空 —— 没有可投递的内容' }
+      }
+
+      /** ② 授权（fail-closed）：没有这张能力就不发。 */
+      if (!deps.canSendMessage?.()) {
+        return {
+          ok: false,
+          code: 'not-authorized' as const,
+          /** **永久**：授权来自 manifest，挂载时就定了 ⇒ 卡片别再反复重试。 */
+          permanent: true,
+          reason:
+            `卡片没有"发消息"能力 —— 请在卡片 manifest 的 ` +
+            `requires.write 里声明 "send_message"（这是用户授权，不是默认权利）。`,
+        }
+      }
+
+      /** 目标端：`scope` 为 both 时无法判定 ⇒ 拒绝（宁可不说，也不要对错的一端说）。 */
+      const peer = deps.resolvePeerSession?.()
+      if (!peer) {
+        return {
+          ok: false,
+          /**
+           * ⚠️ **结构化 `code`**（不只给文本 reason）。
+           *
+           * 卡片的"惰性宣告"要靠它区分**永久拒绝**与**暂时失败**：
+           * 永久拒绝 ⇒ 别再每次调用都重试（否则就是**重试风暴** ✗）；
+           * 暂时失败 ⇒ 下次再试 ✓。
+           * 只给文本的话，卡片只能去**解析文案** —— 那正是本仓立过规矩不许做的事。
+           */
+          code: scope === 'both' ? 'scope-ambiguous' : 'no-peer-session',
+          /** `scope-ambiguous` 是**永久**的（挂载时就定了）；`no-peer-session` 可能是暂时的。 */
+          permanent: scope === 'both',
+          reason:
+            scope === 'both'
+              ? '这张卡片挂在两端（scope=both）—— 无法判定该对哪一端说话，故未发送'
+              : '这一端没有可投递的会话（对端可能尚未建立）',
+        }
+      }
+
+      /** ① 投递：走宿主既有路径（没有它就不发，而不是另找一条路）。 */
+      const deliver = deps.deliver
+      if (!deliver) {
+        return {
+          ok: false,
+          code: 'no-channel',
+          permanent: false,
+          reason: '宿主投递通道不可用（未接入会话桥）',
+        }
+      }
+
+      const urgency = options.urgency ?? 'normal'
+      /**
+       * 加**卡片来源标记**：收端应当知道这条不是用户本人说的。
+       * 与 `markColdDelivery` 同一思路 —— **别让接收方误判说话的人是谁**。
+       */
+      const prefixed = `【卡片 · ${instance.templateId}】${body}`
+
+      try {
+        const r = await deliver(peer, prefixed, urgency)
+        /** ④ 审计：用了哪档、实际怎么送的、是否降级。 */
+        api.log(
+          `sendMessage urgency=${urgency} → ${r.ok ? `via=${r.via ?? '?'} live=${r.live ?? '?'}` : `失败：${r.reason ?? '未说明'}`}`,
+        )
+        return r.ok
+          ? { ok: true, ...(r.via ? { via: r.via } : {}), ...(r.live !== undefined ? { live: r.live } : {}) }
+          : { ok: false, reason: r.reason ?? '投递失败（未说明原因）' }
+      } catch (e) {
+        /** ③ 不重试；把异常收成结构（绝不把异常抛给卡片）。 */
+        const msg = e instanceof Error ? e.message : String(e)
+        api.log(`sendMessage 抛错（不重试）：${msg}`)
+        return { ok: false, reason: `投递异常：${msg}` }
+      }
     },
+
+    read(options = {}): ConnectionMessage[] {
+      return messageLog.list(connectionId, options)    },
   }
 
   // 暴露工具表供宿主按白名单转发调用

@@ -48,6 +48,8 @@ export interface ConnectionCardHostService {
   listCardTemplates(connectionId?: string): CardTemplateInfo[]
   /** 渲染卡片面板 HTML（宿主侧跑 renderPanel/mountPanel，取回 HTML）。 */
   renderCardPanel(instanceId: string): Promise<string | null>
+  /** 读卡片的客户端制品（UI 捕获用）。 */
+  readCardClientSource(instanceId: string): Promise<{ ok: boolean; entry?: string; source?: string; reason?: string }>
 
   // ── 面板内安装（装到我们自己的目录，完全不碰 profile） ──
   /**
@@ -373,6 +375,7 @@ export function createStableApi(
     },
     listCardTemplates: (cid) => cardHost!.listTemplates(cid),
     renderCardPanel: (iid) => cardHost!.renderCardPanel(iid),
+    readCardClientSource: (iid) => cardHost!.readClientSource(iid),
     listPendingUpgrades: (cid) =>
       manager.upgradeManager.getPendingRequests(cid).map((r) => ({
         id: r.id,

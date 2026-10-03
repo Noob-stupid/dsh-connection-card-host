@@ -51,6 +51,28 @@ export interface CardManifest {
      * 规则：**加东西不升版本，删或改语义才升**。
      */
     api?: number;
+    /**
+     * ⚠️ **适配卡**声明：这张"卡片"其实是一个**普通 DSH 插件包**，
+     * 由适配层在受限作用域里挂载它（见 `docs/adapter-design.md`）。
+     *
+     * 有这一段的包与普通卡片**走同一套安装/候选/挂载流程**，
+     * 但它不能直接 `apply`（它是给 DSH 全局设计的），必须先过适配层。
+     *
+     * ```jsonc
+     * "dshCard": {
+     *   "adapter": { "capabilities": ["tools", "effect"] }
+     * }
+     * ```
+     *
+     * `capabilities` 是**申报制**的清单：适配层只提供申报过的能力，
+     * 访问未申报的能力会**当场抛错**（不静默放行、也不静默忽略）。
+     */
+    adapter?: {
+        /** 申报需要的能力（合法值见 `src/adapter/capabilities.ts`）。 */
+        capabilities?: string[];
+        /** 该插件的入口（相对包根）；缺省用 package.json 的 main。 */
+        entry?: string;
+    };
 }
 /** 连接消息 —— 两端之间的规范交流记录。 */
 export type MessageKind = 'say' | 'ask' | 'reply' | 'system';
@@ -99,4 +121,32 @@ export interface CardAPI {
         since?: number;
         limit?: number;
     }): ConnectionMessage[];
+    /**
+     * **卡片代用户向对端投递一条消息**（走宿主既有的会话投递路径）。
+     *
+     * `urgency` 四档与宿主侧连接消息**同一套语义**：
+     * `quiet` 只告知不唤醒 / `normal` 排队 / `urgent` 插话 / `preempt` 抢占插话。
+     *
+     * ⚠️ 两个 **fail-closed** 前提（未满足就**直接拒绝**，不静默、不降级）：
+     *   · 卡片 manifest 的 `requires.write` 必须声明 `"send_message"`（**用户授权**，不是默认权利）
+     *   · `scope` 为 `both` 时**无法判定该对哪一端说话** ⇒ 拒绝
+     *
+     * 不重试；失败以**结构化结果**返回，不抛异常。preempt 的既有约束
+     * （默认关闭 / 需写权限 / 每连接 5 分钟 1 次 / 不满足自动退化为 urgent）由宿主自动生效 ——
+     * 卡片侧不必也不应自己实现一套。
+     */
+    sendMessage(text: string, options?: {
+        urgency?: 'quiet' | 'normal' | 'urgent' | 'preempt';
+        kind?: 'say' | 'ask' | 'reply';
+    }): Promise<{
+        ok: boolean;
+        via?: string;
+        live?: boolean;
+        /** 结构化失败码（**永久 vs 暂时**由 permanent 区分）—— 别去解析
+    eason 文本。 */
+        code?: 'not-authorized' | 'scope-ambiguous' | 'no-peer-session' | 'no-channel' | 'deliver-refused' | 'threw';
+        /** 	rue ⇒ 重试也没用（如未授权 / scope=both）；alse/缺省 ⇒ 下次可再试。 */
+        permanent?: boolean;
+        reason?: string;
+    }>;
 }

@@ -45,5 +45,5 @@
  * 关键性质变得不稳定。它没有事件监听、没有状态，留着无成本。
  */
 export declare function getOverlayHost(): HTMLDivElement | null;
-/** 供诊断用：宿主当前的层级信息（z-index / 是否在 DOM / 在 body 子节点里的索引）。 */
-export declare function describeOverlayHost(): string;
+export declare function flashHint(text: string, ms?: number): void;
+/** 供诊断用：宿主当前的层级信息（z-index / 是否在 DOM / 在 body 子节点里的索引）。 */ export declare function describeOverlayHost(): string;

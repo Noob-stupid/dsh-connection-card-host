@@ -40,6 +40,13 @@ export interface ConnectionCardHostService {
     listCardTemplates(connectionId?: string): CardTemplateInfo[];
     /** 渲染卡片面板 HTML（宿主侧跑 renderPanel/mountPanel，取回 HTML）。 */
     renderCardPanel(instanceId: string): Promise<string | null>;
+    /** 读卡片的客户端制品（UI 捕获用）。 */
+    readCardClientSource(instanceId: string): Promise<{
+        ok: boolean;
+        entry?: string;
+        source?: string;
+        reason?: string;
+    }>;
     /**
      * 安装一张卡片。spec 支持：本地目录 / 本地 tgz / npm 包名 / HTTP tgz 地址。
      * 装到 `$DSH_HOME/connection-cards/cards/<id>/`，不跑 pnpm、不动 profile。
