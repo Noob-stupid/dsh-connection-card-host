@@ -284,5 +284,5 @@ src/ui/hooks/useDragLine.ts:useDragLine/0
 src/ui/hooks/useSessionList.ts:SessionOption/n
 src/ui/hooks/useSessionList.ts:UseSessionListResult/n
 src/ui/hooks/useSessionList.ts:useSessionList/1
-src/ui/overlay-host.ts:describeOverlayHost/0
+src/ui/overlay-host.ts:flashHint/2
 src/ui/overlay-host.ts:getOverlayHost/0

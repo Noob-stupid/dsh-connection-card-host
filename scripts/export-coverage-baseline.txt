@@ -73,5 +73,5 @@ src/ui/SessionRowMarker.tsx:SessionRowMarker
 src/ui/hooks/useConnections.ts:useConnections
 src/ui/hooks/useDragLine.ts:useDragLine
 src/ui/hooks/useSessionList.ts:useSessionList
-src/ui/overlay-host.ts:describeOverlayHost
+src/ui/overlay-host.ts:flashHint
 src/ui/overlay-host.ts:getOverlayHost

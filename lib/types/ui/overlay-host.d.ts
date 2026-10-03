@@ -45,5 +45,19 @@
  * 关键性质变得不稳定。它没有事件监听、没有状态，留着无成本。
  */
 export declare function getOverlayHost(): HTMLDivElement | null;
-/** 供诊断用：宿主当前的层级信息（z-index / 是否在 DOM / 在 body 子节点里的索引）。 */
-export declare function describeOverlayHost(): string;
+/**
+ * 显示一条**短暂的操作提示**（2.6 秒后自动消失）。
+ *
+ * ## 为什么需要它（现场诊断逼出来的）
+ *
+ * 用户从锚点拖出一条线、松手时**没命中任何会话行**（例如松在连接面板上）——
+ * 旧的实现只是 `clearHighlight()`，**屏幕上什么都不发生** ✗。
+ * 用户于是问"那个新插件还没搞好吗" ✗ —— 他把"**没有反馈**"读成了"**功能坏了**"。
+ *
+ * 这就是"沉默的失败"最典型的代价：**功能是对的，但用户不知道它是对的**。
+ *
+ * 所以这里给一条**可教一次**的提示：说清"松手位置不在会话行上"以及"该拖到哪儿"。
+ * 用 `pointer-events:none` + 自动移除，不抢交互、不留垃圾。
+ */
+export declare function flashHint(text: string, ms?: number): void;
+/** 供诊断用：宿主当前的层级信息（z-index / 是否在 DOM / 在 body 子节点里的索引）。 */ export declare function describeOverlayHost(): string;
