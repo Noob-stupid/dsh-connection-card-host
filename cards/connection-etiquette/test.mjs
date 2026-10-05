@@ -18,7 +18,23 @@ import { fileURLToPath } from 'node:url'
 import { apply, POLICY_TEXT } from './index.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const SKILL = readFileSync(join(HERE, 'SKILL.md'), 'utf8')
+/**
+ * ⚠️ **读进来先归一化行尾**（CRLF → LF）再比对。
+ *
+ * 为什么必须这么做（真机抓到的一次失败）：
+ *
+ *     ❌ ⑧ SKILL.md(379 字符) 与 POLICY_TEXT(367 字符) 不一致
+ *
+ * 差的正是 **12** —— 文件 12 行、每行多一个 `\r` ✓。
+ * 原因：`SKILL.md` 在磁盘上被检出成 **CRLF**（Windows 上 `core.autocrlf` 的默认行为 ✓），
+ * 而 `POLICY_TEXT` 是**代码里的字符串字面量**（永远是 LF ✓）⇒ 逐字比对必然不等 ✗。
+ *
+ * ⇒ 这类断言**不该依赖行尾**：文件的行尾是**签出环境**的属性，
+ * 不是内容的属性 ✓。（同一份内容在 Linux 检出是 LF、Windows 检出是 CRLF —— 都对 ✓。）
+ * 归一化之后，"逐字一致"这条判据才**只针对内容** ✓。
+ */
+const readNormalized = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
+const SKILL = readNormalized(join(HERE, 'SKILL.md'))
 
 /**
  * 假 CardAPI：只实现本卡用到的三个成员（scope / log / registerTool / sendMessage）。
