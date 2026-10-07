@@ -1,6 +1,6 @@
 {
   "name": "@noob-stupid/dsh-connection-card-host",
-  "version": "1.0.69",
+  "version": "1.0.70",
   "engines": {
     "node": ">=20 <25"
   },
@@ -29,7 +29,7 @@
     "docs",
     "cordis.patch.yml"
   ],
-  "license": "BSD-3-Clause",
+  "license": "MIT",
   "author": "Noob-stupid (https://github.com/Noob-stupid)",
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.1 <4.1.0",
