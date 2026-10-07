@@ -1,24 +1,15 @@
 # dsh-connection-card-host
 
-**English** | [中文](README.zh.md)
+[中文](README.zh.md) | **English**
 
-> **Makes a *connection* a first-class object in DSH: sessions are nodes, a connection is the container, cards are connection-scoped plugins — a "connection-level plugin host".**
+> **Let your DSH sessions see each other, talk to each other, and share tools — without getting in each other's way.**
 
-**Why this plugin**: other plugins hard-code their capabilities inside the plugin; this one turns
-capability into **cards you install on a connection** — mounting, unmounting and isolation are
-all at **connection granularity**.
+Running several DSH sessions at once (one researching, one coding, one running experiments)
+is normal — but they're **isolated**: they can't see what the others are doing, and can't
+hand conclusions over.
 
-Running several DSH sessions at once (one researching, one coding, one running experiments) is
-normal. What's missing isn't "sessions can see each other" as a feature — it's a **programmable
-relationship layer between DSH sessions**: without a "relationship object" to hang things on,
-permission boundaries, shared premises and loadable capabilities have nowhere to live.
-
-<p align="center">
-  <img src="docs/assets/diagram-connection-platform.svg" width="820" alt="A connection is a platform object: session A and session B are joined by one connection carrying an event bus, a permission boundary, a convention box and a card host; cards mount on the connection and are constrained by its permissions, and the connection reaches DSH through an adapter layer" />
-</p>
-
-On top of that relationship layer, the two ends **see each other, talk to each other and share
-tools — without getting in each other's way**.
+This plugin makes a **connection** a first-class object in DSH:
+**sessions are nodes, a connection is the container, cards are connection-scoped plugins.**
 
 <table>
 <tr>
@@ -31,7 +22,7 @@ tools — without getting in each other's way**.
 </td>
 <td width="50%">
 
-**Interaction structure** (diagram)
+**Structure** (diagram)
 
 <img src="docs/assets/demo-drag.svg" alt="Drag-to-connect structure: anchor → session row → rail" />
 
@@ -40,7 +31,7 @@ tools — without getting in each other's way**.
 </table>
 
 <p align="center">
-  <sub>Left: the real thing · Right: the same action as an interaction diagram, showing the toggle semantics</sub>
+  <sub>Left: the real thing (<a href="docs/assets/demo-drag-anchor.mp4">source video</a>) · Right: the same action as a diagram, showing the toggle semantics</sub>
 </p>
 
 ---
@@ -49,17 +40,18 @@ tools — without getting in each other's way**.
 
 - [What it does](#what-it-does)
 - [Quick start](#quick-start)
+- [What a card can and cannot do](#what-a-card-can-and-cannot-do)
 - [Three layers: awareness / conventions / messaging](#three-layers-awareness--conventions--messaging)
 - [Cards on a connection](#cards-on-a-connection)
-- [What a card can and cannot do](#what-a-card-can-and-cannot-do)
 - [Architecture and cost](#architecture-and-cost)
+- [Why it works this way](#why-it-works-this-way)
+
 - [Install](#install)
 - [Use](#use)
 - [Configuration](#configuration)
-- [Writing a card](#writing-a-card)
 - [Uninstall](#uninstall)
 - [FAQ](#faq)
-- [docs](#docs)
+- [Writing a card](#writing-a-card)
 - [Maintenance](#maintenance)
 
 ---
@@ -69,13 +61,14 @@ tools — without getting in each other's way**.
 | | |
 |:---|:---|
 | **See each other** | Look up **which files the other session is editing, how far its plan has got, what tools it last used** — collected automatically, no effort required from the other side |
-| **Talk to each other** | Send a message with **an urgency you choose**: notify only (no interruption) / queue / interject / **preemptive interrupt** (fourth tier, **off by default**) |
+| **Talk to each other** | Send a message with **one of three urgencies you choose**: notify only (no interruption) / queue / interject |
 | **Share tools** | Mount **cards** on a connection: a card can provide tools to the sessions, even with tens of MB of real dependencies |
 | **Shared premises** | A "convention box" holds what you agreed on: interfaces, units, naming, who owns what |
 | **Stay out of the way** | Awareness is **pull-based** — zero cost unless the other side asks. Unrelated connections **never interrupt you** |
 
-Two examples of the same relationship layer applied: session A asks session B what it is doing
-right now, or session B hands session A a tool that only exists on that connection.
+<p align="center">
+  <img src="docs/assets/demo-permission.svg" width="680" alt="Line colour shows the permission in that direction: grey = read-only, blue = can suggest, orange = can write; the two ends can differ" />
+</p>
 
 ---
 
@@ -88,12 +81,9 @@ right now, or session B hands session A a tool that only exists on that connecti
 <tr>
 <td width="50%">
 
-**How to start, and the toggle semantics**
+**Drag from the anchor** (recording)
 
-- The **circle** left of the composer → drag onto a row
-- The **`…`** on a session row → drag onto another row
-- The drop target is the toggle: **unconnected row = connect**; **already-connected row = disconnect** (the hover hint tells you which)
-- You can also pick two sessions from the "Connections" panel in the sidebar
+<img src="docs/assets/demo-drag-anchor.gif" alt="Dragging an arc out from the anchor beside the composer" />
 
 </td>
 <td width="50%">
@@ -106,6 +96,13 @@ right now, or session B hands session A a tool that only exists on that connecti
 </tr>
 </table>
 
+<p align="center">
+  <sub><a href="docs/assets/demo-drag-anchor.mp4">anchor source video</a> · <a href="docs/assets/demo-drag-rail.mp4">session-row source video</a></sub>
+</p>
+
+   - **Toggle semantics**: drop on an unconnected row = connect; drop on an **already
+     connected** row = disconnect (the hover hint tells you which)
+   - You can also pick two sessions from the "Connections" panel in the sidebar
 2. **Done.** Both ends get one quiet notice (who you're connected to, what it enables) —
    **nobody is interrupted**.
 3. Want more detail? Open "Connections" in the sidebar, or have the session call
@@ -117,8 +114,6 @@ end** — that's the permission for that direction:
 <p align="center">
   <img src="docs/assets/shot-connections.png" width="620" alt="Connections panel: permissions are set per direction, and cards, awareness and conventions all live under the same connection" />
 </p>
-
-Connections persist: they are restored on the next DSH start.
 
 ---
 
@@ -141,10 +136,10 @@ be built separately: to make the other side **know**, use A/B; only to make it *
 Collected from runtime events — **it asks nothing extra of the model**:
 
 ```
-【session-1a2b3c4d】
+【session-bd5ac1b1】
 status: running a command (2s ago)
-recently touched: <workspace>/src/example.js
-progress: turn 12 / step 4
+recently touched: water-boat/src/water.js
+progress: turn 69 / step 39
 ```
 
 ### B. Convention box (explicit, zero cost)
@@ -152,31 +147,23 @@ progress: turn 12 / step 4
 What you agreed on: interface signatures, units, coordinate systems, naming, **who owns what**.
 Editable in the panel; sessions read and write it with `connection_conventions` / `connection_declare`.
 
-### C. Messaging (four urgencies, **chosen by the sender**)
+> **Why pull, not push**: pushing slowly fills the other's context, and most of it is
+> never needed. Keeping it in a box that the other queries on demand costs zero.
+
+### C. Messaging (three urgencies, **chosen by the sender**)
 
 | Urgency | Under the hood | What the other sees |
 |:---|:---|:---|
 | `quiet` | `inject` | placed in context **without waking it** — it sees the message next time it works, **uninterrupted** |
 | `normal` | `followup` | **queued** — it sees the message once it finishes what it's doing |
 | `urgent` | `steer` | **interjected** — inserted into the turn it's **currently running**, read immediately |
-| `preempt` | `steer` + optional `cancel` | **preempted** — **interrupts** the turn it's running (fourth tier, **off by default**; falls back to `urgent` when the conditions aren't met, and the message is still delivered) |
 
 `urgent` on an idle peer **degrades to queued** automatically (the next turn starts
 immediately, so the effect is the same), and never fails.
 
-**`preempt` conditions** — all of them must hold, otherwise the message degrades to `urgent`
-and is still delivered (**it never fails**):
-
-| Condition | Value |
-|:---|:---|
-| Connection permission | **write** required (a read-only connection must not be able to stop the peer's work) |
-| Rate limit | at most **once per connection every 5 minutes** |
-| Peer is executing a tool | **never interrupts** — a cancelled half-finished tool leaves a dangling call |
-| Peer idle, or its state unknown | does not interrupt; delivers only |
-
-> `preempt` is destructive by design: the interrupted turn loses the work it had already done.
-> When you cancel a turn, pass `keepInbox` — the default **clears the inbox**, dropping the
-> user's own queued input together with messages from other sessions.
+> **The rule** (written into the tool description): interrupting has a cost — the other
+> session has to drop its current line of thought. Most messages aren't urgent: default to
+> `normal`, and use `urgent` only when it genuinely must change behaviour **right now**.
 
 ---
 
@@ -210,10 +197,20 @@ connection_card_tool                                  ← the only resident one 
 pay a resident cost for every card tool, while cards are mounted and unmounted dynamically.
 The bridge costs one schema, and it's the natural place to enforce visibility.
 
+**Visibility actually blocks**:
+
+```
+Side A can see the card      ✅
+Side B cannot see it         ✅
+Side B calls it anyway       → 「这张卡片只对 A 端可见（你在 B 端）」
+```
+
 ### Cards can carry real dependencies
 
-A card may ship its own dependencies (tens of MB is fine) and is installed under
-`$DSH_HOME/connection-cards/cards/`, **without touching the DSH profile**.
+A card can carry real dependencies: wrapping a parsing core plus
+**pdfjs-dist** as a card, installed under `$DSH_HOME/connection-cards/cards/`,
+**without touching the DSH profile**. A session called it through the bridge and got real
+parse results back.
 
 ### Install and update from the panel
 
@@ -221,104 +218,41 @@ A card may ship its own dependencies (tens of MB is fine) and is installed under
   <img src="docs/assets/shot-card-picker.png" width="620" alt="Card picker: built-in cards install in one click; you can also give a package name, a repo tgz URL or a local directory" />
 </p>
 
-A card installs from one of **three sources** — the same three as the **card picker** in the
-connection panel:
-
-| Source | What you give it | How it works |
-|:---|:---|:---|
-| **Package name** (registry) | `monitor-card` / `@scope/monitor-card` | pulls the **tarball** from the registry (one HTTPS GET) |
-| **Repo tgz URL** | `https://example.com/card.tgz` | download, then unpack |
-| **Local directory** | `D:\my-cards\monitor-card` | copied directly |
-
 - **Install**: package name / repo tgz URL / local directory → into our own directory,
-  **no pnpm, no profile changes**; usable immediately, **no DSH restart**
+  **no pnpm, no profile changes**
 - **Update**: installed cards get a "check for updates" entry with three distinct states
   ```
   「检查更新」→「↑ 更新到 x.y.z」/「已是最新」/「无法检查」
   ```
   **"Couldn't check" is never shown as "up to date"** — that would be lying.
-- **Uninstall**: installed cards get an entry that names what will be removed (including the
-  card's instances on connections) and asks once. Built-in cards ship with the plugin, so they
-  are not offered for removal. The result reports what was removed and what is still in use.
-
-### Statement: third-party / community cards install and work straight away
-
-**You can download and install external DSH-session plugin cards directly, inside DSH, and use
-them immediately.** This is not an "official card marketplace", and it is not a curated store
-you submit to — it is **open distribution**: any package written against the
-[card protocol](docs/card-protocol.md) can be installed into your own DSH from the three
-sources above.
-
-**Installed means usable** — once a card is mounted on a connection:
-
-- Sessions on that connection can use the tools it provides (called through the
-  `connection_card_tool` bridge) **immediately** — **no DSH restart, no DSH config change**:
-  no pnpm, nothing written to `dsh.profile.bundles`
-- The card lives in its own directory, `$DSH_HOME/connection-cards/cards/<id>/`, fully isolated
-  from the DSH profile
-
-> Third-party / community cards are **not affiliated with** the DSH project; this plugin offers
-> no review, no endorsement, and there is no such thing as an "official directory".
 
 ---
 
 ## What a card can and cannot do
 
-A card is an ordinary DSH plugin, so **not every plugin is card material**. Whether a candidate
-can be mounted on a connection, and how much of it survives, is decided by the specifications
-below. The card picker labels candidates **adapted / capability / local / global / undecided**
-in advance, and **labels only — it never blocks**: mounting is always allowed, and the verdict is
-heuristic.
+Any ordinary DSH plugin can be mounted as a card on a connection. Three **static** conditions decide it:
 
-### Mounting: three gates
+| Condition | Supported | Not supported |
+|---|---|---|
+| **Scope** | Registers into a **connection-level** location (conversation, input area), or is **capability-only** (no client UI) | Registers into an **app-level** location (sidebar, overall layout, settings page, theme, title bar, workspace) — those are meant to be installed into the app, not onto a connection |
+| **Host dependencies** | Everything the **entry actually loads** can be resolved | A real runtime dependency is missing. Install reports it in two classes: missing host capability → the card needs a design change; missing third-party dependency → just add the dependency |
+| **Host capabilities** | Uses only `tools` / `effect` / `llm` / `prompt` | Needs other host services (credentials, web server, session control, commands, subprocess, …) — not provided; the mount is **refused with a reason** |
 
-| Gate | Requirement | If it fails |
-|:---|:---|:---|
-| **① Scope** | Registers into **connection-scoped** positions (`conversation.*` / `message.*` / `input.*`) or is **pure capability** (no client half) | Registers into **App-scoped** positions (sidebar / layout / settings page / themes / title bar / workspace) → **not recommended as a card**: a global UI does not fit in a connection-scoped panel and collides with the App layout |
-| **② Module** | Every dependency in the **import closure of the host entry** resolves | Mount refused, classified as **fatal** (a host capability is missing — the card needs redesign) or **optional** (a third-party dependency is missing — adding it is enough) |
-| **③ Capability** | `inject` ⊆ `{tools, effect, llm, prompt}` | Mount refused — the card asks for host services this plugin does not have. **Refusing is the correct behaviour**; the answer is not to widen the capability surface |
+> Only files the **entry actually loads** count: tests, build scripts, CLIs and type declarations are not runtime dependencies.
 
-Scope of gate ② — only files the entry actually loads at runtime count:
-`tests/`, `bin/`, `client/build.mjs` and `*.d.ts` imports are **not** runtime dependencies.
+### Client UI: what works
 
-**No pnpm, no build step**: the host never installs dependencies and never builds a package. A
-card whose build artifacts are not committed (source only) therefore cannot be mounted — the
-refusal says so.
+| Client shape | Result |
+|---|---|
+| Uses only slot registration and effect hooks (`slots` / `effect`) | **Renders**, and stays interactive |
+| Needs more client services (localization, config forms, connection, routing, settings pages) | **Mounts and registers slots, but cannot render** — the panel shows **the specific reason** instead of a blank area |
+| Client artifact size | Up to **32 MB** (self-contained bundles with inlined assets are fine) |
+| Component props | Components are called **without props** — ones that require slot props will error; the error is contained to that card |
 
-### Client-side UI: what renders and what does not
+### Badges in the candidate list
 
-```
-mountable  ≠  source readable  ≠  slots registered  ≠  rendered
-```
-
-| Case | Result |
-|:---|:---|
-| Uses only `slots` / `effect` | **Renders** ✓ |
-| Needs client hooks (`useScene` / `useEnabled` / `locale` / `configForms` …) | **Mounts and registers its slots, but fails to render** — the reason is **shown, never a blank panel** ✓ |
-| Client bundle size | up to **32 MB** (a self-contained bundle of a few MB is normal: inlined fonts and assets) |
-| Component invocation | `createElement(component, {})` — **no props are passed**, so a component that needs slot props fails and is caught by the error boundary |
-
-### Support matrix
-
-| | Supported | Not supported |
-|:---|:---|:---|
-| **Host tools** | `api.registerTool(name, fn)` → sessions call it through `connection_card_tool` | tools registered into DSH's global loader |
-| **Panel** | optional HTML rendered host-side | arbitrary browser-side execution inside the panel |
-| **Client UI** | components that use `slots` / `effect` | components that need client hooks, or slot props |
-| **Connection events** | `on(event, handler)` / `emit(event, data)` | cross-connection events |
-| **Messaging** | `send(kind, text)` / `read()` as one side | automatic mirroring of session content (see [Configuration](#configuration)) |
-| **Dependencies** | any dependency vendored inside the card | running pnpm or a build step on your machine |
-| **Distribution** | registry / repo tgz / local directory | a curated marketplace or an approval step |
-| **Isolation** | per-side visibility, version gating, crash isolation for `import` / `apply` | a card that throws taking down the host |
-
-### Stated boundaries
-
-| Boundary | Meaning |
-|:---|:---|
-| **Per-side visibility** | Scope is per side: both / A only / B only. **Visible to A ≠ visible to B**; the side that can't see it gets a refusal *with the reason* if it calls anyway |
-| **Version gating** | A DSH version mismatch is **refused clearly, with the reason** — rather than installing and crashing later. Cards have a second guard: the CardAPI version (a card requiring a newer one is refused at mount time, with the reason) |
-| **Crash isolation** | An exception from a card's import / apply does not take down the host |
-| **Not rewritten** | We do not rewrite DSH's transport, permissions or plugin system, and a card is **not registered into DSH's global loader** |
+Each card carries one badge: **adapter / capability / local / global / undecided**.
+It tells you *before* mounting whether a plugin suits a connection — **advisory only, nothing is blocked**.
 
 ---
 
@@ -339,7 +273,8 @@ Three layers, with hard boundaries — each talks only to the one below:
 │  → on a DSH upgrade, this is the only layer to change       │
 ├─────────────────────────────────────────────────────────────┤
 │  DSH adapter layer (DSHAdapter + allowlist + audit)         │
-│  the single exit point for all DSH interaction              │
+│  the single exit point for all DSH interaction; we do not   │
+│  rewrite DSH's transport, permissions or plugin system      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -352,116 +287,112 @@ directions are independent, so you can have "A may send, B may only watch":
   <img src="docs/assets/demo-permission.svg" width="640" alt="Line colour shows the permission in that direction: grey = read-only, blue = can suggest, orange = can write; the two ends can differ" />
 </p>
 
-| Direction permission | Allows |
-|:---|:---|
-| **Read-only** | awareness and the convention box (both are pull-based, and independent of permission) |
-| **Suggest** | messaging that does not modify the peer's work |
-| **Write** | messaging that can change the peer's behaviour, including `preempt` |
+**Read-only does not affect awareness**: work state and the convention box are both
+**queried by the other side**, independent of permission. Lowering a permission takes effect
+immediately; raising one requires confirmation from the side being granted it.
 
-Lowering a permission takes effect immediately; raising one requires confirmation from the side
-being granted it. Refusals explain themselves.
+### How card tools reach a session
+
+Tools registered by cards **do not each take a schema** — a session sees **one** resident
+bridge, discovers on demand, calls on demand, and visibility is enforced at the bridge:
+
+<p align="center">
+  <img src="docs/assets/demo-card-tool.svg" width="640" alt="A session uses one resident bridge tool to discover and call tools provided by cards, subject to visibility scope" />
+</p>
+
+---
 
 ### What it costs
 
-| Item | Cost | Notes |
+| Item | Number | Notes |
 |:---|:---|:---|
 | **Awareness (layers A + B)** | **0 context** | pull-based; costs nothing unless the peer queries |
 | **Card tools** | **1 resident schema** | instead of one per card tool |
+| **Automatic mirroring** | **0 (disabled)** | mostly irrelevant content before it was turned off |
 | **Unrelated connections** | **0 interruptions** | connecting doesn't wake anyone; unrelated sessions carry on |
-| **Resident tool schemas** | 5 `connection_*` tools, hidden from sessions with no connections | tool schemas are filtered per session scope, so a session with no connections carries none of them |
 
-A session that has at least one connection carries the five `connection_*` tool schemas.
+**The one fixed cost**: this plugin's five `connection_*` tools cost roughly **1,700 tokens
+resident** — **and only in sessions that have connections**: sessions with none have them
+stripped automatically by `system-prompt/assemble` (a 0-connection session has 5
+tools removed, logged as `按会话 scope 隐藏了 5 个感知工具`).
 
 ---
 
 ## Install
 
-**From npm** (recommended, version-pinnable):
+**This plugin is not published to npm** (DSH's peer dependencies aren't on the public
+registry, so `npm install` is guaranteed to fail — verified). Install from GitHub:
 
 ```sh
-dsh plugin --profile web add @noob-stupid/dsh-connection-card-host
-```
+# Preview line (latest development build — the repo you're reading)
+dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host-preview
 
-**Pinned to a version** — use the tgz attached to a Release:
-
-```sh
-dsh plugin --profile web add https://github.com/Noob-stupid/dsh-connection-card-host/releases/download/<tag>/noob-stupid-dsh-connection-card-host-<version>.tgz
-
-# the same tgz, downloaded first — identical result
-dsh plugin --profile web add ./noob-stupid-dsh-connection-card-host-<version>.tgz
-```
-
-**Straight from GitHub** (installs the **latest commit on the default branch**, not a pinned version):
-
-```sh
+# Stable line (the public facade, synced only at release time)
 dsh plugin --profile web add github:Noob-stupid/dsh-connection-card-host
 
-# same thing, GitHub shorthand (the github: prefix is optional) — a slash means a GitHub repo
-dsh plugin --profile web add Noob-stupid/dsh-connection-card-host
+# Or a pinned tarball (grab the asset URL from the Releases page)
+dsh plugin --profile web add https://github.com/…/releases/download/v1.0.0/noob-stupid-dsh-connection-card-host-1.0.0.tgz
 ```
 
-**Prerequisites**
+> The two `github:` commands above are **verified working** (161 files land in `lib`, using
+> the profile's own settings: `autoInstallPeers: false`). The bare names
+> `dsh-connection-card-host` and `@noob-stupid/dsh-connection-card-host` both **404** on
+> npm and won't work for anyone else — don't use them.
 
-- `pnpm` on `PATH` — `dsh plugin` shells out to it.
-- **Compatibility**: `peerDependencies` declares `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0` (plus
-  `@deepseek-ai/cordis` and the two `@deepseek-ai/dsh-client-*` packages). DSH **gates on version
-  at install time** and refuses clearly, with a reason, rather than installing and crashing later.
-- All four peers carry `peerDependenciesMeta.optional`, so that installing by package name
-  **adds exactly one package** and does **not** drag the `@deepseek-ai/*` dependency tree into
-  your profile. This plugin **imports no `@deepseek-ai/*` package at runtime** (the two
-  browser-side ones are injected by DSH's `__ModuleLoader__`), and marking them optional
-  **does not weaken the gate** — DSH's `evaluatePluginCompatibility` reads only
-  `peerDependencies`. Details in [`docs/compatibility.md`](docs/compatibility.md).
-- `lib/` is committed and shipped, so the install arrives ready to load — there is no build step
-  and no build script to authorize.
+**Compatibility**: `peerDependencies` declares `@deepseek-ai/dsh >=0.2.0-rc.1 <0.3.0` — DSH
+**gates on version at install time** and refuses clearly, with a reason, rather than
+installing and crashing later.
 
 ---
 
 ## Use
 
-**Build a connection** — the [quick start](#quick-start) covers the two drag gestures and the
-sidebar panel. The drop target is the toggle, and connections are restored on restart.
-
-**Set permissions** — per direction, in the connection panel. Lowering takes effect immediately;
-raising needs the other side's confirmation.
-
-**Let the sessions work** — with a connection in place the sessions get the
-`connection_*` tools:
-
-| Tool | Purpose |
-|:---|:---|
-| `connection_peer_work` | read the peer's work state (layer A) |
-| `connection_conventions` | read the convention box (layer B) |
-| `connection_declare` | write the convention box (layer B) |
-| `connection_send` | send a message, with an urgency (layer C) |
-| `connection_card_tool` | list and call the tools the cards on this connection provide |
-
-Awareness tools (`connection_peer_work`, `connection_conventions`) are read-only and cannot
-modify the peer.
+1. **Create a connection** — pick two sessions in the panel; each direction has its own permissions.
+2. **Mount a card** — open a connection, choose a card from the candidate list. It takes effect on
+   the side you pick (`A` / `B` / both).
+3. **Talk to the peer** — the card's tools become available to that session; messages carry the
+   urgency you choose (`quiet` / `normal` / `urgent` / `preempt`).
+4. **Unmount** — remove the card from the connection; the card itself stays installed.
 
 ---
 
 ## Configuration
 
-There is **no config file** for this plugin — it takes no settings schema. Everything that is
-configurable is configured in the UI, and everything else lives in one directory:
+| Setting | Default | What it does |
+|---|---|---|
+| Adapter layer | **off** | Allows ordinary DSH plugins to be mounted as cards. Nothing is touched until you turn it on. |
+| Automatic mirroring | **off** | Auto-forwarding session content to the peer. Kept off on purpose (it mostly sends noise). |
+| View preferences | per connection | Number of lanes shown on the connection track. |
 
-| Where | Holds |
-|:---|:---|
-| Connection panel (sidebar) | connections, per-direction permissions, the convention box, card mounting |
-| Card picker (connection panel) | installing and updating cards |
-| `$DSH_HOME/connection-cards/` | all persistent state: `connections.json`, installed cards, the tamper-evident `audit.log` |
+## Uninstall
 
-Two behaviours are deliberately **off by default** and are enabled by an explicit action:
+- **A card** — the candidate list has an **Uninstall** entry for installed cards (a confirmation
+  states how many connections it is mounted on). Built-in cards do not offer it: they ship with the
+  plugin and come back on upgrade. What could not be removed is reported honestly.
+- **The whole plugin** — remove it from your DSH profile. Cards and connections live under
+  `$DSH_HOME/connection-cards/` and are left untouched.
 
-| Behaviour | Default | How to turn it on |
-|:---|:---|:---|
-| `preempt` (preemptive interrupt) | **off** | requires **write** permission on the connection (see [layer C](#three-layers-awareness--conventions--messaging)) |
-| Third-party card adaptation | **off** | create `$DSH_HOME/connection-cards/adapter.enabled`; delete the file to turn it back off |
+## FAQ
 
-**Automatic mirroring of session content is permanently off** — nothing is forwarded between
-sessions unless a session calls `connection_send`. Awareness (layers A and B) is the pull-based
-alternative.
+**Do I need to install anything for cards?**
+No. Cards install into the plugin's own directory; no `pnpm` runs in your profile and your DSH
+profile is not modified.
+
+**A plugin will not mount. Why?**
+The refusal names the class: host capability (the card needs something this plugin does not
+provide) or third-party dependency (the dependency is missing). The first requires a change on the
+card side; the second can be fixed by shipping the dependency with the card.
+
+**A mounted card shows no UI.**
+Its client half needs client services beyond slots/effect. The panel shows the exact reason — it is
+not a blank screen.
+
+**Does mounting a card change my DSH install?**
+No. It does not rewrite DSH, does not touch your profile, and can be undone at any time.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
 
 ---
 
@@ -517,89 +448,44 @@ See [`docs/card-protocol.md`](docs/card-protocol.md) for details.
 
 ---
 
-## Uninstall
-
-**Remove the plugin**
-
-```sh
-dsh plugin --profile web remove @noob-stupid/dsh-connection-card-host
-```
-
-**Remove its state** — the plugin keeps everything under one directory, so removing it also
-removes your connections, your installed cards and the audit log:
-
-```sh
-rm -rf "$DSH_HOME/connection-cards"
-```
-
-Keep that directory if you intend to reinstall and want your connections back.
-
----
-
-## FAQ
-
-**Do I need a connection before I can use cards?**
-Yes. A card is mounted on a connection, and only sessions on that connection can call the tools
-it provides.
-
-**Does mounting a card change my DSH profile?**
-No. Cards install under `$DSH_HOME/connection-cards/cards/<id>/`; no pnpm run, nothing written
-to `dsh.profile.bundles`, no restart.
-
-**Why can't I mount a popular plugin as a card?**
-Most likely gate ② or gate ③ in [what a card can and cannot do](#what-a-card-can-and-cannot-do).
-The refusal names which gate failed and why. The most common cause is a package that ships
-source without committed build artifacts — the host never builds anything.
-
-**My card mounted but shows nothing.**
-See the client-side UI table: a card that needs client hooks registers its slots but cannot
-render. The panel shows the reason instead of going blank.
-
-**Does a connection cost me context?**
-Awareness (layers A and B) is pull-based and costs nothing until a session asks. Sessions with
-no connections carry none of the `connection_*` tool schemas; a session with a connection
-carries the five schemas, and card tools cost one bridge schema in total.
-
-**Can I use it with the peer session offline?**
-Messages still arrive, but the peer's UI shows them as ordinary messages rather than as a
-connection card, and the content is prefixed to say so. Nothing is lost.
-
-**Are third-party cards reviewed?**
-No. There is no marketplace, no review and no endorsement — install from sources you trust.
-
----
-
 ## Docs
 
 | Document | Contents |
 |:---|:---|
-| [`docs/capabilities.md`](docs/capabilities.md) | Capability report: per-item results, total context cost, known limits |
+| [`docs/capabilities.md`](docs/capabilities.md) | **Capability report**: per-item measurements, total context cost, known limits |
 | [`docs/card-protocol.md`](docs/card-protocol.md) | Card protocol: manifest, CardAPI, install validation, distribution |
 | [`docs/compatibility.md`](docs/compatibility.md) | Compatibility: how DSH's version gate works, the two lines of defence |
 | [`docs/adapter-api.md`](docs/adapter-api.md) | DSH adapter: the stable interface and its allowlist |
 
 ---
 
+<p align="center">
+  <sub>MIT · not affiliated with the DSH project</sub>
+</p>
+
 ## Maintenance
 
-**This repository is the stable face** and only receives promoted releases. Development happens
-on the preview line, [`dsh-connection-card-host-preview`](https://github.com/Noob-stupid/dsh-connection-card-host-preview).
+**Implemented**
 
-<details>
-<summary>Working on this plugin</summary>
+- Connections: drag to connect (toggle semantics), three sessions fully interconnected,
+  persistence and restore across restarts
+- Permissions: three levels per direction, asymmetric, upgrades need the other side's
+  confirmation, refusals explain themselves
+- Awareness A: work state collected automatically (0 context)
+- Conventions B: the convention box (0 context)
+- Messaging C: three urgencies, with automatic degradation
+- Cards: template discovery / mounting / per-side visibility / in-panel install /
+  **update** / crash isolation
+- Card tools: bridge invocation with enforced visibility
+- Card directories are **versioned** (so a mounted card can still be updated)
+- **Per-session tool scoping**: sessions with no connections do **not** carry the `connection_*` schemas (~1,700 tokens saved), via the official `system-prompt/assemble` waterfall; the whole chain is **fail-open** — **behaviour introduced in `v1.0.1`** (`v1.0.0` registers them globally)
 
-- `lib/` is committed and CI asserts **source/artifact parity** (`scripts/ci/check-src-lib-parity.mjs`),
-  so a change to `src/` must be accompanied by a rebuilt `lib/`.
-- Host-side changes only take effect after DSH restarts or the plugin is reloaded; client-side
-  changes additionally need a page refresh.
-- CI runs four gates: syntax check, unit/contract tests plus artifact parity, the plugin patch
-  manifest, and a scan for machine-specific paths in tracked files. All four are hard gates.
-- `npm test` needs no dependencies and no network.
+**Known gaps**
 
-</details>
+| Item | Notes |
+|:---|:---|
+| `mountUI` / `requestRemote` | Interface in place, implementation pending (`mountUI` currently only sets a dataset attribute) |
+| Card tool schemas | Deliberately take no separate schema; callers must list before calling |
+| **Rail layering trade-off** | The rail is portaled onto `document.body` — **decoupled from slot containers**, which is the only way to keep someone else's skin/overlay from beating it via stacking context (`z-index` is only comparable *within* one stacking context). The cost: it always sits at body level, so a future "must be on top" full-screen modal would have the rail drawn over it. `pointer-events: none` keeps interaction unaffected, so the risk is low; if it ever needs tightening, the suggested fix is a **minimal predicate** — while `[role="dialog"][aria-modal="true"]` is present, drop the rail below that modal and restore when it closes (**not** an unconditional hide) |
 
 ---
-
-<p align="center">
-  <sub>BSD-3-Clause · not affiliated with the DSH project</sub>
-</p>
