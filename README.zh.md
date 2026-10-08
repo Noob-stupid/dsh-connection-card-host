@@ -5,6 +5,7 @@
 > **把「连接」做成 DSH 里的一等对象：会话是节点，连接是容器，卡片是连接级插件 —— 一个「连接级插件宿主」。**
 
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
+[![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 [![GitHub stars](https://img.shields.io/github/stars/Noob-stupid/dsh-connection-card-host?style=flat-square&logo=github)](https://github.com/Noob-stupid/dsh-connection-card-host/stargazers)
 [![License](https://img.shields.io/github/license/Noob-stupid/dsh-connection-card-host?style=flat-square)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/Noob-stupid/dsh-connection-card-host?style=flat-square)](https://github.com/Noob-stupid/dsh-connection-card-host/commits/main)
