@@ -4,6 +4,18 @@
 
 > **Makes a *connection* a first-class object in DSH: sessions are nodes, a connection is the container, cards are connection-scoped plugins — a "connection-level plugin host".**
 
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
+[![GitHub stars](https://img.shields.io/github/stars/Noob-stupid/dsh-connection-card-host?style=flat-square&logo=github)](https://github.com/Noob-stupid/dsh-connection-card-host/stargazers)
+[![License](https://img.shields.io/github/license/Noob-stupid/dsh-connection-card-host?style=flat-square)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/Noob-stupid/dsh-connection-card-host?style=flat-square)](https://github.com/Noob-stupid/dsh-connection-card-host/commits/main)
+[![CI](https://img.shields.io/github/actions/workflow/status/Noob-stupid/dsh-connection-card-host/ci.yml?label=ci&style=flat-square)](https://github.com/Noob-stupid/dsh-connection-card-host/actions/workflows/ci.yml)
+[![publish-npm CI](https://img.shields.io/github/actions/workflow/status/Noob-stupid/dsh-connection-card-host/publish-npm.yml?label=publish-npm&style=flat-square)](https://github.com/Noob-stupid/dsh-connection-card-host/actions/workflows/publish-npm.yml)
+[![topic: dsh-plugin](https://img.shields.io/badge/topic-dsh_plugin-4D6BFE?style=flat-square)](https://github.com/topics/dsh-plugin)
+[![npm version](https://img.shields.io/npm/v/@noob-stupid/dsh-connection-card-host?style=flat-square)](https://www.npmjs.com/package/@noob-stupid/dsh-connection-card-host)
+[![npm downloads](https://img.shields.io/npm/dm/@noob-stupid/dsh-connection-card-host?style=flat-square)](https://www.npmjs.com/package/@noob-stupid/dsh-connection-card-host)
+[![GitHub Release](https://img.shields.io/github/v/release/Noob-stupid/dsh-connection-card-host?style=flat-square)](https://github.com/Noob-stupid/dsh-connection-card-host/releases)
+[![dsh.so risk](https://www.dsh.so/badge/dsh-connection-card-host.svg)](https://www.dsh.so/artifact/dsh-connection-card-host/)
+
 **Why this plugin**: other plugins hard-code their capabilities inside the plugin; this one turns
 capability into **cards you install on a connection** — mounting, unmounting and isolation are
 all at **connection granularity**.
@@ -597,6 +609,10 @@ on the preview line, [`dsh-connection-card-host-preview`](https://github.com/Noo
 - `npm test` needs no dependencies and no network.
 
 </details>
+
+---
+
+If this plugin is useful, a **star** helps other DSH users find it.
 
 ---
 
