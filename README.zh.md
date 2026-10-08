@@ -4,6 +4,18 @@
 
 > **把「连接」做成 DSH 里的一等对象：会话是节点，连接是容器，卡片是连接级插件 —— 一个「连接级插件宿主」。**
 
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
+[![GitHub stars](https://img.shields.io/github/stars/Noob-stupid/dsh-connection-card-host?style=flat-square&logo=github)](https://github.com/Noob-stupid/dsh-connection-card-host/stargazers)
+[![License](https://img.shields.io/github/license/Noob-stupid/dsh-connection-card-host?style=flat-square)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/Noob-stupid/dsh-connection-card-host?style=flat-square)](https://github.com/Noob-stupid/dsh-connection-card-host/commits/main)
+[![CI](https://img.shields.io/github/actions/workflow/status/Noob-stupid/dsh-connection-card-host/ci.yml?label=ci&style=flat-square)](https://github.com/Noob-stupid/dsh-connection-card-host/actions/workflows/ci.yml)
+[![publish-npm CI](https://img.shields.io/github/actions/workflow/status/Noob-stupid/dsh-connection-card-host/publish-npm.yml?label=publish-npm&style=flat-square)](https://github.com/Noob-stupid/dsh-connection-card-host/actions/workflows/publish-npm.yml)
+[![topic: dsh-plugin](https://img.shields.io/badge/topic-dsh_plugin-4D6BFE?style=flat-square)](https://github.com/topics/dsh-plugin)
+[![npm version](https://img.shields.io/npm/v/@noob-stupid/dsh-connection-card-host?style=flat-square)](https://www.npmjs.com/package/@noob-stupid/dsh-connection-card-host)
+[![npm downloads](https://img.shields.io/npm/dm/@noob-stupid/dsh-connection-card-host?style=flat-square)](https://www.npmjs.com/package/@noob-stupid/dsh-connection-card-host)
+[![GitHub Release](https://img.shields.io/github/v/release/Noob-stupid/dsh-connection-card-host?style=flat-square)](https://github.com/Noob-stupid/dsh-connection-card-host/releases)
+[![dsh.so risk](https://www.dsh.so/badge/dsh-connection-card-host.svg)](https://www.dsh.so/artifact/dsh-connection-card-host/)
+
 **为什么是这个插件**：别的插件把能力写死在插件里；这个插件让能力变成「连接上可安装的卡片」——
 **装、卸、隔离都是连接粒度**的。
 
