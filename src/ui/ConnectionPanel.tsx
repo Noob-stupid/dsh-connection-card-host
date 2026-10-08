@@ -10,7 +10,7 @@
  *   - 让用户自己连：选出两个会话 → 建立连接（拖拽仍是主路径，这里是等价入口）。
  *   - 每个连接可以单独配置权限、断开。
  */
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import type { Connection, PermissionLevel } from '../types/index.js'
 import { permValue } from '../types/index.js'
 import type { ConnectionCardHostClient, PendingUpgradeView } from '../client/host-client.js'
@@ -21,6 +21,7 @@ import { useSessionList } from './hooks/useSessionList.js'
 import { CapturedCardUi } from './CapturedCardUi.js'
 import { CardStack } from './CardStack.js'
 import { AwarenessPanel } from './AwarenessPanel.js'
+import { ensureStyles } from '../styles/tokens.js'
 
 interface ConnectionPanelProps {
   client: ConnectionCardHostClient | null
@@ -50,6 +51,18 @@ const HEALTH_TEXT: Record<string, string> = {
 
 export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProps) {
   const { connections, error, loaded, refresh } = useConnections(client)
+
+  /*
+   * 样式自愈：样式表可能被框架的 HMR 或外部脚本删掉（详见 styles/tokens.ts 的
+   * ensureStyles），而本客户端半区并不会因此重载 ⇒ 没人重新注入 ⇒ 面板裸奔。
+   *
+   * 故意**不写依赖数组**：这是"每次渲染都确认一次"，所以标签一旦消失，
+   * 面板的下一次更新（连接表/会话列表变动都会触发）就把它重建回来。
+   * 用 useLayoutEffect 是为了赶在浏览器绘制之前 —— 不留"闪一下裸 HTML"。
+   */
+  useLayoutEffect(() => {
+    ensureStyles()
+  })
 
   /**
    * **适配卡**的模板 id 集合 —— 只有这些卡片才有"插件自带 UI"可捕获。

@@ -238,6 +238,7 @@ src/index.ts:inject/n
 src/index.ts:name/n
 src/index.ts:provide/n
 src/styles/tokens.ts:CONNECTION_CARD_CSS/n
+src/styles/tokens.ts:ensureStyles/0
 src/styles/tokens.ts:injectStyles/0
 src/tools/awareness-tools.ts:AwarenessToolDeps/n
 src/tools/awareness-tools.ts:registerAwarenessTools/1
