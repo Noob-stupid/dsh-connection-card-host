@@ -1,6 +1,6 @@
 {
   "name": "@noob-stupid/dsh-connection-card-host",
-  "version": "1.0.72",
+  "version": "1.0.73",
   "engines": {
     "node": ">=20 <25"
   },
@@ -27,6 +27,7 @@
     "lib",
     "cards",
     "docs",
+    "skills",
     "cordis.patch.yml"
   ],
   "license": "MIT",
@@ -60,7 +61,7 @@
     "build": "bash scripts/build.sh",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build:client": "tsdown",
-    "test": "node scripts/check-api-surface.mjs && node scripts/check-export-coverage.mjs && node scripts/test-tool-scoping.mjs && node scripts/test-preempt.mjs && node scripts/test-install.mjs && node scripts/test-adapter.mjs && node scripts/test-shim.mjs && node scripts/test-shim-scan-scope.mjs && node scripts/test-shim-entry-closure.mjs && node scripts/test-suitability.mjs && node scripts/test-side-follows-expanded.mjs && node scripts/test-bridge.mjs && node scripts/test-status.mjs && node scripts/test-host-wiring.mjs && node scripts/test-capabilities.mjs && node scripts/test-ui-capture.mjs && node scripts/test-styles-ownership.mjs && node scripts/drill-observe-failure.mjs && node cards/connection-etiquette/test.mjs && node scripts/test-builtin-etiquette-card.mjs && node scripts/test-symlink-tar.mjs && node scripts/test-escape-entries.mjs && node scripts/experiment-real-plugin.mjs"
+    "test": "node scripts/check-api-surface.mjs && node scripts/check-export-coverage.mjs && node scripts/test-tool-scoping.mjs && node scripts/test-preempt.mjs && node scripts/test-install.mjs && node scripts/test-adapter.mjs && node scripts/test-shim.mjs && node scripts/test-shim-scan-scope.mjs && node scripts/test-shim-entry-closure.mjs && node scripts/test-suitability.mjs && node scripts/test-side-follows-expanded.mjs && node scripts/test-bridge.mjs && node scripts/test-status.mjs && node scripts/test-host-wiring.mjs && node scripts/test-capabilities.mjs && node scripts/test-ui-capture.mjs && node scripts/test-styles-ownership.mjs && node scripts/test-skill-provider.mjs && node scripts/drill-observe-failure.mjs && node cards/connection-etiquette/test.mjs && node scripts/test-builtin-etiquette-card.mjs && node scripts/test-symlink-tar.mjs && node scripts/test-escape-entries.mjs && node scripts/experiment-real-plugin.mjs"
   },
   "exports": {
     ".": {

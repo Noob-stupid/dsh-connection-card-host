@@ -452,6 +452,20 @@ raising needs the other side's confirmation.
 Awareness tools (`connection_peer_work`, `connection_conventions`) are read-only and cannot
 modify the peer.
 
+### The agent skill ships with the plugin
+
+Installing the plugin is enough: it registers a **`connection-card` skill** through DSH's
+skill-provider channel, so any agent in that install finds instructions for the connection
+tools in its session catalog — no copying files into `~/.dsh/skills/` and no extra step.
+
+- Source of truth for the text: [`skills/connection-card.md`](skills/connection-card.md).
+- It appears while the plugin is loaded and disappears when you uninstall the plugin (the
+  registration is bound to the plugin's lifecycle).
+- It covers when to use each of the host tools and how to choose an urgency level
+  (`quiet` / `normal` / `urgent` / `preempt`).
+- Prefer to use it as a plain local skill instead? The same file is a valid flat skill —
+  copy it to `~/.dsh/skills/connection-card.md`.
+
 ---
 
 ## Configuration
