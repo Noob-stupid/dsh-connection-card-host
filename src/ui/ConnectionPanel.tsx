@@ -705,9 +705,12 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
       {/*
        * ═══ Star 钩子（用户点名：「在面板右下角弄上之前提到的星星钩子」） ═══
        *
-       * 位置：面板正文的**最后一节之后** ⇒ 右下角。
-       *   · `.ccr-star-foot` 用 `justify-content:flex-end` **右对齐**、
-       *     `position:sticky; bottom:0` **贴底**（正文超长滚动时仍钉在面板下沿）。
+       * 位置：面板内容的**最后一节之后、靠右** ⇒ 视觉上就是"最下方靠右"。
+       *   · `.ccr-star-foot` 是 `inline-flex`（**收缩到内容宽**，不是整行块级盒子）
+       *     + `justify-content:flex-end` ⇒ 小元素贴在面板右缘 ✓。
+       *   · **不用 `position:sticky`**（v1.0.75 定案）：sticky 需要那层不透明背景
+       *     才不糊字，而用户明确不要背景色块 ⇒ 两者不可兼得，取"不遮挡 + 无色块"
+       *     （它排在正文最后，`.ccr-page` 又是滚动容器，所以本来就在最下方）✓。
        *   · 它**不依赖连接数据**：没连上宿主、还没有连接时也照常显示 ——
        *     这行是"这个插件本身"的入口，不是连接的状态位。
        *
@@ -720,6 +723,11 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
        * 样式：走**既有的** CSS 通道（`src/styles/tokens.ts` 的 CONNECTION_CARD_CSS
        *   里新增 `.ccr-star-foot` / `.ccr-star-link`）—— 这里**不插第二个 style 标签** ✗，
        *   `ensureStyles()` 的归属（data-plugin）与自愈契约因此照旧成立 ✓。
+       *
+       * ⚠️ v1.0.74 那版把"右下角"做成了**横跨整列的深色宽带**（块级 flex 撑满
+       *   整列 + background/box-shadow 当遮挡兜底），用户实测判 ✗ —— 病因与结论
+       *   写在 `tokens.ts` 那段规则上方的注释里，并由 `scripts/test-star-hook.mjs`
+       *   的 ⑦/⑧/⑩ 节**钉死**（加回背景/阴影/满宽就会当场红）✓。
        *
        * 文案：本面板**没有 i18n 表**（通篇是直接的中文字符串，如上面的「会话连接」
        *   「建立连接」），所以这里同样直接用中文字符串 ✓ —— 不为此新引一套词表。
