@@ -115,7 +115,10 @@ window.__ModuleLoader__.load({
 ### F8 —— 客户端清单段
 
 `package.json` 的 `dsh.client`：`{ platform, inject: [...], external: [...] }`。
-我们自己的：`inject: ['@deepseek-ai/dsh-client-runtime', '@deepseek-ai/dsh-client-ui-slots']`，`platform: 'web'`。
+我们自己的：`inject: ['@deepseek-ai/dsh-client-ui-slots']`，`platform: 'web'`。
+`inject` 是**信息性**的包名依赖边（预检展示 / HMR diff 用），**不参与装载排序**；
+它列的是**宿主真正提供的模块词**。我们自己的 `lib/client.js` 只 `require("react")` 系列
+（见 tsdown 的 externals），所以这两个词是**声明性的**，不构成运行时依赖 —— 但声明本身必须是真的。
 官方说明：React 等来自**浏览器模块表**，"不要重复安装 React / 不要 CDN / 不要 UMD 查找"；非基线运行时依赖在 `dsh.client.external` 声明。
 
 ### F9 —— 官方对 UI 插件的硬约束（写协议时要遵守）

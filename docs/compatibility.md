@@ -70,6 +70,33 @@ DSH 版本不匹配仍然会被拒绝并说明原因。
    是否存在、`ctx.connection.rpc` 是否可用）。宁可放行后降级，
    也不要因版本探测失败就整体禁用。
 
+### `dsh.client.inject` 必须是宿主真正提供的模块词（v1.0.76 修正）
+
+`peerDependencies` 与 `dsh.client.inject` 是**两件事**：前者是运行时门控（上表），
+后者只是**信息性**的包名依赖边（DSH 源码原话：*"inject edges are informational"*），
+列出的是**宿主模块表里真正存在的词**。
+
+v1.0.75 及以前这里写着两个词：
+
+| 词 | 在宿主（0.2.0-rc.2）模块表里？ | 结论 |
+|:---|:---|:---|
+| `@deepseek-ai/dsh-client-ui-slots` | ✅ 在（`@deepseek-ai/dsh-client-ui-slots` 是平台的模块种子之一） | 保留 |
+| `@deepseek-ai/dsh-client-runtime` | ❌ **不在** —— 上游把它从模块表里删了 | **v1.0.76 删除该条** |
+
+查不到只会被**静默跳过**（不崩、不报错），所以这是一条**失效声明**：
+社区列表维护者在收录 PR 里核出来后建议删掉或换成真实包名 —— 宿主没有换名的对应包
+（npm 上此包最新只到 `0.1.1-rc.2`，装不进门控区间 `>=0.2.0-rc.1 <0.3.0`），
+所以采取最简的**删除**。
+
+`scripts/test-inject-words.mjs` 把这条判据钉成**可失败断言**：
+`dsh.client.inject` 的每个词都必须落在**从宿主推导出的**提供集合里
+（宿主前端产物的 `staticModules` 种子 / 已装客户端插件 / checkout 的 `platform.ts`）。
+推不出宿主就**退 2 = 响亮 SKIP**（既不算通过也不算失败），**绝不假装 PASS**。
+
+> ⚠️ `peerDependencies` 里的 `@deepseek-ai/dsh-client-runtime` **保留不动** ——
+> 它由 DSH 的兼容门控读取（按 `@deepseek-ai/dsh-` 前缀筛 peer 后逐条 `semver.satisfies`），
+> 且已标 `optional`（理由见上一节的表）。删它才会真的改变门控行为。
+
 ### 会话消息来源契约（V4 · 必读）
 
 框架把会话消息格式升到 **v4**（0.1.7-rc.1 起）后，**每条被解释的消息**（`user/message`、
@@ -93,7 +120,7 @@ splice 进会话 → 落盘编码 `session-format-v3-to-v4` 的 `assertV4RowAdmi
 修法：① 改生产方代码（`PLUGIN_SOURCE_KIND`）+ 重建 + 热重载；
 ② 已卡死的会话再清写缓冲：`sessionPersistence.tracker.writers.get(id)` → 把 `buffered`
 里的坏 `source` 改成 producer-owned kind → `drainLive()` + `flush()`。
-现场用的巡检/修复工具留在本机一次性目录 `_v4fix-2026-09-30\`（`wedge_probe` / `flush_repair2`，
+现场用的巡检/修复工具留在工作区外的临时目录 `_v4fix-2026-09-30/`（`wedge_probe` / `flush_repair2`，
 经 `dsh-super-injector` 的 `dev_stage_call` 调用）。
 
 ## 失败降级行为
