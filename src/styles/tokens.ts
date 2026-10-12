@@ -1155,6 +1155,60 @@ export const CONNECTION_CARD_CSS = `
 .ccr-actions button:hover:not(:disabled) { background: var(--ccr-panel-highlight); }
 .ccr-actions button:disabled { opacity: 0.45; cursor: default; }
 
+/* ═══ Star 钩子（面板右下角，用户点名） ═══
+ *
+ * 形态与 dsh-plugin-hub 的 .pc_starFoot / .pc_starLink 一致（那是用户已经
+ * 认可过的一处）：整行 flex、**右对齐**、position:sticky + bottom:0 贴底 ——
+ * 正文超长滚动时它仍钉在面板下沿，也就是「右下角」。
+ *
+ * background + box-shadow 是**遮挡兜底**：滚动时下面的文字不会从这一行里透出来。
+ * 用主题令牌（不是写死的颜色），两个主题都跟着变。
+ *
+ * ⚠️ 与参照处（.pc_starFoot）唯一的差别：这里**允许换行 / 收缩**
+ * （flex-wrap + max-width:100%）。参照处把链接写成 flex:none —— 窄到
+ * 装不下一行时它会**溢出面板**；本面板宽度会被侧栏/窗口挤压，所以这里不照抄。
+ *
+ * ⚠️ 这一处**只加元素、不加样式表**：CSS 仍在 CONNECTION_CARD_CSS 里，
+ * 与面板其余部分共用同一个 style 标签（归属 data-plugin / ensureStyles 自愈
+ * 那套契约照旧成立 —— 见文件末尾）。 */
+.ccr-star-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  position: sticky;
+  bottom: 0;
+  margin-top: 18px;
+  padding: 6px 0 2px;
+  background: var(--dsw-alias-bg-layer-1, transparent);
+  box-shadow: 0 16px 0 var(--dsw-alias-bg-layer-1, transparent);
+}
+
+.ccr-star-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  max-width: 100%;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary, #888);
+  text-decoration: none;
+  border-radius: 4px;
+}
+
+.ccr-star-link svg { flex: none; display: block; }
+
+.ccr-star-link:hover {
+  color: var(--dsw-alias-state-business-primary, #3B82F6);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.ccr-star-link:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary, #3B82F6);
+  outline-offset: 2px;
+}
+
 /* ═══ 无障碍 / 降低动效 ═══ */
 @media (prefers-reduced-motion: reduce) {
   .ccr-flow__band,
