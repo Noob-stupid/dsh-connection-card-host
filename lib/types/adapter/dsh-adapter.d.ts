@@ -60,6 +60,22 @@ export declare class DSHAdapter {
      */
     listSessions(): KnownSession[];
     getSessionStatus(sessionId: string): Promise<SessionStatus>;
+    /**
+     * **未实现 —— 如实报错，不返回假数据** ✓
+     *
+     * ⚠️ 这两个方法原来是**谎报**的 ✗：
+     *
+     *     getSessionLog   ⇒ return []                      // 看起来像"没有日志" ✗
+     *     getPresetStatus ⇒ return { healthy: true, … }     // 看起来像"一切正常" ✗✗
+     *
+     * 第二条尤其糟 ✓：卡片问"预设健康吗" ⇒ 我们答"健康" ✗ —— 而**我们根本不知道** ✓。
+     * 调用方会据此**跳过修复** ✓，用户看到的是"没问题"，实际可能已经坏了 ✗。
+     * 这正是本仓库反复出现的那条：**"我不知道"必须与"没问题"分开** ✓
+     * （同族：`unknown` 归因桶 ✓ / `unavailable` 状态 ✓ / 清理三档 ✓）。
+     *
+     * ⇒ 现在**抛错**并说清"未实现" ✓：调用方要么处理 ✓，要么**响亮地失败** ✓ ——
+     * 两者都比"拿到一个错的答案"好 ✓。等真接上 DSH 的 API 再把这里换成实现 ✓。
+     */
     getSessionLog(_sessionId: string): Promise<SessionLogEntry[]>;
     getPresetStatus(_sessionId: string): Promise<PresetStatus>;
     /**

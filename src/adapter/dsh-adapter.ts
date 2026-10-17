@@ -5,6 +5,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { checkVersion, type VersionCheckResult } from './version-guard.js'
 import { safeCtxGet, safeCtxMethod } from '../safe-ctx.js'
+import { logError, logWarn } from '../core/log.js'
 
 export interface SessionStatus {
   id: string
@@ -64,7 +65,7 @@ export class DSHAdapter {
   init(): VersionCheckResult {
     this.versionResult = checkVersion(this.detectVersion())
     if (!this.versionResult.supported) {
-      console.warn(
+      logWarn(
         `[DSHAdapter] DSH version ${this.versionResult.current} not in supported range ${this.versionResult.range}. Running in degraded mode.`,
       )
     }
@@ -103,7 +104,7 @@ export class DSHAdapter {
       if (!Array.isArray(result)) return []
       raw = result
     } catch (e) {
-      console.error('[DSHAdapter] listSessions failed:', e)
+      logError('[DSHAdapter] listSessions failed:', e)
       return []
     }
 
@@ -148,19 +149,33 @@ export class DSHAdapter {
         if (s) return { id: sessionId, title: s.title ?? '', status: s.status ?? 'unknown', updatedAt: s.updatedAt ?? 0 }
       }
     } catch (e) {
-      console.error('[DSHAdapter] getSessionStatus failed:', e)
+      logError('[DSHAdapter] getSessionStatus failed:', e)
     }
     return { id: sessionId, title: '', status: 'unknown', updatedAt: 0 }
   }
 
+  /**
+   * **未实现 —— 如实报错，不返回假数据** ✓
+   *
+   * ⚠️ 这两个方法原来是**谎报**的 ✗：
+   *
+   *     getSessionLog   ⇒ return []                      // 看起来像"没有日志" ✗
+   *     getPresetStatus ⇒ return { healthy: true, … }     // 看起来像"一切正常" ✗✗
+   *
+   * 第二条尤其糟 ✓：卡片问"预设健康吗" ⇒ 我们答"健康" ✗ —— 而**我们根本不知道** ✓。
+   * 调用方会据此**跳过修复** ✓，用户看到的是"没问题"，实际可能已经坏了 ✗。
+   * 这正是本仓库反复出现的那条：**"我不知道"必须与"没问题"分开** ✓
+   * （同族：`unknown` 归因桶 ✓ / `unavailable` 状态 ✓ / 清理三档 ✓）。
+   *
+   * ⇒ 现在**抛错**并说清"未实现" ✓：调用方要么处理 ✓，要么**响亮地失败** ✓ ——
+   * 两者都比"拿到一个错的答案"好 ✓。等真接上 DSH 的 API 再把这里换成实现 ✓。
+   */
   async getSessionLog(_sessionId: string): Promise<SessionLogEntry[]> {
-    // TODO: 对接 DSH session log API
-    return []
+    throw new Error('此版本未实现：尚未对接 DSH 的 session log API（不是"没有日志"）')
   }
 
   async getPresetStatus(_sessionId: string): Promise<PresetStatus> {
-    // TODO: 对接 DSH preset status API
-    return { presetId: '', healthy: true, errors: [] }
+    throw new Error('此版本未实现：无法判断预设健康状态（不是"一切健康"）')
   }
 
   /**
@@ -203,7 +218,7 @@ export class DSHAdapter {
         return { error: 'timeout' }
       }
       this.auditLog?.(`requestRemote 失败: ${sessionId}.${method} ${String(e)}`)
-      console.error(`[DSHAdapter] requestRemote failed for ${sessionId}.${method}:`, e)
+      logError(`[DSHAdapter] requestRemote failed for ${sessionId}.${method}:`, e)
     }
     // 走到这里 = 宿主没有 remote 通道。必须记日志，否则调用方只看到"没反应"
     this.auditLog?.(
@@ -232,7 +247,7 @@ export class DSHAdapter {
       })
       return typeof off === 'function' ? (off as () => void) : () => {}
     } catch (e) {
-      console.warn('[DSHAdapter] onSessionEvent 订阅失败:', e)
+      logWarn('[DSHAdapter] onSessionEvent 订阅失败:', e)
       return () => {}
     }
   }

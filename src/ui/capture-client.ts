@@ -99,6 +99,35 @@ export interface ShadowClientCtx {
 }
 
 /**
+ * **允许转发的客户端服务**（P2-2 的允许清单 ✓）。
+ *
+ * 只放**展示/配置类** ✓ —— 它们改了也伤不到别人 ✓。
+ * **不放**：`connection` / `remote` / 认证类 ✗（能对外做事 ✓ ⇒ 不给第三方 UI ✓）。
+ *
+ * ⚠️ 这份清单**故意短** ✓：每加一个都要问"它能不能替用户对外做事" ✗。
+ * 需要更多的证据来自诊断日志（`卡片请求了未开放转发的客户端服务「X」` ✓）。
+ */
+const CLIENT_SERVICE_ALLOW = new Set(['locale', 'theme', 'configForms', 'store', 'i18n'])
+
+/** 宿主真实客户端 ctx 的服务解析器（由 `src/client/index.tsx` 注入 ✓）。 */
+let clientServiceResolver: ((name: string) => unknown) | undefined
+
+/**
+ * 注入/清除服务解析器 ✓（返回反注册函数 ✓ —— 与日志出口同一形态 ✓）。
+ *
+ * 传 `undefined` 清除 ✓（插件卸载时不留下全局引用 ✓）。
+ */
+export function setClientServiceResolver(
+  next: ((name: string) => unknown) | undefined,
+): () => void {
+  const prev = clientServiceResolver
+  clientServiceResolver = next
+  return () => {
+    clientServiceResolver = prev
+  }
+}
+
+/**
  * 用影子 client ctx 实例化捕获到的 factory。
  *
  * @param require 浏览器模块表（**用我们自己的** —— 保证 React 等是同一个实例）
@@ -171,8 +200,48 @@ export function instantiateCaptured(
    * 不是"静默降级"：真正的护栏是下面的 `ctx.<name>` 直接访问（那条会抛错）。
    */
   const services: Record<string, unknown> = { slots, effect }
-  services.get = (name: unknown): unknown =>
-    typeof name === 'string' && name in services ? services[name] : undefined
+  services.get = (name: unknown): unknown => {
+    if (typeof name !== 'string') return undefined
+    if (name in services) return services[name]
+    /** **P2-2**：允许清单内的服务，从宿主真实 ctx 转发 ✓（见 `setClientServiceResolver`）。 */
+    return forwardable(name)
+  }
+
+  /**
+   * **P2-2：把宿主真实客户端 ctx 的能力按允许清单转发** ✓
+   *
+   * 生态里真实的 UI 插件（`gal-view`、`dsh-pet`…）几乎都要 `locale` / `configForms` /
+   * `connection` 之类 ✗ —— 只给 `slots`/`effect` 的话，它们**挂得上、槽位也注册，
+   * 但渲染必然失败** ✓（真机就是这样 ✓）。这一层让"能渲染"的覆盖面扩大 ✓。
+   *
+   * ## 为什么是**允许清单**而不是"能转就转"
+   *
+   * 那个 ctx 是**我们自己的** ✓ —— 转发意味着第三方 UI 代码拿了我们的权限 ✓。
+   * 所以只放**展示/配置类**（改了也伤不到别人 ✓），
+   * 而 `connection` / `remote` / 认证类**不放** ✗（它们能对外做事 ✓）。
+   *
+   * ## 学习式诊断
+   *
+   * 卡片要了清单外的服务 ⇒ **记一条警告** ✓（不静默 ✓，也不抛错 ✗ —— `ctx.x` 那条才是硬失败 ✓）。
+   * 这样日志会告诉我们"生态到底还需要什么" ✓，下一轮扩清单就有据可依 ✓。
+   */
+  const forwardable = (name: string): unknown => {
+    const resolver = clientServiceResolver
+    if (!resolver) return undefined
+    if (!CLIENT_SERVICE_ALLOW.has(name)) {
+      const m = `卡片请求了未开放转发的客户端服务「${name}」（不在允许清单内）`
+      if (!seenMisses.has(m)) {
+        seenMisses.add(m)
+        warn(m)
+      }
+      return undefined
+    }
+    try {
+      return resolver(name)
+    } catch {
+      return undefined
+    }
+  }
 
   const seenMisses = new Set<string>()
 
@@ -184,6 +253,12 @@ export function instantiateCaptured(
         if (prop === 'then' || prop === 'toJSON' || prop === 'constructor') return undefined
         if (prop === 'toString' || prop === 'valueOf') return () => '[shadow-client-ctx]'
         if (prop in services) return services[prop]
+        /**
+         * **P2-2**：允许清单内的服务，**直连写法也支持** ✓（`ctx.locale` ✓，不只是 `ctx.get('locale')` ✓）。
+         * 生态里两种写法都有 ✓；只支持一种会让一半插件仍然渲染失败 ✗。
+         */
+        const forwarded = forwardable(String(prop))
+        if (forwarded !== undefined) return forwarded
         /**
          * ⚠️ 明确失败，但**记一次警告**：客户端插件的依赖面比宿主侧杂
          * （locale / store / theme…），我们要能在日志里看清"它想要什么"，

@@ -49,6 +49,10 @@ const STEPS = [
   'scripts/test-row-title-match.mjs',
   'scripts/test-row-pick-id.mjs',
   'scripts/test-row-current-anchor.mjs',
+  /** P1-1：日志必须真的到出口（正控 ✓ / 无出口不静默 ✓ / 出口坏了不吞证据 ✓）。 */
+  'scripts/test-log-sink.mjs',
+  /** P2-2：客户端能力面按**允许清单**转发（正控 + 负控 + 无解析器边界 ✓）。 */
+  'scripts/test-client-services.mjs',
   'scripts/test-bridge.mjs',
   'scripts/test-status.mjs',
   'scripts/test-host-wiring.mjs',

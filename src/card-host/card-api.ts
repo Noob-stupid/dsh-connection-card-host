@@ -20,6 +20,7 @@ import type { ConnectionEventBus } from '../core/event-bus.js'
 import type { ConnectionMessageLog } from '../core/message-log.js'
 import type { ConnectionManager } from '../core/connection-manager.js'
 import type { DSHAdapter } from '../adapter/dsh-adapter.js'
+import { logInfo } from '../core/log.js'
 
 export interface CardApiDeps {
   instance: CardInstance
@@ -99,7 +100,7 @@ export function createCardApi(deps: CardApiDeps): CardAPI {
     },
 
     log(...args) {
-      console.log(`[card:${instance.templateId}]`, ...args)
+      logInfo(`[card:${instance.templateId}]`, ...args)
     },
 
     send(kind: MessageKind, text: string, options = {}): SendGate {

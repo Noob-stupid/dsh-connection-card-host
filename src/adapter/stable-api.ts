@@ -12,6 +12,7 @@ import type { WorkState, WorkStateTracker } from '../core/work-state.js'
 import type { AddResult, Convention, ConventionBox } from '../core/box.js'
 import { installCard, uninstallCard, type InstallResult } from '../card-host/installer.js'
 import { checkCardUpdate, readSourceRecord, type UpdateCheck } from '../card-host/updates.js'
+import { logInfo } from '../core/log.js'
 
 export type { KnownSession, CardTemplateInfo, WorkState, Convention, AddResult, InstallResult }
 
@@ -223,7 +224,7 @@ export function createStableApi(
 ): ConnectionCardHostService {
   const track = awareness?.workState
   const box = awareness?.box
-  const audit = auditLog ?? ((m: string) => console.log('[ConnectionCardHost]', m))
+  const audit = auditLog ?? ((m: string) => logInfo('[ConnectionCardHost]', m))
   /** 声明约定后立刻落盘（公约必须跨重启保留）。 */
   const persistBox = (cid: string): void => manager.persistConventions(cid)
 

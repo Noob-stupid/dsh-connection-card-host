@@ -61,6 +61,12 @@ export interface ShadowClientCtx {
     warnings: string[];
 }
 /**
+ * 注入/清除服务解析器 ✓（返回反注册函数 ✓ —— 与日志出口同一形态 ✓）。
+ *
+ * 传 `undefined` 清除 ✓（插件卸载时不留下全局引用 ✓）。
+ */
+export declare function setClientServiceResolver(next: ((name: string) => unknown) | undefined): () => void;
+/**
  * 用影子 client ctx 实例化捕获到的 factory。
  *
  * @param require 浏览器模块表（**用我们自己的** —— 保证 React 等是同一个实例）

@@ -10,6 +10,7 @@ import type { PermissionLevel } from '../types/permission.js'
 import { permValue } from '../types/permission.js'
 import type { CardInstance, Connection } from '../types/index.js'
 import type { ConnectionEventBus } from './event-bus.js'
+import { logInfo } from './log.js'
 
 // ═══ 权限校验 ═══
 
@@ -59,7 +60,7 @@ export class PermissionUpgradeManager {
 
   constructor(eventBus: ConnectionEventBus, auditLog?: (msg: string) => void) {
     this.eventBus = eventBus
-    this.auditLog = auditLog ?? ((msg: string) => console.log('[PermissionUpgrade]', msg))
+    this.auditLog = auditLog ?? ((msg: string) => logInfo('[PermissionUpgrade]', msg))
   }
 
   /**
@@ -184,7 +185,7 @@ export class RemoteMethodWhitelist {
 
   constructor(eventBus: ConnectionEventBus, auditLog?: (msg: string) => void) {
     this.eventBus = eventBus
-    this.auditLog = auditLog ?? ((msg: string) => console.log('[RemoteWhitelist]', msg))
+    this.auditLog = auditLog ?? ((msg: string) => logInfo('[RemoteWhitelist]', msg))
   }
 
   /**

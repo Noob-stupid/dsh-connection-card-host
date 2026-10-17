@@ -7,6 +7,7 @@
 import { pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import type { CardModule } from './registry.js'
+import { logError } from '../core/log.js'
 
 /**
  * 在受限作用域中动态 import 卡片入口模块。
@@ -43,7 +44,7 @@ export async function importCardModule(entryPath: string, bust?: string | number
     return mod
   } catch (e) {
     // 崩溃隔离：不让卡片加载失败拖垮宿主
-    console.error('[CardSandbox] 卡片模块加载失败:', e)
+    logError('[CardSandbox] 卡片模块加载失败:', e)
     throw e
   }
 }
