@@ -182,9 +182,12 @@ src/client/index.tsx:inject/n
 src/client/row-map.ts:RowHit/n
 src/client/row-map.ts:SessionRowInfo/n
 src/client/row-map.ts:SessionSnapshotLike/n
+src/client/row-map.ts:TitleEntry/n
 src/client/row-map.ts:collectSessionRows/1
+src/client/row-map.ts:pickRowTitleId/2
 src/client/row-map.ts:sessionRowAtPoint/4
 src/client/row-map.ts:sessionRowHitAtPoint/4
+src/client/row-map.ts:titleMatchesRowText/2
 src/client/sessions-bridge.ts:SessionListSnapshot/n
 src/client/sessions-bridge.ts:SessionSummaryLite/n
 src/client/sessions-bridge.ts:SessionsBridge/n
