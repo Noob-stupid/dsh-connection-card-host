@@ -29,6 +29,7 @@ src/card-host/updates.ts:currentDirName
 src/card-host/updates.ts:readSourceRecord
 src/client/host-client.ts:createHostClient
 src/client/host-client.ts:resolveRpcCaller
+src/client/row-map.ts:ROW_ID_ATTR  # at=2026-10-17
 src/client/row-map.ts:collectSessionRows
 src/client/row-map.ts:sessionRowAtPoint
 src/client/row-map.ts:sessionRowHitAtPoint
@@ -60,7 +61,6 @@ src/ui/CardStack.tsx:CardStack
 src/ui/ConnectionPanelIcon.tsx:ConnectionPanelIcon
 src/ui/DragLine.tsx:DragLine
 src/ui/SessionRailOverlay.tsx:SessionRailOverlay
-src/ui/SessionRowMarker.tsx:ROW_ID_ATTR
 src/ui/SessionRowMarker.tsx:SessionRowMarker
 src/ui/hooks/useConnections.ts:useConnections
 src/ui/hooks/useDragLine.ts:useDragLine

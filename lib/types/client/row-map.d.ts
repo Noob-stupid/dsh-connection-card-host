@@ -1,3 +1,30 @@
+/**
+ * row-map — DOM 会话行 → 会话 id 的映射。
+ *
+ * 三个来源，按可靠度递减：
+ *   1. `[data-ccr-session]` —— SessionRowMarker 写在行上。
+ *      最可靠，但官方文档明说该槽位会被「状态点」顶掉，只有 idle 行会挂载
+ *      （实测 18 行里 12 行有标记）。
+ *   2. **标题匹配** —— 用行文本比对会话标题；只接受唯一命中，避免重名误判。
+ *   3. **序号对齐** —— DOM 顺序与宿主会话列表顺序一致时按序号补；
+ *      只在行数与会话数相等时启用（实测 94 vs 18，通常不成立）。
+ *
+ * 安全策略：三种都拿不到就放弃这一行。宁可少认几行，
+ * 也绝不把连接建到错误的会话上。
+ *
+ * ## ⚠️ 本模块**不依赖 React**（这是刻意的 ✓）
+ *
+ * 它是**纯逻辑** ✓，跑在 Node 测试里 ✓。行标记属性名原先定义在
+ * `ui/SessionRowMarker.tsx` ✗ ⇒ 任何加载本模块的地方都会被**连带拉起 react** ✗ ⇒
+ * 裸 runner（CI）上测试连加载都失败 ✓：
+ *
+ *     Cannot find package 'react' imported from .../lib/ui/SessionRowMarker.js
+ *
+ * ⇒ 属性名**下沉到这里** ✓，由组件那边反过来引 ✓。
+ * 判据：**常量住在"最先需要它、依赖最少"的那一层** ✓。
+ */
+/** 行元素上承载会话 id 的属性名（`SessionRowMarker` 与映射器共用 ✓）。 */
+export declare const ROW_ID_ATTR = "data-ccr-session";
 export interface SessionRowInfo {
     element: Element;
     id: string;

@@ -179,6 +179,7 @@ src/client/host-client.ts:createHostClient/1
 src/client/host-client.ts:resolveRpcCaller/1
 src/client/index.tsx:apply/1
 src/client/index.tsx:inject/n
+src/client/row-map.ts:ROW_ID_ATTR/n
 src/client/row-map.ts:RowHit/n
 src/client/row-map.ts:SessionRowInfo/n
 src/client/row-map.ts:SessionSnapshotLike/n
@@ -288,7 +289,6 @@ src/ui/ConnectionPanel.tsx:ConnectionPanel/1
 src/ui/ConnectionPanelIcon.tsx:ConnectionPanelIcon/1
 src/ui/DragLine.tsx:DragLine/1
 src/ui/SessionRailOverlay.tsx:SessionRailOverlay/1
-src/ui/SessionRowMarker.tsx:ROW_ID_ATTR/n
 src/ui/SessionRowMarker.tsx:SessionRowMarker/1
 src/ui/capture-client.ts:CapturedFactory/n
 src/ui/capture-client.ts:CapturedRegistration/n

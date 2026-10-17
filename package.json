@@ -1,6 +1,6 @@
 {
   "name": "@noob-stupid/dsh-connection-card-host",
-  "version": "1.0.80",
+  "version": "1.0.82",
   "engines": {
     "node": ">=20 <25"
   },
