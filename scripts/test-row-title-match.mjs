@@ -3,7 +3,7 @@
  *
  * ## 现场的因果链（用户报"那两行之间没有线"）
  *
- *     会话行把长标题截断成 `@C:\Users\花火\Downloads\DSH 嵌入式…`
+ *     会话行把长标题截断成 `@~/Downloads/DSH 嵌入式…`（中性占位 ✓，不用真实目录 ✗）
  *     ⇒ 行文本**比标题短** ✗
  *     ⇒ 旧判据 `text.startsWith(title)` **永远为假** ✗
  *     ⇒ 那一行认不出 ⇒ 连线配不上对 ⇒ 线画不出来 ✓
@@ -26,8 +26,9 @@ const ok = (c, l) => (c ? pass++ : (fail++, console.log(`  ❌ ${l}`)))
 console.log('── ① 应通过：截断的行文本（真机那个 bug）')
 
 {
-  const title = '@C:\\Users\\花火\\Downloads\\DSH 嵌入式 runtime'
-  const row = '@C:\\Users\\花火\\Downloads\\DSH 嵌入式…'
+  /** 中性占位路径 ✓（性质是"长到会被截断"，与真实目录无关 ✓）。 */
+  const title = '@~/Downloads/DSH 嵌入式 runtime'
+  const row = '@~/Downloads/DSH 嵌入式…'
   ok(titleMatchesRowText(row, title), `截断行文本应匹配长标题（实测 row="${row}"）`)
   ok(titleMatchesRowText(row.replace('…', '...'), title), '省略号写成 `...` 也应匹配（UI 两种都可能 ✓）')
   ok(titleMatchesRowText('准备协作', '准备协作'), '短标题精确匹配仍成立 ✓')

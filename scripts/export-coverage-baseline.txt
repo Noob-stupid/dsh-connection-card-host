@@ -46,8 +46,6 @@ src/core/work-state.ts:shortPath
 src/index.ts:provide
 src/safe-ctx.ts:safeCtxGet
 src/safe-ctx.ts:safeCtxMethod
-src/styles/tokens.ts:CONNECTION_CARD_CSS
-src/styles/tokens.ts:injectStyles
 src/tools/awareness-tools.ts:registerAwarenessTools
 src/types/permission.ts:PERMISSION_ORDER
 src/types/permission.ts:permFromValue

@@ -184,6 +184,7 @@ src/client/row-map.ts:SessionRowInfo/n
 src/client/row-map.ts:SessionSnapshotLike/n
 src/client/row-map.ts:TitleEntry/n
 src/client/row-map.ts:collectSessionRows/1
+src/client/row-map.ts:pickCurrentRowAnchor/1
 src/client/row-map.ts:pickRowTitleId/2
 src/client/row-map.ts:sessionRowAtPoint/4
 src/client/row-map.ts:sessionRowHitAtPoint/4

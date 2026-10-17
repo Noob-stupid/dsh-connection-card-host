@@ -39,6 +39,16 @@ const STEPS = [
   'scripts/test-shim-entry-closure.mjs',
   'scripts/test-suitability.mjs',
   'scripts/test-side-follows-expanded.mjs',
+  /**
+   * 会话行 ↔ 会话 id 的三层判据（1.0.77 起）：
+   *   · 单条：双向前缀（治"长标题被截断"✗）
+   *   · 行级：精确优先 + 唯一才采用（治"一行匹配多标题"✗）
+   *   · 结构：当前会话行锚点（治"活跃行没标记 + 标题也截断"✗）
+   * 三条一起才覆盖得住"连线不渲染"那一族 ✓。
+   */
+  'scripts/test-row-title-match.mjs',
+  'scripts/test-row-pick-id.mjs',
+  'scripts/test-row-current-anchor.mjs',
   'scripts/test-bridge.mjs',
   'scripts/test-status.mjs',
   'scripts/test-host-wiring.mjs',

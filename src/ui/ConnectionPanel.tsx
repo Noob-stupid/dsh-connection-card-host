@@ -238,7 +238,15 @@ export function ConnectionPanel({ client, sessions, prefs }: ConnectionPanelProp
       }
     }
     void poll()
-    const timer = window.setInterval(poll, 2000)
+    /**
+     * ⚠️ 2 秒 → **5 秒**（原来比它服务的东西还急 ✗）。
+     *
+     * 这个轮询的对象是"**待确认的权限升级请求**"，它**60 秒才过期** ✓ ⇒
+     * 2 秒意味着 30 次里最多 1 次有新信息 ✗（噪声比 30:1 ✓）。
+     * 5 秒足够（最坏延迟 5 秒 vs 60 秒窗口 ✓），唤醒次数降到 1/2.5 ✓
+     * —— 与"报警频率高于真实出现率 ⇒ 护栏会死"同一条：**轮询频率不该高于被观察事物的变化率** ✓。
+     */
+    const timer = window.setInterval(poll, 5000)
     return () => {
       alive = false
       window.clearInterval(timer)

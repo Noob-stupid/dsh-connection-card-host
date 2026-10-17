@@ -11,6 +11,13 @@ export interface SessionSnapshotLike {
     byId: Record<string, {
         title?: string;
     }>;
+    /**
+     * **当前会话** id（可选 ✓）。
+     *
+     * 用途：给"当前会话那一行"做**结构锚点** ✓ —— 见 `pickCurrentRowAnchor` ✓。
+     * 声明为可选 ✓：老调用方/旧版本快照可能没有它 ✓，那时锚点自动不启用 ✓（不报错 ✓）。
+     */
+    current?: string;
 }
 /**
  * **行文本 ↔ 会话标题**是否算同一个会话（标题匹配的唯一判据，导出供测试）。
@@ -21,11 +28,11 @@ export interface SessionSnapshotLike {
  *
  *     text === title || text.startsWith(title)     // 要求"行文本包含**完整**标题" ✗
  *
- * 而会话行里的长标题会被 UI **截断成省略号** ✓（现场例子：
- * `@C:\Users\花火\Downloads\DSH 嵌入式…` ✓）—— 此时
+ * 而会话行里的长标题会被 UI **截断成省略号** ✓（这类标题常见于以路径命名的会话：
+ * `@~/Downloads/DSH 嵌入式…` ✓）—— 此时
  *
- *     行文本 = "@c:\users\花火\downloads\dsh 嵌入式"   （**比标题短** ✗）
- *     标题   = "@c:\users\花火\downloads\dsh 嵌入式 runtime"
+ *     行文本 = "@~/downloads/dsh 嵌入式"   （**比标题短** ✗）
+ *     标题   = "@~/downloads/dsh 嵌入式 runtime"
  *
  * ⇒ `text.startsWith(title)` **永远为假** ✗ ⇒ 这个会话**永远认不出来** ✗
  * ⇒ 它的行拿不到 id ⇒ 连线配不上对 ⇒ **线画不出来** ✓（用户看到的就是这个 ✓）。
@@ -68,6 +75,32 @@ export type TitleEntry = readonly [title: string, id: string];
  *   3. 零个或多个 ⇒ 返回 undefined ✓（**不猜** ✓）
  */
 export declare function pickRowTitleId(rowText: string, entries: readonly TitleEntry[]): string | undefined;
+/**
+ * **"当前会话那一行" 作为锚点** —— 用结构而不是文本（导出供测试）。
+ *
+ * ## 为什么需要它（比标题匹配可靠得多）
+ *
+ * 标题匹配天生脆 ✗：会截断 ✓、会重名 ✓、会改名 ✓。而"**当前会话**"是**结构事实** ✓：
+ * DSH 会在当前会话那一行标 `aria-selected` / `aria-current` ✓（标准无障碍语义 ✓），
+ * 而 `snapshot.current` 直接给出当前会话 id ✓ —— 这是**同一个事实的两个来源** ✓。
+ *
+ * 它恰好覆盖**旧实现翻车的那类行** ✓：当前会话行是**活跃**的 ✓ ⇒
+ * 官方用自己的状态点**顶掉我们的标记槽位** ✗ ⇒ 这一行**没有标记** ✓、
+ * 标题又可能被截断 ✓ ⇒ 两条老路都断 ✗ —— 而 `snapshot.current` 知道它是谁 ✓。
+ *
+ * ## 为什么安全（三条自校验，任一不满足就**不采用**）
+ *
+ *   1. 必须有 `currentId` ✓
+ *   2. 那一行**还没有** id ✓（已知事实优先，不覆盖 ✓）
+ *   3. **没有任何别的行**已被认成 `currentId` ✓（否则"活跃行 = 当前会话"这个假设
+ *      在本次渲染里已被**证伪** ✗ ⇒ 不采用 ✓）
+ *
+ * ⇒ 这是"**用结构补充文本**"，不是"用猜测覆盖事实" ✓。
+ */
+export declare function pickCurrentRowAnchor(rowIds: readonly (string | undefined)[], activeIndex: number | undefined, currentId: string | undefined): {
+    index: number;
+    id: string;
+} | undefined;
 /**
  * 收集当前 DOM 里能确定 id 的会话行（按视觉顺序）。
  * @param snapshot - 会话快照（提供 id 顺序与标题，用于兜底匹配）

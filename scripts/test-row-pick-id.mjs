@@ -22,10 +22,15 @@ const ID_B = 'session-bbbbbbbb-0000-0000-0000-000000000002'
 console.log('── ① 真机那个 bug：长标题被截断 ⇒ 仍能认出来')
 
 {
-  const full = '@C:\\Users\\花火\\Downloads\\DSH 嵌入式 runtime'
+  /**
+   * ⚠️ 路径用**中性占位**（`@~/Downloads/…`）而不是真实用户目录 ✗ ——
+   * 仓库的路径扫描会把"本机用户目录"判成**路径泄漏** ✓，
+   * 而这里需要的性质只是"**一个会被 UI 截断的长标题**" ✓，与真实目录无关 ✓。
+   */
+  const full = '@~/Downloads/DSH 嵌入式 runtime'
   const entries = [[full, ID_A]]
   eq(
-    pickRowTitleId('@C:\\Users\\花火\\Downloads\\DSH 嵌入式…', entries),
+    pickRowTitleId('@~/Downloads/DSH 嵌入式…', entries),
     ID_A,
     '截断行文本 ⇒ 认出那个会话 ✓（旧实现这里返回 undefined ✗ ⇒ 画不出线 ✗）',
   )

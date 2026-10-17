@@ -51,8 +51,15 @@ export function useSessionList(bridge: SessionsBridge | null): UseSessionListRes
     }
     sync()
     const off = bridge.subscribe(sync)
-    // 订阅之外再兜一层轮询：不同 DSH 版本的 ObservableSnapshot 通知时机可能不同
-    const timer = window.setInterval(sync, 3000)
+    /**
+     * 订阅之外再兜一层轮询：不同 DSH 版本的 ObservableSnapshot 通知时机可能不同 ✓。
+     *
+     * ⚠️ 但**频率**要收敛（原来是 3 秒 ✗）：这只是**兜底**，不是主要数据源 ✓ ——
+     * 正常路径是 `subscribe` 推送 ✓，兜底只在"通知没来"时救场 ✓。
+     * ⇒ 3s → **15s** ✓：唤醒次数降到 1/5 ✓，而漏更新的最坏延迟仍可接受 ✓
+     * （用户主动操作时会有即时刷新 ✓）。
+     */
+    const timer = window.setInterval(sync, 15_000)
     return () => {
       alive = false
       off()
