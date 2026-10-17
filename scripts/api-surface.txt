@@ -182,9 +182,13 @@ src/client/index.tsx:inject/n
 src/client/row-map.ts:RowHit/n
 src/client/row-map.ts:SessionRowInfo/n
 src/client/row-map.ts:SessionSnapshotLike/n
+src/client/row-map.ts:TitleEntry/n
 src/client/row-map.ts:collectSessionRows/1
+src/client/row-map.ts:pickCurrentRowAnchor/1
+src/client/row-map.ts:pickRowTitleId/2
 src/client/row-map.ts:sessionRowAtPoint/4
 src/client/row-map.ts:sessionRowHitAtPoint/4
+src/client/row-map.ts:titleMatchesRowText/2
 src/client/sessions-bridge.ts:SessionListSnapshot/n
 src/client/sessions-bridge.ts:SessionSummaryLite/n
 src/client/sessions-bridge.ts:SessionsBridge/n
@@ -199,6 +203,14 @@ src/core/box.ts:ConventionBox/n
 src/core/connection-manager.ts:ConnectionManager/n
 src/core/event-bus.ts:ConnectionEventBus/n
 src/core/lane-allocator.ts:allocateLanes/3
+src/core/log.ts:LogLevel/n
+src/core/log.ts:LogSink/n
+src/core/log.ts:hasLogSink/0
+src/core/log.ts:log/2
+src/core/log.ts:logError/n
+src/core/log.ts:logInfo/n
+src/core/log.ts:logWarn/n
+src/core/log.ts:setLogSink/1
 src/core/message-log.ts:ConnectionMessageLog/n
 src/core/message-log.ts:SendOrigin/n
 src/core/message-log.ts:SendResult/n
@@ -284,6 +296,7 @@ src/ui/capture-client.ts:ShadowClientCtx/n
 src/ui/capture-client.ts:captureFactory/3
 src/ui/capture-client.ts:disposeCaptured/1
 src/ui/capture-client.ts:instantiateCaptured/2
+src/ui/capture-client.ts:setClientServiceResolver/1
 src/ui/hooks/useConnections.ts:UseConnectionsResult/n
 src/ui/hooks/useConnections.ts:useConnections/1
 src/ui/hooks/useDragLine.ts:DragLineState/n

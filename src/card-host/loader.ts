@@ -32,6 +32,7 @@ import { readClientArtifact } from './client-artifact.js'
 import { analyzeSuitability, type CardSuitability } from './suitability.js'
 import { pruneStaleCardDirs } from './installer.js'
 import { sourceRecordName, type CardSourceRecord } from './card-paths.js'
+import { logError, logWarn } from '../core/log.js'
 
 /**
  * 适配宿主的**最小接口**（避免卡片宿主反向依赖适配层内部）。
@@ -334,7 +335,7 @@ export class CardHost {
       // 不静默降级 —— 那会让卡片跑到某个分支才炸，比一开始就拒绝难查得多。
       const apiCheck = checkApiVersion(manifest, manifest.name || fallbackId)
       if (!apiCheck.ok) {
-        console.error([CardHost] )
+        logError([CardHost] )
         return false
       }
 
@@ -473,7 +474,7 @@ export class CardHost {
       mod.apply?.(api)
     } catch (e) {
       // 卡片 apply 崩溃隔离：不让卡片拖垮宿主
-      console.error(`[CardHost] 卡片 ${templateId} apply 失败:`, e)
+      logError(`[CardHost] 卡片 ${templateId} apply 失败:`, e)
     }
 
     // 落盘（卡片挂在连接上，随连接持久化）
@@ -618,7 +619,7 @@ export class CardHost {
       this.adapterHost?.unmount(instanceId)
     } catch (e) {
       // 卸载途中的错误不该让"卸载"本身失败（卡片已经从连接上摘掉了）
-      console.error(`[CardHost] 适配卡卸载收尾失败 ${instanceId}:`, e)
+      logError(`[CardHost] 适配卡卸载收尾失败 ${instanceId}:`, e)
     }
   }
 
@@ -802,7 +803,7 @@ export class CardHost {
       }
       return null
     } catch (e) {
-      console.error(`[CardHost] 渲染面板失败 ${instanceId}:`, e)
+      logError(`[CardHost] 渲染面板失败 ${instanceId}:`, e)
       return null
     }
   }
@@ -824,7 +825,7 @@ export class CardHost {
         try {
           const template = this.registry.getTemplate(instance.templateId)
           if (!template) {
-            console.warn(
+            logWarn(
               `[CardHost] 重放跳过：模板 ${instance.templateId} 不存在（连接 ${conn.id}）`,
             )
             continue
@@ -839,11 +840,11 @@ export class CardHost {
            */
           if (template.manifest.adapter) {
             if (!this.adapterHost) {
-              console.warn(`[CardHost] 重放跳过适配卡 ${instance.templateId}：宿主未装配适配层`)
+              logWarn(`[CardHost] 重放跳过适配卡 ${instance.templateId}：宿主未装配适配层`)
               continue
             }
             if (!this.adapterHost.enabled()) {
-              console.warn(
+              logWarn(
                 `[CardHost] 重放跳过适配卡 ${instance.templateId}：适配层已关闭（卡片仍在连接上，开启后重启生效）`,
               )
               continue
@@ -870,7 +871,7 @@ export class CardHost {
           mod.apply?.(api)
           restored++
         } catch (e) {
-          console.error(`[CardHost] 重放卡片失败 ${instance.instanceId}:`, e)
+          logError(`[CardHost] 重放卡片失败 ${instance.instanceId}:`, e)
         }
       }
     }

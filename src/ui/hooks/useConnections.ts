@@ -9,7 +9,16 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ConnectionCardHostClient } from '../../client/host-client.js'
 import type { Connection } from '../../types/index.js'
 
-const POLL_INTERVAL_MS = 2000
+/**
+ * 连接列表的轮询间隔（RPC，不能用观察器 ✓）。
+ *
+ * ⚠️ 2 秒 → **5 秒**：连接是**低频对象** ✓（建/删/权限变更 ✓），
+ * 2 秒时绝大多数轮次都在问"**有没有变**"而答案是"没变" ✗。
+ * 判据：**轮询频率不该高于被观察事物的变化率** ✓
+ * （与"报警频率高于真实出现率 ⇒ 护栏会死"同一条 ✓）。
+ * 需要即时性的地方另有 `refresh()` 主动刷新 ✓（面板操作后立即拉 ✓）。
+ */
+const POLL_INTERVAL_MS = 5000
 
 export interface UseConnectionsResult {
   connections: Connection[]

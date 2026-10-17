@@ -11,6 +11,7 @@ import { ConnectionEventBus } from './event-bus.js'
 import { PermissionUpgradeManager, RemoteMethodWhitelist } from './permission.js'
 import { ConnectionMessageLog } from './message-log.js'
 import type { ConventionBox } from './box.js'
+import { logError, logInfo } from './log.js'
 
 type EventHandler = (conn: Connection) => void
 
@@ -52,7 +53,7 @@ export class ConnectionManager {
     this.eventBus = eventBus
     this.upgradeManager = new PermissionUpgradeManager(eventBus)
     this.whitelist = new RemoteMethodWhitelist(eventBus)
-    this.messages = new ConnectionMessageLog(eventBus, (m) => console.log('[ConnectionMessage]', m))
+    this.messages = new ConnectionMessageLog(eventBus, (m) => logInfo('[ConnectionMessage]', m))
     // 从持久化恢复
     for (const conn of persistence.getConnections()) {
       this.connections.set(conn.id, conn)
@@ -215,7 +216,7 @@ export class ConnectionManager {
     if (set) {
       for (const h of set) {
         try { h(conn) } catch (e) {
-          console.error(`[ConnectionManager] listener error for ${event}:`, e)
+          logError(`[ConnectionManager] listener error for ${event}:`, e)
         }
       }
     }

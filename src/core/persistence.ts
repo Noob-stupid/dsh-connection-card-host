@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from '
 import { join } from 'node:path'
 import type { Connection, CardInstance, ConnectionMessage } from '../types/index.js'
 import type { Convention } from './box.js'
+import { logError } from './log.js'
 
 export interface PersistedData {
   version: number
@@ -117,14 +118,14 @@ export class Persistence {
         return this.normalize(JSON.parse(raw))
       }
     } catch (e) {
-      console.error('[Persistence] load failed, trying backup:', e)
+      logError('[Persistence] load failed, trying backup:', e)
       try {
         if (existsSync(this.backupPath)) {
           const raw = readFileSync(this.backupPath, 'utf8')
           return this.normalize(JSON.parse(raw))
         }
       } catch {
-        console.error('[Persistence] backup also failed, starting fresh')
+        logError('[Persistence] backup also failed, starting fresh')
       }
     }
     return emptyData()
@@ -139,7 +140,7 @@ export class Persistence {
       }
       writeFileSync(this.dataPath, JSON.stringify(this.data, null, 2), 'utf8')
     } catch (e) {
-      console.error('[Persistence] save failed:', e)
+      logError('[Persistence] save failed:', e)
     }
   }
 

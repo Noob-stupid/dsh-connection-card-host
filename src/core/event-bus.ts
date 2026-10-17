@@ -1,3 +1,4 @@
+import { logError } from './log.js'
 /**
  * ConnectionEventBus — 连接级事件总线。
  * 命名空间：conn:<connectionId>:<event>
@@ -16,7 +17,7 @@ export class ConnectionEventBus {
     if (set) {
       for (const h of set) {
         try { h(data) } catch (e) {
-          console.error(`[ConnectionEventBus] handler error for ${key}:`, e)
+          logError(`[ConnectionEventBus] handler error for ${key}:`, e)
         }
       }
     }
@@ -24,7 +25,7 @@ export class ConnectionEventBus {
     if (allSet) {
       for (const h of allSet) {
         try { h(event, data) } catch (e) {
-          console.error(`[ConnectionEventBus] all-handler error for ${connectionId}:`, e)
+          logError(`[ConnectionEventBus] all-handler error for ${connectionId}:`, e)
         }
       }
     }

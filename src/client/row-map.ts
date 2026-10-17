@@ -26,11 +26,139 @@ export interface SessionRowInfo {
 export interface SessionSnapshotLike {
   ids: readonly string[]
   byId: Record<string, { title?: string }>
+  /**
+   * **当前会话** id（可选 ✓）。
+   *
+   * 用途：给"当前会话那一行"做**结构锚点** ✓ —— 见 `pickCurrentRowAnchor` ✓。
+   * 声明为可选 ✓：老调用方/旧版本快照可能没有它 ✓，那时锚点自动不启用 ✓（不报错 ✓）。
+   */
+  current?: string
 }
 
 /** 行文本归一化：压空白 + 转小写。 */
 function normalizeText(text: string): string {
   return text.replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+/**
+ * **行文本 ↔ 会话标题**是否算同一个会话（标题匹配的唯一判据，导出供测试）。
+ *
+ * ## ⚠️ 为什么必须**双向**前缀（真机 bug 的根因）
+ *
+ * 旧判据是单向的：
+ *
+ *     text === title || text.startsWith(title)     // 要求"行文本包含**完整**标题" ✗
+ *
+ * 而会话行里的长标题会被 UI **截断成省略号** ✓（这类标题常见于以路径命名的会话：
+ * `@~/Downloads/DSH 嵌入式…` ✓）—— 此时
+ *
+ *     行文本 = "@~/downloads/dsh 嵌入式"   （**比标题短** ✗）
+ *     标题   = "@~/downloads/dsh 嵌入式 runtime"
+ *
+ * ⇒ `text.startsWith(title)` **永远为假** ✗ ⇒ 这个会话**永远认不出来** ✗
+ * ⇒ 它的行拿不到 id ⇒ 连线配不上对 ⇒ **线画不出来** ✓（用户看到的就是这个 ✓）。
+ *
+ * 旁证：同一现场里**短标题**的会话（`准备协作` ✓）能匹配上 ✓，
+ * 所以诊断里 `missing` **恰好只有一个** ✓ —— 正是"长标题被截断"的形状 ✓。
+ *
+ * ## 为什么仍然安全（不放松"不猜"这条纪律）
+ *
+ * · 仍是**前缀关系**（不是子串 ✓）—— 避免"标题是别人行文本中间一段"的误配 ✓
+ * · 行文本至少 **4** 个字符才允许"行更短"的方向 ✓（1–2 个字符的前缀能撞上一堆标题 ✗）
+ * · 调用方仍要求**唯一命中** ✓（bucket 长度必须为 1 ✓）
+ * · 末尾的省略号先剥掉 ✓（`…` / `...` 两种写法 ✓）
+ */
+export function titleMatchesRowText(rowText: string, title: string): boolean {
+  const text = normalizeText(stripTrailingEllipsis(rowText))
+  const norm = normalizeText(title)
+  if (text.length === 0 || norm.length === 0) return false
+  if (text === norm) return true
+  /** 行文本包含完整标题（标题较短、行里还有时间等 ✓）。 */
+  if (text.startsWith(norm)) return true
+  /** 行文本被截断（标题较长 ✓）—— 要求够长才允许，避免短前缀乱配 ✗。 */
+  return text.length >= 4 && norm.startsWith(text)
+}
+
+/** 去掉末尾的省略号（UI 截断留下的 ✓）。 */
+function stripTrailingEllipsis(text: string): string {
+  return text.replace(/(?:…|\.{3,})\s*$/, '').trim()
+}
+
+/**
+ * 标题候选里的**一条**：`[标题, 该标题对应的唯一 id]`。
+ *
+ * ⚠️ 每条的 id 必须**唯一** ✓（同名会话不进候选 ✓ —— 承认分不清比猜一个强 ✓）。
+ */
+export type TitleEntry = readonly [title: string, id: string]
+
+/**
+ * 从一行的文本里挑出**它所属的会话 id** —— 行级判据（导出供测试）。
+ *
+ * ## ⚠️ 为什么必须有"行级"这一层（负控抓出来的）
+ *
+ * 光有 `titleMatchesRowText` 不够 ✗：**一行可能同时匹配多个标题** ✓，例如
+ *
+ *     行文本 = "准备协作"     （4 个字符）
+ *     标题   = "准备协作"     ← 精确匹配 ✓
+ *              "准备协作二号" ← 前缀匹配也成立 ✓（行文本是它的前缀 ✓）
+ *
+ * 若按"第一个匹配上的就用"✗，就可能**连到错误的会话上** ✗ ——
+ * 那比连不上更糟 ✓（用户未必立刻发现 ✓）。
+ *
+ * ## 规则（顺序即优先级）
+ *
+ *   1. **精确匹配**（行文本 == 标题 ✓）⇒ 直接采用 ✓（无歧义 ✓）
+ *   2. 否则收集**所有**前缀匹配 ⇒ **恰好一个**才采用 ✓
+ *   3. 零个或多个 ⇒ 返回 undefined ✓（**不猜** ✓）
+ */
+export function pickRowTitleId(rowText: string, entries: readonly TitleEntry[]): string | undefined {
+  const text = normalizeText(stripTrailingEllipsis(rowText))
+  if (text.length === 0) return undefined
+
+  // ① 精确优先
+  const exact = entries.filter(([title]) => normalizeText(title) === text)
+  if (exact.length === 1) return exact[0]![1]
+  if (exact.length > 1) return undefined // 同名多个 ⇒ 分不清 ✓
+
+  // ② 前缀匹配，唯一才采用
+  const prefix = entries.filter(([title]) => titleMatchesRowText(rowText, title))
+  return prefix.length === 1 ? prefix[0]![1] : undefined
+}
+
+/**
+ * **"当前会话那一行" 作为锚点** —— 用结构而不是文本（导出供测试）。
+ *
+ * ## 为什么需要它（比标题匹配可靠得多）
+ *
+ * 标题匹配天生脆 ✗：会截断 ✓、会重名 ✓、会改名 ✓。而"**当前会话**"是**结构事实** ✓：
+ * DSH 会在当前会话那一行标 `aria-selected` / `aria-current` ✓（标准无障碍语义 ✓），
+ * 而 `snapshot.current` 直接给出当前会话 id ✓ —— 这是**同一个事实的两个来源** ✓。
+ *
+ * 它恰好覆盖**旧实现翻车的那类行** ✓：当前会话行是**活跃**的 ✓ ⇒
+ * 官方用自己的状态点**顶掉我们的标记槽位** ✗ ⇒ 这一行**没有标记** ✓、
+ * 标题又可能被截断 ✓ ⇒ 两条老路都断 ✗ —— 而 `snapshot.current` 知道它是谁 ✓。
+ *
+ * ## 为什么安全（三条自校验，任一不满足就**不采用**）
+ *
+ *   1. 必须有 `currentId` ✓
+ *   2. 那一行**还没有** id ✓（已知事实优先，不覆盖 ✓）
+ *   3. **没有任何别的行**已被认成 `currentId` ✓（否则"活跃行 = 当前会话"这个假设
+ *      在本次渲染里已被**证伪** ✗ ⇒ 不采用 ✓）
+ *
+ * ⇒ 这是"**用结构补充文本**"，不是"用猜测覆盖事实" ✓。
+ */
+export function pickCurrentRowAnchor(
+  rowIds: readonly (string | undefined)[],
+  activeIndex: number | undefined,
+  currentId: string | undefined,
+): { index: number; id: string } | undefined {
+  if (!currentId) return undefined
+  if (activeIndex === undefined || activeIndex < 0 || activeIndex >= rowIds.length) return undefined
+  if (rowIds[activeIndex] !== undefined) return undefined
+  for (let i = 0; i < rowIds.length; i++) {
+    if (i !== activeIndex && rowIds[i] === currentId) return undefined
+  }
+  return { index: activeIndex, id: currentId }
 }
 
 /**
@@ -70,16 +198,46 @@ export function collectSessionRows(snapshot: SessionSnapshotLike | null): Sessio
     else idsByTitle.set(key, [id])
   }
   if (idsByTitle.size > 0) {
+    /** 拍平成 `[标题, id]` 候选（只保留**同名唯一**的标题 ✓ —— 同名多条分不清 ✓）。 */
+    const entries: TitleEntry[] = []
+    for (const [title, bucket] of idsByTitle) {
+      if (bucket.length === 1) entries.push([title, bucket[0]!] as const)
+    }
     for (const row of rows) {
       if (idByRow.has(row)) continue
-      const text = normalizeText(row.textContent ?? '')
-      if (text.length === 0) continue
-      for (const [title, bucket] of idsByTitle) {
-        if (bucket.length !== 1) continue
-        if (text === title || text.startsWith(title)) {
-          idByRow.set(row, bucket[0])
-          break
-        }
+      const text = row.textContent ?? ''
+      if (normalizeText(text).length === 0) continue
+      /** **行级**判据：精确优先 + 唯一才采用 ✓（见 `pickRowTitleId` 的说明 ✓）。 */
+      const picked = pickRowTitleId(text, entries)
+      if (picked) idByRow.set(row, picked)
+    }
+  }
+
+  /**
+   * 2.5) **结构锚点：当前会话那一行** ✓
+   *
+   * 这一步专治"活跃行两条老路都断"的场合（没有标记 ✗ + 标题被截断 ✗）：
+   * 当前会话行恰恰是活跃行 ✓，而 `snapshot.current` 知道它的 id ✓。
+   * 判据与自校验见 `pickCurrentRowAnchor` ✓（任一条件不满足就不采用 ✓）。
+   *
+   * ⚠️ 必须在**补缺之前**加进 `anchorIndexById` ✓ —— 它要作为一个**已知锚点**
+   * 参与后面的缺口计算 ✓（只加 `idByRow` 就只能救这一行，帮不了邻居 ✗）。
+   */
+  {
+    const activeIndex = rows.findIndex(
+      (r) =>
+        r.getAttribute('aria-selected') === 'true' || r.getAttribute('aria-current') === 'true',
+    )
+    const anchor = pickCurrentRowAnchor(
+      rows.map((r) => idByRow.get(r)),
+      activeIndex >= 0 ? activeIndex : undefined,
+      snapshot?.current,
+    )
+    if (anchor) {
+      const row = rows[anchor.index]
+      if (row) {
+        idByRow.set(row, anchor.id)
+        anchorIndexById.set(anchor.index, anchor.id)
       }
     }
   }

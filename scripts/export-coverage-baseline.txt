@@ -22,8 +22,8 @@ src/card-host/installer.ts:findEscapedLinks
 src/card-host/installer.ts:removeFileQuiet
 src/card-host/package-check.ts:ADAPTER_DEFAULT_CAPABILITIES
 src/card-host/sandbox.ts:importCardModule
-src/card-host/suitability.ts:looksLikeSourceOnly  # at=2026-10-03
-src/card-host/suitability.ts:readIfExists  # at=2026-10-03
+src/card-host/suitability.ts:looksLikeSourceOnly
+src/card-host/suitability.ts:readIfExists
 src/card-host/updates.ts:checkCardUpdate
 src/card-host/updates.ts:currentDirName
 src/card-host/updates.ts:readSourceRecord
@@ -46,8 +46,6 @@ src/core/work-state.ts:shortPath
 src/index.ts:provide
 src/safe-ctx.ts:safeCtxGet
 src/safe-ctx.ts:safeCtxMethod
-src/styles/tokens.ts:CONNECTION_CARD_CSS
-src/styles/tokens.ts:injectStyles
 src/tools/awareness-tools.ts:registerAwarenessTools
 src/types/permission.ts:PERMISSION_ORDER
 src/types/permission.ts:permFromValue
@@ -59,7 +57,6 @@ src/ui/AwarenessPanel.tsx:AwarenessPanel
 src/ui/CapturedCardUi.tsx:CapturedCardUi
 src/ui/CapturedCardUi.tsx:makeMiniRequire
 src/ui/CardStack.tsx:CardStack
-src/ui/ConnectionPanel.tsx:ConnectionPanel
 src/ui/ConnectionPanelIcon.tsx:ConnectionPanelIcon
 src/ui/DragLine.tsx:DragLine
 src/ui/SessionRailOverlay.tsx:SessionRailOverlay
