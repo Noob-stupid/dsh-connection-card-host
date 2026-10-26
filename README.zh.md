@@ -324,13 +324,44 @@ connection_card_tool                                  ← 唯一常驻的（1 �
 内置那几张卡只是**起点**，不是上限。**任何普通 DSH 插件都能当卡片挂**，而卡片本来就只是一个包
 —— 所以这份清单可以**从仓库外面长出来**。
 
-- **[Awesome DSH 连接卡片](awesome/README.zh.md)** —— 卡片、当卡片好用的插件，外加一份
-  **「已知不兼容」**（省你一个晚上）。
-- **[English list](awesome/README.md)**。
-- **自己写一张** —— 协议见[卡片协议](docs/card-protocol.md)；最小的一张卡 = 一个带 `dshCard`
-  的 `package.json` + 一个 `index.js`。
-- **欢迎 PR** —— **一个 PR 一行**，带证据（DSH 版本 + 面板里那行卡片行 / `[ui-capture]` 那行）。
-  规则见[贡献说明](awesome/CONTRIBUTING.md)。
+**清单的源在 [`awesome/README.zh.md`](awesome/README.zh.md)**（提 PR 改那边，一个 PR 一行，
+规则见[贡献指南](CONTRIBUTING.md)）· [English list](awesome/README.md)
+
+<details>
+<summary><b>展开清单</b> —— 4 张内置卡 · 适配插件 · 已知不兼容</summary>
+
+### 内置卡片
+
+随插件分发，在卡片候选列表里直接选。
+
+| 卡片 | 它做什么 | 需要（读 / 写） | 事件 |
+|---|---|---|---|
+| **目标中继**（`goal-relay-card`） | 把目标与状态同步给对端，两边对"我们在做什么"有同一份认知 | `goal_status` / `relay_goal` | `goal_updated`、`goal_completed` |
+| **监控**（`monitor-card`） | 盯对端的预设状态与会话活动，抛出 `preset_error` / `session_idle` | `preset_status`、`session_log` / — | `preset_error`、`session_idle` |
+| **自愈**（`self-heal-card`） | 收到 `preset_error` 就让对端修预设，并把结果回报 | `preset_status` / `repair_preset` | `preset_error`、`preset_repaired` |
+| **连接礼仪**（`connection-etiquette`） | 把四档紧急度讲给两边，并按你选的档位转发附注 | — / `send_message` | — |
+
+### 当卡片好用的插件
+
+| 插件 | 它给这条连接带来什么 | 状态 |
+|---|---|---|
+| [`dsh-client-ui-voice`](https://github.com/hajixiaolei-art/dsh-client-ui-voice) | 按住说话的语音输入控件 | ✅ 挂得上 · UI **捕获并渲染** · 1 个槽位 |
+| [`gal-view`](https://github.com/Ayase34/gal-view) | 模型/场景查看面板 | ⚠️ 挂得上 · 槽位注册成功 · 渲染要客户端 hook |
+
+### 已知不兼容
+
+列出来是为了**省你一个晚上**。面板里的拒绝会写清确切原因。
+
+| 插件 | 为什么今天挂不上 |
+|---|---|
+| [`dsh-usage`](https://github.com/linxin666/dsh-usage) | 宿主半边 import 了 11 个本插件不提供的包（`credentials`、`webServer`、`session`…）⇒ 它需要的是**另一种宿主**，不是卡片 |
+| 侧栏 / 主题 / 布局类替换 | **全局** UI，不是连接级 —— 它们属于 App。候选列表会把它们标成 `全局` |
+
+### 社区卡片
+
+_还没有条目 —— 第一个可以是你。_
+
+</details>
 
 > 卡片做的事，是**让一个插件去教一条连接**：给那个会话工具、在两端之间传事件、
 > 把界面放在**对话旁边**而不是**接管整个 App**。

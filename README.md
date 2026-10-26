@@ -345,13 +345,44 @@ The built-in cards are a starting point, not the ceiling.
 **Any ordinary DSH plugin can be mounted as a card**, and a card is just a package — so this list
 can grow from outside this repository.
 
-- **[Awesome DSH Connection Cards](awesome/README.md)** — cards, card-adapter plugins, and a short
-  **"known incompatible"** list, so you do not burn an evening on something that cannot work today.
-- **[中文清单](awesome/README.zh.md)**.
-- **Write your own** — the protocol is [here](docs/card-protocol.md); the smallest card is a
-  `package.json` with a `dshCard` block plus one `index.js`.
-- **PRs are welcome** — one row per pull request, with evidence (DSH version + the panel's card row,
-  or the `[ui-capture]` line). Rules: [CONTRIBUTING](awesome/CONTRIBUTING.md).
+**Source of truth: [`awesome/README.md`](awesome/README.md)** (send PRs there — one row per PR,
+[guide](CONTRIBUTING.md)) · [中文清单](awesome/README.zh.md)
+
+<details>
+<summary><b>Open the list</b> — 4 built-in cards · adapter plugins · known incompatible</summary>
+
+### Built-in cards
+
+Shipped with the plugin — pick one in the card candidate list.
+
+| Card | What it does | Needs (read / write) | Events |
+|---|---|---|---|
+| **Goal relay** (`goal-relay-card`) | Relays a goal and its status to the peer so both sides track the same "what are we doing" | `goal_status` / `relay_goal` | `goal_updated`, `goal_completed` |
+| **Monitor** (`monitor-card`) | Watches the peer's preset state and session activity; raises `preset_error` / `session_idle` | `preset_status`, `session_log` / — | `preset_error`, `session_idle` |
+| **Self-heal** (`self-heal-card`) | On `preset_error`, asks the peer to repair its preset, then reports the outcome | `preset_status` / `repair_preset` | `preset_error`, `preset_repaired` |
+| **Connection etiquette** (`connection-etiquette`) | Teaches the four urgency levels and forwards notes with the urgency you choose | — / `send_message` | — |
+
+### Plugins that work as cards
+
+| Plugin | What it brings to the connection | Status |
+|---|---|---|
+| [`dsh-client-ui-voice`](https://github.com/hajixiaolei-art/dsh-client-ui-voice) | A push-to-talk voice input control | ✅ mounts · UI captured and rendered · 1 slot |
+| [`gal-view`](https://github.com/Ayase34/gal-view) | A model/scene viewer panel | ⚠️ mounts · slots registered · rendering needs client hooks |
+
+### Known incompatible
+
+Listed so you do not spend an evening on it. The panel's refusal names the exact reason.
+
+| Plugin | Why it cannot mount (today) |
+|---|---|
+| [`dsh-usage`](https://github.com/linxin666/dsh-usage) | Its host half imports 11 packages this plugin does not provide (`credentials`, `webServer`, `session`, …) — it needs a different kind of host, not a card |
+| Sidebar / theme / layout replacements | **Global** UI, not connection-scoped: they belong to the app. The candidate list marks them `global` |
+
+### Community cards
+
+_None listed yet — the first one could be yours._
+
+</details>
 
 > A card is how one plugin teaches a connection: tools for that session, events between the two
 > sides, and UI that sits **next to the conversation** instead of taking over the app.

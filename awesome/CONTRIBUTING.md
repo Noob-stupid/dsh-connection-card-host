@@ -66,6 +66,10 @@ If your plugin has a UI half, also paste the line from `client-debug.log`:
 
 ## Housekeeping
 
+- **The source of truth is `awesome/README.md` / `awesome/README.zh.md`.** The main `README.md`
+  carries a **collapsed copy** of the same tables (inside a `<details>` block) so people can read the
+  list without leaving the page. Edit **this folder**, not that copy — a maintainer refreshes the
+  copy after merging. Two copies is a drift risk; this is the rule that keeps it from drifting.
 - One row per PR keeps review cheap and history readable.
 - Chinese and English rows say the same thing. Do not let one drift.
 - If your entry later breaks, a PR that **downgrades the status** is as welcome as the original one.
