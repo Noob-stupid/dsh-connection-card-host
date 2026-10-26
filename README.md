@@ -65,6 +65,7 @@ tools — without getting in each other's way**.
 - [Three layers: awareness / conventions / messaging](#three-layers-awareness--conventions--messaging)
 - [Cards on a connection](#cards-on-a-connection)
 - [What a card can and cannot do](#what-a-card-can-and-cannot-do)
+- [Community cards and adapters](#community-cards-and-adapters)
 - [Architecture and cost](#architecture-and-cost)
 - [Install](#install)
 - [Use](#use)
@@ -332,6 +333,25 @@ mountable  ≠  source readable  ≠  slots registered  ≠  rendered
 | **Version gating** | A DSH version mismatch is **refused clearly, with the reason** — rather than installing and crashing later. Cards have a second guard: the CardAPI version (a card requiring a newer one is refused at mount time, with the reason) |
 | **Crash isolation** | An exception from a card's import / apply does not take down the host |
 | **Not rewritten** | We do not rewrite DSH's transport, permissions or plugin system, and a card is **not registered into DSH's global loader** |
+
+---
+
+## Community cards and adapters
+
+The built-in cards are a starting point, not the ceiling.
+**Any ordinary DSH plugin can be mounted as a card**, and a card is just a package — so this list
+can grow from outside this repository.
+
+- **[Awesome DSH Connection Cards](awesome/README.md)** — cards, card-adapter plugins, and a short
+  **"known incompatible"** list, so you do not burn an evening on something that cannot work today.
+- **[中文清单](awesome/README.zh.md)**.
+- **Write your own** — the protocol is [here](docs/card-protocol.md); the smallest card is a
+  `package.json` with a `dshCard` block plus one `index.js`.
+- **PRs are welcome** — one row per pull request, with evidence (DSH version + the panel's card row,
+  or the `[ui-capture]` line). Rules: [CONTRIBUTING](awesome/CONTRIBUTING.md).
+
+> A card is how one plugin teaches a connection: tools for that session, events between the two
+> sides, and UI that sits **next to the conversation** instead of taking over the app.
 
 ---
 
