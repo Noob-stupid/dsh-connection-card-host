@@ -2,6 +2,9 @@
 
 **English** | [中文](README.zh.md)
 
+**Contribute:** **[Card & adapter list →](awesome/README.md)** · **[Contribution guide →](awesome/CONTRIBUTING.md)** · **[中文清单](awesome/README.zh.md)**
+<sub>Any ordinary DSH plugin can be listed as a card. One row per PR, with evidence.</sub>
+
 > **Makes a *connection* a first-class object in DSH: sessions are nodes, a connection is the container, cards are connection-scoped plugins — a "connection-level plugin host".**
 
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)

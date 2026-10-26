@@ -2,6 +2,9 @@
 
 [English](README.md) | **中文**
 
+**参与贡献：** **[卡片与适配插件清单 →](awesome/README.zh.md)** · **[贡献指南 →](awesome/CONTRIBUTING.md)** · **[English list](awesome/README.md)**
+<sub>任何普通 DSH 插件都能进清单当卡片用。一个 PR 一行，带证据。</sub>
+
 > **把「连接」做成 DSH 里的一等对象：会话是节点，连接是容器，卡片是连接级插件 —— 一个「连接级插件宿主」。**
 
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
